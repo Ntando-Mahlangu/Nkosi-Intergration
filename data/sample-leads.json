@@ -1,0 +1,149 @@
+[
+  {
+    "id": "lead-001",
+    "name": "Amara Ncube",
+    "phone": "+27821234001",
+    "source": "missed_call",
+    "createdAt": "2026-09-10T09:15:00.000Z",
+    "hadMissedCall": true,
+    "requestedService": "kitchen remodel quote",
+    "status": "new"
+  },
+  {
+    "id": "lead-002",
+    "name": "Bongani Dube",
+    "phone": "+27821234002",
+    "email": "bongani.dube@example.com",
+    "source": "website_form",
+    "createdAt": "2026-09-09T14:00:00.000Z",
+    "requestedService": "solar installation",
+    "previousQuote": "R48,000 rooftop solar package",
+    "status": "new"
+  },
+  {
+    "id": "lead-003",
+    "name": "Chloe van der Merwe",
+    "email": "chloe.vdm@example.com",
+    "source": "website_form",
+    "createdAt": "2026-09-11T11:30:00.000Z",
+    "requestedService": "bathroom renovation",
+    "status": "new"
+  },
+  {
+    "id": "lead-004",
+    "name": "Dumisani Khumalo",
+    "phone": "+27821234004",
+    "source": "booking_software",
+    "createdAt": "2026-09-05T08:00:00.000Z",
+    "requestedService": "appliance repair",
+    "appointmentStatus": "requested",
+    "status": "new"
+  },
+  {
+    "id": "lead-005",
+    "name": "Emma Botha",
+    "phone": "+27821234005",
+    "source": "booking_software",
+    "createdAt": "2026-09-08T16:45:00.000Z",
+    "requestedService": "roof inspection",
+    "appointmentStatus": "abandoned",
+    "status": "new"
+  },
+  {
+    "id": "lead-006",
+    "name": "Farai Moyo",
+    "email": "farai.moyo@example.com",
+    "source": "crm",
+    "createdAt": "2026-08-20T10:00:00.000Z",
+    "requestedService": "fence installation",
+    "previousConversationSummary": "Spoke with sales rep, said they'd think about it.",
+    "status": "contacted_no_response",
+    "lastContactedAt": "2026-08-22T10:00:00.000Z"
+  },
+  {
+    "id": "lead-007",
+    "name": "Grace Sithole",
+    "phone": "+27821234007",
+    "source": "spreadsheet",
+    "createdAt": "2026-08-01T12:00:00.000Z",
+    "requestedService": "paint job estimate",
+    "status": "new"
+  },
+  {
+    "id": "lead-008",
+    "name": "Hendrik Pretorius",
+    "phone": "+27821234008",
+    "source": "customer_database",
+    "createdAt": "2025-02-14T09:00:00.000Z",
+    "status": "new",
+    "notes": "Very old lead, no follow-up recorded."
+  },
+  {
+    "id": "lead-009",
+    "name": "Itumeleng Mokoena",
+    "email": "itumeleng.m@example.com",
+    "source": "email",
+    "createdAt": "2025-11-01T09:00:00.000Z",
+    "status": "new"
+  },
+  {
+    "id": "lead-010",
+    "name": "Jabulani Zulu",
+    "phone": "+27821234010",
+    "source": "crm",
+    "createdAt": "2026-06-01T09:00:00.000Z",
+    "status": "do_not_contact",
+    "notes": "Business marked do-not-contact after complaint."
+  },
+  {
+    "id": "lead-011",
+    "name": "Karabo Sepeng",
+    "phone": "+27821234011",
+    "source": "website_form",
+    "createdAt": "2026-07-01T09:00:00.000Z",
+    "status": "unqualified"
+  },
+  {
+    "id": "lead-012",
+    "name": "Lindiwe Mahlangu",
+    "phone": "+27821234012",
+    "source": "missed_call",
+    "createdAt": "2026-07-15T09:00:00.000Z",
+    "status": "fraudulent"
+  },
+  {
+    "id": "lead-013",
+    "name": "Mpho Radebe",
+    "phone": "+27821234013",
+    "email": "mpho.radebe@example.com",
+    "source": "crm",
+    "createdAt": "2026-08-25T09:00:00.000Z",
+    "status": "active_conversation",
+    "notes": "Currently being helped by sales rep Thabo."
+  },
+  {
+    "id": "lead-014",
+    "name": "Naledi Khoza",
+    "phone": "+27821234014",
+    "source": "booking_software",
+    "createdAt": "2026-09-01T09:00:00.000Z",
+    "status": "booked",
+    "appointmentStatus": "booked"
+  },
+  {
+    "id": "lead-015",
+    "name": "Owen Fourie",
+    "email": "owen.fourie@example.com",
+    "source": "crm",
+    "createdAt": "2026-05-01T09:00:00.000Z",
+    "status": "converted"
+  },
+  {
+    "id": "lead-016",
+    "name": "Precious Nkosi",
+    "phone": "+27821234016",
+    "source": "sms",
+    "createdAt": "2026-06-10T09:00:00.000Z",
+    "status": "opted_out"
+  }
+]
