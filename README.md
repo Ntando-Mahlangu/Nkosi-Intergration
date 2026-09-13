@@ -71,8 +71,12 @@ deployment serves many clients with fully isolated data.
 - **`src/worker.ts`** — cron loop that runs the workflow for every tenant.
 - **`src/middleware/auth.ts`**, **`src/routes/tenants.ts`** — tenant API-key
   auth and tenant management (admin-key protected).
-- **`public/index.html`** — a small ops dashboard (connect with a tenant API
-  key, see the queued plan, trigger a run, see what got skipped).
+- **`public/index.html`** — the default landing page: a "Command Center"
+  view (connect with a tenant API key to see live per-category lead counts
+  as an animated node graph, click a node for the real leads behind it).
+- **`public/dashboard.html`** — the plain-list working view (queued plan,
+  drafted messages, skipped leads, a button to trigger a run) — linked from
+  the Command Center for day-to-day lead-by-lead work.
 
 ## Getting started (local demo, no external services)
 

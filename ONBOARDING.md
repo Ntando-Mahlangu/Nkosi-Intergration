@@ -68,10 +68,13 @@ Pick whichever fits what they actually have:
 ```
 GET /leads/plan
 ```
-(with `Authorization: Bearer <tenant api key>`), or open the dashboard
-(`public/index.html`) and connect with the tenant's API key. This shows the
-exact priority, reason, and drafted message for every lead **without sending
-anything**. Walk through this with the client and get explicit sign-off on:
+(with `Authorization: Bearer <tenant api key>`), or open the list dashboard
+(`public/dashboard.html`) and connect with the tenant's API key — the
+Command Center landing page (`public/index.html`) is the impressive
+overview, but this plain list is where you actually review exact message
+wording per lead. This shows the exact priority, reason, and drafted
+message for every lead **without sending anything**. Walk through this with
+the client and get explicit sign-off on:
 
 - Tone/wording of the templates (edit `src/messaging.ts` /
   `src/followup.ts` if they want different phrasing — these are shared
