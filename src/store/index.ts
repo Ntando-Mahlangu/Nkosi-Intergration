@@ -1,0 +1,50 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import type { Lead } from "../types.js";
+import { DEMO_TENANT } from "../demoTenant.js";
+import { InMemoryLeadStore, InMemoryMessageStore, InMemoryTenantStore } from "./memory.js";
+import { PostgresLeadStore, PostgresMessageStore, PostgresTenantStore } from "./postgres.js";
+import { getPool } from "../db/pool.js";
+import type { LeadStore, MessageStore, TenantStore } from "./types.js";
+
+export * from "./types.js";
+export * from "./memory.js";
+export * from "./postgres.js";
+
+export interface Stores {
+  leadStore: LeadStore;
+  tenantStore: TenantStore;
+  messageStore: MessageStore;
+}
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function loadSampleLeads(): Lead[] {
+  const dataPath = path.join(__dirname, "..", "..", "data", "sample-leads.json");
+  const raw: Omit<Lead, "tenantId">[] = JSON.parse(readFileSync(dataPath, "utf-8"));
+  return raw.map((lead) => ({ ...lead, tenantId: DEMO_TENANT.id }));
+}
+
+/**
+ * Creates the storage layer for the app. Uses Postgres when DATABASE_URL is
+ * set (production/staging); otherwise falls back to an in-memory store
+ * preloaded with the demo tenant and sample leads, so the CLI/server/tests
+ * work out of the box with zero external services.
+ */
+export function createStores(): Stores {
+  if (process.env.DATABASE_URL) {
+    const pool = getPool();
+    return {
+      leadStore: new PostgresLeadStore(pool),
+      tenantStore: new PostgresTenantStore(pool),
+      messageStore: new PostgresMessageStore(pool),
+    };
+  }
+
+  return {
+    leadStore: new InMemoryLeadStore(loadSampleLeads()),
+    tenantStore: new InMemoryTenantStore([DEMO_TENANT]),
+    messageStore: new InMemoryMessageStore(),
+  };
+}

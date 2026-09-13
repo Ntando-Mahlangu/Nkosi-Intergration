@@ -1,0 +1,263 @@
+import type { Pool } from "pg";
+import type { ChannelCredentials, Lead, Message, Tenant } from "../types.js";
+import type { LeadStore, MessageStore, TenantStore } from "./types.js";
+
+function leadFromRow(row: Record<string, unknown>): Lead {
+  return {
+    id: row.id as string,
+    tenantId: row.tenant_id as string,
+    name: (row.name as string | null) ?? undefined,
+    phone: (row.phone as string | null) ?? undefined,
+    email: (row.email as string | null) ?? undefined,
+    source: row.source as Lead["source"],
+    createdAt: new Date(row.created_at as string).toISOString(),
+    lastContactedAt: row.last_contacted_at ? new Date(row.last_contacted_at as string).toISOString() : undefined,
+    previousConversationSummary: (row.previous_conversation_summary as string | null) ?? undefined,
+    requestedService: (row.requested_service as string | null) ?? undefined,
+    previousQuote: (row.previous_quote as string | null) ?? undefined,
+    appointmentStatus: (row.appointment_status as Lead["appointmentStatus"]) ?? undefined,
+    notes: (row.notes as string | null) ?? undefined,
+    status: row.status as Lead["status"],
+    preferredChannel: (row.preferred_channel as Lead["preferredChannel"]) ?? undefined,
+    hadMissedCall: (row.had_missed_call as boolean | null) ?? undefined,
+    respondedAfterContact: (row.responded_after_contact as boolean | null) ?? undefined,
+    followUpCount: (row.follow_up_count as number | null) ?? undefined,
+    nextFollowUpAt: row.next_follow_up_at ? new Date(row.next_follow_up_at as string).toISOString() : undefined,
+    firstOutreachSentAt: row.first_outreach_sent_at
+      ? new Date(row.first_outreach_sent_at as string).toISOString()
+      : undefined,
+  };
+}
+
+const LEAD_COLUMNS = `id, tenant_id, name, phone, email, source, created_at, last_contacted_at,
+  previous_conversation_summary, requested_service, previous_quote, appointment_status, notes,
+  status, preferred_channel, had_missed_call, responded_after_contact, follow_up_count,
+  next_follow_up_at, first_outreach_sent_at`;
+
+export class PostgresLeadStore implements LeadStore {
+  constructor(private pool: Pool) {}
+
+  async getAllLeads(tenantId: string): Promise<Lead[]> {
+    const { rows } = await this.pool.query(
+      `SELECT ${LEAD_COLUMNS} FROM leads WHERE tenant_id = $1 ORDER BY created_at DESC`,
+      [tenantId]
+    );
+    return rows.map(leadFromRow);
+  }
+
+  async getLeadById(tenantId: string, id: string): Promise<Lead | undefined> {
+    const { rows } = await this.pool.query(
+      `SELECT ${LEAD_COLUMNS} FROM leads WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, id]
+    );
+    return rows[0] ? leadFromRow(rows[0]) : undefined;
+  }
+
+  async findLeadByContact(
+    tenantId: string,
+    contact: { phone?: string; email?: string }
+  ): Promise<Lead | undefined> {
+    if (!contact.phone && !contact.email) return undefined;
+    const { rows } = await this.pool.query(
+      `SELECT ${LEAD_COLUMNS} FROM leads
+       WHERE tenant_id = $1 AND ((phone IS NOT NULL AND phone = $2) OR (email IS NOT NULL AND email = $3))
+       LIMIT 1`,
+      [tenantId, contact.phone ?? null, contact.email ?? null]
+    );
+    return rows[0] ? leadFromRow(rows[0]) : undefined;
+  }
+
+  async createLead(lead: Lead): Promise<Lead> {
+    await this.pool.query(
+      `INSERT INTO leads (
+        id, tenant_id, name, phone, email, source, created_at, last_contacted_at,
+        previous_conversation_summary, requested_service, previous_quote, appointment_status, notes,
+        status, preferred_channel, had_missed_call, responded_after_contact, follow_up_count,
+        next_follow_up_at, first_outreach_sent_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+      [
+        lead.id,
+        lead.tenantId,
+        lead.name ?? null,
+        lead.phone ?? null,
+        lead.email ?? null,
+        lead.source,
+        lead.createdAt,
+        lead.lastContactedAt ?? null,
+        lead.previousConversationSummary ?? null,
+        lead.requestedService ?? null,
+        lead.previousQuote ?? null,
+        lead.appointmentStatus ?? null,
+        lead.notes ?? null,
+        lead.status,
+        lead.preferredChannel ?? null,
+        lead.hadMissedCall ?? null,
+        lead.respondedAfterContact ?? null,
+        lead.followUpCount ?? null,
+        lead.nextFollowUpAt ?? null,
+        lead.firstOutreachSentAt ?? null,
+      ]
+    );
+    return lead;
+  }
+
+  async updateLead(tenantId: string, id: string, patch: Partial<Lead>): Promise<Lead | undefined> {
+    const existing = await this.getLeadById(tenantId, id);
+    if (!existing) return undefined;
+    const merged: Lead = { ...existing, ...patch };
+
+    await this.pool.query(
+      `UPDATE leads SET
+        name = $3, phone = $4, email = $5, source = $6, created_at = $7, last_contacted_at = $8,
+        previous_conversation_summary = $9, requested_service = $10, previous_quote = $11,
+        appointment_status = $12, notes = $13, status = $14, preferred_channel = $15,
+        had_missed_call = $16, responded_after_contact = $17, follow_up_count = $18,
+        next_follow_up_at = $19, first_outreach_sent_at = $20
+      WHERE tenant_id = $1 AND id = $2`,
+      [
+        tenantId,
+        id,
+        merged.name ?? null,
+        merged.phone ?? null,
+        merged.email ?? null,
+        merged.source,
+        merged.createdAt,
+        merged.lastContactedAt ?? null,
+        merged.previousConversationSummary ?? null,
+        merged.requestedService ?? null,
+        merged.previousQuote ?? null,
+        merged.appointmentStatus ?? null,
+        merged.notes ?? null,
+        merged.status,
+        merged.preferredChannel ?? null,
+        merged.hadMissedCall ?? null,
+        merged.respondedAfterContact ?? null,
+        merged.followUpCount ?? null,
+        merged.nextFollowUpAt ?? null,
+        merged.firstOutreachSentAt ?? null,
+      ]
+    );
+    return merged;
+  }
+}
+
+function tenantFromRow(row: Record<string, unknown>): Tenant {
+  const quietStart = row.quiet_hours_start as number | null;
+  const quietEnd = row.quiet_hours_end as number | null;
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    apiKey: row.api_key as string,
+    timezone: row.timezone as string,
+    quietHours: quietStart !== null && quietEnd !== null ? { startHour: quietStart, endHour: quietEnd } : undefined,
+    devMode: Boolean(row.dev_mode),
+    channels: (row.channels as ChannelCredentials) ?? {},
+    createdAt: new Date(row.created_at as string).toISOString(),
+  };
+}
+
+const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at`;
+
+export class PostgresTenantStore implements TenantStore {
+  constructor(private pool: Pool) {}
+
+  async getTenant(id: string): Promise<Tenant | undefined> {
+    const { rows } = await this.pool.query(`SELECT ${TENANT_COLUMNS} FROM tenants WHERE id = $1`, [id]);
+    return rows[0] ? tenantFromRow(rows[0]) : undefined;
+  }
+
+  async getTenantByApiKey(apiKey: string): Promise<Tenant | undefined> {
+    const { rows } = await this.pool.query(`SELECT ${TENANT_COLUMNS} FROM tenants WHERE api_key = $1`, [apiKey]);
+    return rows[0] ? tenantFromRow(rows[0]) : undefined;
+  }
+
+  async listTenants(): Promise<Tenant[]> {
+    const { rows } = await this.pool.query(`SELECT ${TENANT_COLUMNS} FROM tenants ORDER BY created_at ASC`);
+    return rows.map(tenantFromRow);
+  }
+
+  async createTenant(tenant: Tenant): Promise<Tenant> {
+    await this.pool.query(
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        tenant.id,
+        tenant.name,
+        tenant.apiKey,
+        tenant.timezone,
+        tenant.quietHours?.startHour ?? null,
+        tenant.quietHours?.endHour ?? null,
+        tenant.devMode ?? false,
+        JSON.stringify(tenant.channels),
+        tenant.createdAt,
+      ]
+    );
+    return tenant;
+  }
+
+  async updateTenant(id: string, patch: Partial<Tenant>): Promise<Tenant | undefined> {
+    const existing = await this.getTenant(id);
+    if (!existing) return undefined;
+    const merged: Tenant = { ...existing, ...patch };
+
+    await this.pool.query(
+      `UPDATE tenants SET name = $2, api_key = $3, timezone = $4, quiet_hours_start = $5,
+        quiet_hours_end = $6, dev_mode = $7, channels = $8 WHERE id = $1`,
+      [
+        id,
+        merged.name,
+        merged.apiKey,
+        merged.timezone,
+        merged.quietHours?.startHour ?? null,
+        merged.quietHours?.endHour ?? null,
+        merged.devMode ?? false,
+        JSON.stringify(merged.channels),
+      ]
+    );
+    return merged;
+  }
+}
+
+function messageFromRow(row: Record<string, unknown>): Message {
+  return {
+    id: row.id as string,
+    tenantId: row.tenant_id as string,
+    leadId: row.lead_id as string,
+    channel: row.channel as Message["channel"],
+    direction: row.direction as Message["direction"],
+    body: row.body as string,
+    at: new Date(row.at as string).toISOString(),
+    classification: (row.classification as Message["classification"]) ?? undefined,
+  };
+}
+
+export class PostgresMessageStore implements MessageStore {
+  constructor(private pool: Pool) {}
+
+  async logMessage(message: Message): Promise<Message> {
+    await this.pool.query(
+      `INSERT INTO messages (id, tenant_id, lead_id, channel, direction, body, at, classification)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        message.id,
+        message.tenantId,
+        message.leadId,
+        message.channel,
+        message.direction,
+        message.body,
+        message.at,
+        message.classification ?? null,
+      ]
+    );
+    return message;
+  }
+
+  async getMessagesForLead(tenantId: string, leadId: string): Promise<Message[]> {
+    const { rows } = await this.pool.query(
+      `SELECT id, tenant_id, lead_id, channel, direction, body, at, classification
+       FROM messages WHERE tenant_id = $1 AND lead_id = $2 ORDER BY at ASC`,
+      [tenantId, leadId]
+    );
+    return rows.map(messageFromRow);
+  }
+}

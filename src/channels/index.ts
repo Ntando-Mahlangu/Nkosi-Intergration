@@ -1,4 +1,4 @@
-import { CHANNEL_PRIORITY, type Channel, type Lead } from "../types.js";
+import { CHANNEL_PRIORITY, type Channel, type Lead, type Tenant } from "../types.js";
 import type { ChannelAdapter } from "./types.js";
 import { smsAdapter } from "./sms.js";
 import { whatsappAdapter } from "./whatsapp.js";
@@ -20,11 +20,11 @@ export function getAdapter(channel: Channel): ChannelAdapter {
  * Picks the channel to use for a lead per SYSTEM_PROMPT.md STEP 4:
  * the business's configured channel if set and usable, otherwise the
  * first channel in the preferred order (SMS -> WhatsApp -> Email) for
- * which we actually have contact info.
+ * which we actually have contact info and a usable provider.
  */
-export function selectChannel(lead: Lead): Channel | undefined {
-  if (lead.preferredChannel && ADAPTERS[lead.preferredChannel].canSend(lead)) {
+export function selectChannel(tenant: Tenant, lead: Lead): Channel | undefined {
+  if (lead.preferredChannel && ADAPTERS[lead.preferredChannel].canSend(tenant, lead)) {
     return lead.preferredChannel;
   }
-  return CHANNEL_PRIORITY.find((channel) => ADAPTERS[channel].canSend(lead));
+  return CHANNEL_PRIORITY.find((channel) => ADAPTERS[channel].canSend(tenant, lead));
 }

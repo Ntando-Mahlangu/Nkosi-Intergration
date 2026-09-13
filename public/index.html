@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LeadRecovery Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #262b36;
+    --text: #e6e8ec;
+    --muted: #8a92a3;
+    --accent: #5b8cff;
+    --high: #e5484d;
+    --medium: #f5a623;
+    --low: #4a5568;
+    --ok: #2fbf71;
+    --fail: #e5484d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px; }
+  .auth-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    max-width: 480px;
+    margin: 60px auto;
+  }
+  .auth-panel h2 { margin-top: 0; font-size: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input {
+    width: 100%;
+    padding: 9px 10px;
+    background: #0c0e12;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 14px;
+  }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 9px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+  .stat { font-size: 13px; color: var(--muted); }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .name { font-weight: 600; }
+  .badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .badge.HIGH { background: rgba(229,72,77,0.15); color: var(--high); }
+  .badge.MEDIUM { background: rgba(245,166,35,0.15); color: var(--medium); }
+  .badge.LOW { background: rgba(74,85,104,0.25); color: #b6bfd0; }
+  .reasons { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+  .message {
+    margin-top: 10px;
+    background: #0c0e12;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .message .chan { color: var(--accent); font-weight: 600; text-transform: uppercase; font-size: 11px; margin-bottom: 4px; }
+  .skipped-list { color: var(--muted); font-size: 13px; }
+  .skipped-list li { margin-bottom: 4px; }
+  .empty { color: var(--muted); padding: 32px; text-align: center; }
+  .error { color: var(--fail); font-size: 13px; margin-top: 8px; }
+  section h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 24px 0 10px; }
+</style>
+</head>
+<body>
+
+<div id="auth" class="auth-panel">
+  <h2>LeadRecovery Dashboard</h2>
+  <label for="base-url">API base URL</label>
+  <input id="base-url" placeholder="http://localhost:3000" />
+  <label for="api-key">Tenant API key</label>
+  <input id="api-key" type="password" placeholder="lr_..." />
+  <div style="margin-top:16px;">
+    <button id="connect-btn">Connect</button>
+  </div>
+  <div id="auth-error" class="error"></div>
+</div>
+
+<div id="app" style="display:none;">
+  <header>
+    <div>
+      <h1 id="tenant-name">LeadRecovery</h1>
+      <div class="sub" id="tenant-sub"></div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="secondary" id="refresh-btn">Refresh</button>
+      <button id="run-btn">Run recovery workflow</button>
+      <button class="secondary" id="logout-btn">Disconnect</button>
+    </div>
+  </header>
+  <main>
+    <div class="toolbar">
+      <span class="stat" id="summary"></span>
+    </div>
+
+    <section>
+      <h3>Recovery plan (dry run — nothing sent yet)</h3>
+      <div id="plans"></div>
+    </section>
+
+    <section>
+      <h3>Skipped</h3>
+      <ul class="skipped-list" id="skipped"></ul>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  const authPanel = document.getElementById("auth");
+  const app = document.getElementById("app");
+  const authError = document.getElementById("auth-error");
+
+  function getSession() {
+    try {
+      return JSON.parse(localStorage.getItem("leadrecovery.session") || "null");
+    } catch {
+      return null;
+    }
+  }
+
+  function setSession(session) {
+    try {
+      localStorage.setItem("leadrecovery.session", JSON.stringify(session));
+    } catch {
+      // localStorage unavailable — session just won't persist across reloads
+    }
+  }
+
+  async function api(session, path, options) {
+    const res = await fetch(session.baseUrl + path, {
+      ...options,
+      headers: {
+        ...(options && options.headers),
+        Authorization: "Bearer " + session.apiKey,
+      },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || (res.status + " " + res.statusText));
+    }
+    return res.status === 204 ? undefined : res.json();
+  }
+
+  function badge(priority) {
+    return '<span class="badge ' + priority + '">' + priority + "</span>";
+  }
+
+  function renderPlans(plans) {
+    if (plans.length === 0) {
+      document.getElementById("plans").innerHTML = '<div class="empty">Nothing queued right now.</div>';
+      return;
+    }
+    document.getElementById("plans").innerHTML = plans
+      .map(
+        (p) => `
+      <div class="card">
+        <div class="card-head">
+          <span class="name">${escapeHtml(p.lead.name || p.lead.id)}</span>
+          ${badge(p.priority)}
+        </div>
+        <div class="reasons">${p.priorityReasons.map(escapeHtml).join(" &middot; ")}</div>
+        <div class="message">
+          <div class="chan">${escapeHtml(p.message.channel)}</div>
+          ${escapeHtml(p.message.body)}
+        </div>
+      </div>`
+      )
+      .join("");
+  }
+
+  function renderSkipped(skipped) {
+    const el = document.getElementById("skipped");
+    if (skipped.length === 0) {
+      el.innerHTML = '<div class="empty">Nothing skipped.</div>';
+      return;
+    }
+    el.innerHTML = skipped
+      .map((s) => `<li>${escapeHtml(s.lead.name || s.lead.id)} — ${escapeHtml(s.reason)}</li>`)
+      .join("");
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  async function loadDashboard(session) {
+    const tenant = await api(session, "/tenants/me");
+    document.getElementById("tenant-name").textContent = tenant.name;
+    document.getElementById("tenant-sub").textContent =
+      tenant.timezone + (tenant.devMode ? " · dev mode (console-only sends)" : "");
+
+    const plan = await api(session, "/leads/plan");
+    renderPlans(plan.plans);
+    renderSkipped(plan.skipped);
+    document.getElementById("summary").textContent =
+      plan.plans.length + " queued, " + plan.skipped.length + " skipped";
+  }
+
+  document.getElementById("connect-btn").addEventListener("click", async () => {
+    authError.textContent = "";
+    const baseUrl = document.getElementById("base-url").value.trim().replace(/\/$/, "") || window.location.origin;
+    const apiKey = document.getElementById("api-key").value.trim();
+    if (!apiKey) {
+      authError.textContent = "API key is required.";
+      return;
+    }
+    const session = { baseUrl, apiKey };
+    try {
+      await loadDashboard(session);
+      setSession(session);
+      authPanel.style.display = "none";
+      app.style.display = "block";
+    } catch (err) {
+      authError.textContent = "Could not connect: " + err.message;
+    }
+  });
+
+  document.getElementById("logout-btn").addEventListener("click", () => {
+    setSession(null);
+    app.style.display = "none";
+    authPanel.style.display = "block";
+  });
+
+  document.getElementById("refresh-btn").addEventListener("click", () => {
+    const session = getSession();
+    if (session) loadDashboard(session).catch((err) => alert(err.message));
+  });
+
+  document.getElementById("run-btn").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session) return;
+    const btn = document.getElementById("run-btn");
+    btn.disabled = true;
+    btn.textContent = "Running…";
+    try {
+      const result = await api(session, "/workflow/run", { method: "POST" });
+      await loadDashboard(session);
+      alert(
+        "Sent " + result.sent.filter((s) => s.result.ok).length + ", " +
+        "skipped " + result.skipped.length + ", " +
+        "deferred " + result.deferred.length + " (quiet hours)."
+      );
+    } catch (err) {
+      alert("Run failed: " + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Run recovery workflow";
+    }
+  });
+
+  const existing = getSession();
+  if (existing) {
+    loadDashboard(existing)
+      .then(() => {
+        authPanel.style.display = "none";
+        app.style.display = "block";
+      })
+      .catch(() => {
+        setSession(null);
+      });
+  }
+})();
+</script>
+</body>
+</html>

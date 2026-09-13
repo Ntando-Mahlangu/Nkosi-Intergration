@@ -1,43 +1,56 @@
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import express, { type Request, type Response } from "express";
-import type { Lead } from "./types.js";
-import { InMemoryLeadStore } from "./store/leadStore.js";
-import { buildRecoveryPlans, runRecoveryWorkflow } from "./workflow.js";
+import { createStores } from "./store/index.js";
+import { requireTenantAuth } from "./middleware/auth.js";
+import { createTenantRoutes } from "./routes/tenants.js";
+import { createWebhookRoutes } from "./webhooks/index.js";
+import { buildFollowUpPlans, buildRecoveryPlans, runRecoveryWorkflow } from "./workflow.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-function loadSampleLeads(): Lead[] {
-  const dataPath = path.join(__dirname, "..", "data", "sample-leads.json");
-  return JSON.parse(readFileSync(dataPath, "utf-8"));
-}
-
-export function createApp(initialLeads: Lead[] = loadSampleLeads()) {
-  const store = new InMemoryLeadStore(initialLeads);
+export function createApp() {
+  const stores = createStores();
   const app = express();
-  app.use(express.json());
 
   app.get("/health", (_req: Request, res: Response) => {
     res.json({ ok: true });
   });
 
-  app.get("/leads", async (_req: Request, res: Response) => {
-    res.json(await store.getAllLeads());
+  // Webhooks parse their own bodies (form-encoded/multipart) — mount before the global json() parser.
+  app.use(createWebhookRoutes(stores));
+
+  app.use(express.json());
+  app.use(createTenantRoutes(stores.tenantStore));
+
+  const auth = requireTenantAuth(stores.tenantStore);
+
+  app.get("/leads", auth, async (req: Request, res: Response) => {
+    res.json(await stores.leadStore.getAllLeads(req.tenant!.id));
   });
 
-  // Dry run: score + compose messages without sending or mutating lead status.
-  app.get("/leads/plan", async (_req: Request, res: Response) => {
-    const leads = await store.getAllLeads();
-    res.json(buildRecoveryPlans(leads, { businessName: "Nkosi Integrations" }));
+  // Dry run: initial-outreach + follow-up plans, nothing sent or mutated.
+  app.get("/leads/plan", auth, async (req: Request, res: Response) => {
+    const leads = await stores.leadStore.getAllLeads(req.tenant!.id);
+    const initial = buildRecoveryPlans(req.tenant!, leads);
+    const followUps = buildFollowUpPlans(req.tenant!, leads);
+    res.json({
+      plans: [...initial.plans, ...followUps.plans],
+      skipped: [...initial.skipped, ...followUps.skipped],
+    });
   });
 
-  // Executes the full workflow: sends messages via channel adapters and
-  // updates lead status/lastContactedAt in the store.
-  app.post("/workflow/run", async (_req: Request, res: Response) => {
-    const result = await runRecoveryWorkflow(store, { businessName: "Nkosi Integrations" });
+  app.get("/leads/:id/messages", auth, async (req: Request, res: Response) => {
+    res.json(await stores.messageStore.getMessagesForLead(req.tenant!.id, req.params.id));
+  });
+
+  // Executes the full workflow: sends via channel adapters, updates lead status, logs messages.
+  app.post("/workflow/run", auth, async (req: Request, res: Response) => {
+    const result = await runRecoveryWorkflow(req.tenant!, stores.leadStore, stores.messageStore);
     res.json(result);
   });
+
+  app.use(express.static(path.join(__dirname, "..", "public")));
 
   return app;
 }

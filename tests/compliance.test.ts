@@ -5,6 +5,7 @@ import type { Lead } from "../src/types.js";
 function makeLead(overrides: Partial<Lead>): Lead {
   return {
     id: "test-lead",
+    tenantId: "test-tenant",
     source: "crm",
     createdAt: new Date().toISOString(),
     status: "new",

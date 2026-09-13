@@ -29,12 +29,14 @@ export type Channel = "sms" | "whatsapp" | "email";
 /**
  * Channels in the order LeadRecovery prefers to use them (STEP 4).
  * A concrete channel is only usable if the lead has the matching contact
- * info (phone for sms/whatsapp, email for email).
+ * info (phone for sms/whatsapp, email for email) AND the tenant has that
+ * channel configured (or is in devMode, for local/demo use).
  */
 export const CHANNEL_PRIORITY: Channel[] = ["sms", "whatsapp", "email"];
 
 export interface Lead {
   id: string;
+  tenantId: string;
   name?: string;
   phone?: string;
   email?: string;
@@ -51,6 +53,18 @@ export interface Lead {
   preferredChannel?: Channel;
   hadMissedCall?: boolean;
   respondedAfterContact?: boolean;
+  /** Number of follow-up nudges already sent since the initial message. */
+  followUpCount?: number;
+  /** Earliest time the next follow-up may be sent (ISO date). */
+  nextFollowUpAt?: string;
+  /**
+   * When LeadRecovery itself first messaged this lead (ISO date), distinct
+   * from `lastContactedAt`/`status`, which may reflect the business's own
+   * prior (pre-LeadRecovery) contact history imported from a CRM. Unset
+   * means this lead is still eligible for an initial-outreach plan even if
+   * its imported status/lastContactedAt already show a contact attempt.
+   */
+  firstOutreachSentAt?: string;
 }
 
 export interface ScoredLead {
@@ -87,4 +101,83 @@ export interface SkippedLead {
 export interface WorkflowResult {
   plans: RecoveryPlan[];
   skipped: SkippedLead[];
+}
+
+// --- Multi-tenancy ---
+
+export interface TwilioCredentials {
+  accountSid: string;
+  authToken: string;
+  /** E.164 sender number. For WhatsApp, the bare number without the "whatsapp:" prefix. */
+  fromNumber: string;
+}
+
+export interface SendGridCredentials {
+  apiKey: string;
+  fromEmail: string;
+  fromName?: string;
+}
+
+export interface ChannelCredentials {
+  sms?: TwilioCredentials;
+  whatsapp?: TwilioCredentials;
+  email?: SendGridCredentials;
+}
+
+export interface QuietHours {
+  /** Local hour (0-23) quiet hours begin. */
+  startHour: number;
+  /** Local hour (0-23) quiet hours end. */
+  endHour: number;
+}
+
+export interface Tenant {
+  id: string;
+  name: string;
+  /** Bearer token this tenant uses to call the API. */
+  apiKey: string;
+  /** IANA timezone, e.g. "Africa/Johannesburg". Used to evaluate quiet hours. */
+  timezone: string;
+  /** Local send window restriction; sends outside this are deferred, not dropped. */
+  quietHours?: QuietHours;
+  /**
+   * When true, channels without real provider credentials fall back to
+   * logging to the console instead of refusing to send. Intended for local
+   * development/demos only — never set this for a real client.
+   */
+  devMode?: boolean;
+  channels: ChannelCredentials;
+  createdAt: string;
+}
+
+/** Tenant fields safe to expose over the API (no secrets). */
+export type PublicTenant = Omit<Tenant, "channels" | "apiKey"> & {
+  channels: { sms: boolean; whatsapp: boolean; email: boolean };
+};
+
+export function toPublicTenant(tenant: Tenant): PublicTenant {
+  const { channels, apiKey: _apiKey, ...rest } = tenant;
+  return {
+    ...rest,
+    channels: {
+      sms: Boolean(channels.sms),
+      whatsapp: Boolean(channels.whatsapp),
+      email: Boolean(channels.email),
+    },
+  };
+}
+
+export type MessageDirection = "outbound" | "inbound";
+
+export type ReplyClassification = "stop" | "interested" | "not_interested" | "question" | "unknown";
+
+export interface Message {
+  id: string;
+  tenantId: string;
+  leadId: string;
+  channel: Channel;
+  direction: MessageDirection;
+  body: string;
+  at: string; // ISO date
+  classification?: ReplyClassification;
 }

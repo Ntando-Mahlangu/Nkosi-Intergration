@@ -1,4 +1,4 @@
-import type { Channel, ComposedMessage, Lead } from "../types.js";
+import type { Channel, ComposedMessage, Lead, Tenant } from "../types.js";
 
 export interface SendResult {
   ok: boolean;
@@ -7,13 +7,14 @@ export interface SendResult {
 }
 
 /**
- * A channel adapter is the swap-in point for a real provider (Twilio for
- * SMS/WhatsApp, an email API for Email, etc.). The mock adapters in this
- * directory just log to the console so the workflow can be exercised
- * end-to-end without any credentials configured.
+ * A channel adapter sends a composed message for a given tenant/lead. Real
+ * sends use the tenant's own provider credentials (src/types.ts
+ * ChannelCredentials); when a tenant has no credentials for a channel but is
+ * in devMode, the adapter logs to the console instead so the pipeline can
+ * be exercised locally without any provider account.
  */
 export interface ChannelAdapter {
   channel: Channel;
-  canSend(lead: Lead): boolean;
-  send(lead: Lead, message: ComposedMessage): Promise<SendResult>;
+  canSend(tenant: Tenant, lead: Lead): boolean;
+  send(tenant: Tenant, lead: Lead, message: ComposedMessage): Promise<SendResult>;
 }

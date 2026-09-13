@@ -1,20 +1,49 @@
-import type { Lead } from "../types.js";
+import twilio from "twilio";
+import type { Lead, Tenant } from "../types.js";
 import type { ChannelAdapter, SendResult } from "./types.js";
 
+function toWhatsAppAddress(e164: string): string {
+  return e164.startsWith("whatsapp:") ? e164 : `whatsapp:${e164}`;
+}
+
 /**
- * Mock WhatsApp adapter. Swap the `send` body for a real provider call
- * (e.g. the WhatsApp Business Cloud API) to go live.
+ * WhatsApp adapter via Twilio's WhatsApp Business API integration. Requires
+ * the tenant's WhatsApp sender to already be approved/configured in Twilio
+ * (that approval process is external to this app — see COMPLIANCE.md).
+ * Falls back to console logging in devMode, same as the SMS adapter.
  */
 export const whatsappAdapter: ChannelAdapter = {
   channel: "whatsapp",
-  canSend(lead: Lead): boolean {
-    return Boolean(lead.phone);
+
+  canSend(tenant: Tenant, lead: Lead): boolean {
+    return Boolean(lead.phone) && (Boolean(tenant.channels.whatsapp) || Boolean(tenant.devMode));
   },
-  async send(lead: Lead, message): Promise<SendResult> {
+
+  async send(tenant: Tenant, lead: Lead, message): Promise<SendResult> {
     if (!lead.phone) {
       return { ok: false, channel: "whatsapp", detail: "no phone number on file" };
     }
-    console.log(`[WhatsApp -> ${lead.phone}] ${message.body}`);
-    return { ok: true, channel: "whatsapp" };
+
+    const creds = tenant.channels.whatsapp;
+    if (creds) {
+      const client = twilio(creds.accountSid, creds.authToken);
+      const result = await client.messages.create({
+        to: toWhatsAppAddress(lead.phone),
+        from: toWhatsAppAddress(creds.fromNumber),
+        body: message.body,
+      });
+      return { ok: true, channel: "whatsapp", detail: result.sid };
+    }
+
+    if (tenant.devMode) {
+      console.log(`[WhatsApp(dev) -> ${lead.phone}] ${message.body}`);
+      return {
+        ok: true,
+        channel: "whatsapp",
+        detail: "dev-mode console log (no Twilio WhatsApp credentials configured)",
+      };
+    }
+
+    return { ok: false, channel: "whatsapp", detail: "no WhatsApp provider configured for this tenant" };
   },
 };

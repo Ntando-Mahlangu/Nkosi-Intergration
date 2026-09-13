@@ -7,6 +7,7 @@ const NOW = new Date("2026-09-12T00:00:00.000Z");
 function makeLead(overrides: Partial<Lead>): Lead {
   return {
     id: "test-lead",
+    tenantId: "test-tenant",
     source: "crm",
     createdAt: NOW.toISOString(),
     status: "new",
