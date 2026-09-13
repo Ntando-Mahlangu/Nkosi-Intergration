@@ -66,7 +66,7 @@
     cursor: pointer;
     font-weight: 600;
   }
-  button.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+  button.secondary, a.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
   .stat { font-size: 13px; color: var(--muted); }
@@ -129,6 +129,7 @@
       <div class="sub" id="tenant-sub"></div>
     </div>
     <div style="display:flex; gap:8px;">
+      <a class="secondary" href="command-center.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:6px;">Command Center</a>
       <button class="secondary" id="refresh-btn">Refresh</button>
       <button id="run-btn">Run recovery workflow</button>
       <button class="secondary" id="logout-btn">Disconnect</button>
