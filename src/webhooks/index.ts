@@ -13,6 +13,7 @@ import { safeCompare } from "../security.js";
 import { substituteTemplate } from "../templateSubstitute.js";
 import { notifyHumanAttention } from "../notify.js";
 import { verifySendGridEventSignature } from "../sendgridVerify.js";
+import { logger } from "../logger.js";
 import type { ComposedMessage, Lead, LeadSource, Message, Tenant } from "../types.js";
 
 const upload = multer();
@@ -72,7 +73,7 @@ async function sendAndLog(
   const messageId = generateId("msg");
   const result = await getAdapter(message.channel).send(tenant, lead, message, messageId);
   if (!result.ok) {
-    console.error(`sendAndLog: failed to send a "${kind}" reply to lead ${lead.id} via ${message.channel}: ${result.detail}`);
+    logger.error("send_failed", { kind, leadId: lead.id, channel: message.channel, detail: result.detail });
     return;
   }
   await stores.messageStore.logMessage({
@@ -128,7 +129,7 @@ async function recordInboundAndClassify(
   await stores.leadStore.updateLead(tenant.id, lead.id, { status: "responded" });
 
   if (classification === "interested") {
-    void notifyHumanAttention(tenant, lead, channel, body, "interested");
+    void notifyHumanAttention(stores.notificationStore, tenant, lead, channel, body, "interested");
     return { classification };
   }
 
@@ -142,7 +143,7 @@ async function recordInboundAndClassify(
   if (auto.action === "reply" && auto.replyBody) {
     await sendAndLog(stores, tenant, lead, { channel, body: auto.replyBody }, "auto_reply");
   } else {
-    void notifyHumanAttention(tenant, lead, channel, body, "needs_human_reply");
+    void notifyHumanAttention(stores.notificationStore, tenant, lead, channel, body, "needs_human_reply");
   }
 
   return { classification };

@@ -3,10 +3,22 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { Lead } from "../types.js";
 import { DEMO_TENANT } from "../demoTenant.js";
-import { InMemoryLeadStore, InMemoryMessageStore, InMemoryTenantStore } from "./memory.js";
-import { PostgresLeadStore, PostgresMessageStore, PostgresTenantStore } from "./postgres.js";
+import {
+  InMemoryAuditLogStore,
+  InMemoryLeadStore,
+  InMemoryMessageStore,
+  InMemoryNotificationStore,
+  InMemoryTenantStore,
+} from "./memory.js";
+import {
+  PostgresAuditLogStore,
+  PostgresLeadStore,
+  PostgresMessageStore,
+  PostgresNotificationStore,
+  PostgresTenantStore,
+} from "./postgres.js";
 import { getPool } from "../db/pool.js";
-import type { LeadStore, MessageStore, TenantStore } from "./types.js";
+import type { AuditLogStore, LeadStore, MessageStore, NotificationStore, TenantStore } from "./types.js";
 
 export * from "./types.js";
 export * from "./memory.js";
@@ -16,6 +28,8 @@ export interface Stores {
   leadStore: LeadStore;
   tenantStore: TenantStore;
   messageStore: MessageStore;
+  notificationStore: NotificationStore;
+  auditLogStore: AuditLogStore;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -47,6 +61,8 @@ export function createStores(): Stores {
       leadStore: new PostgresLeadStore(pool),
       tenantStore: new PostgresTenantStore(pool, encryptionKey),
       messageStore: new PostgresMessageStore(pool),
+      notificationStore: new PostgresNotificationStore(pool),
+      auditLogStore: new PostgresAuditLogStore(pool),
     };
   }
 
@@ -54,5 +70,7 @@ export function createStores(): Stores {
     leadStore: new InMemoryLeadStore(loadSampleLeads()),
     tenantStore: new InMemoryTenantStore([DEMO_TENANT]),
     messageStore: new InMemoryMessageStore(),
+    notificationStore: new InMemoryNotificationStore(),
+    auditLogStore: new InMemoryAuditLogStore(),
   };
 }

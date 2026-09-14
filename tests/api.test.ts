@@ -2,7 +2,13 @@ import { createSign, generateKeyPairSync } from "node:crypto";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import express from "express";
-import { InMemoryLeadStore, InMemoryMessageStore, InMemoryTenantStore } from "../src/store/memory.js";
+import {
+  InMemoryAuditLogStore,
+  InMemoryLeadStore,
+  InMemoryMessageStore,
+  InMemoryNotificationStore,
+  InMemoryTenantStore,
+} from "../src/store/memory.js";
 import { requireAdminAuth, requireTenantAuth } from "../src/middleware/auth.js";
 import { createTenantRoutes } from "../src/routes/tenants.js";
 import { createWebhookRoutes } from "../src/webhooks/index.js";
@@ -47,6 +53,8 @@ function buildStores(): Stores {
     leadStore: new InMemoryLeadStore([LEAD]),
     tenantStore: new InMemoryTenantStore([TENANT]),
     messageStore: new InMemoryMessageStore(),
+    notificationStore: new InMemoryNotificationStore(),
+    auditLogStore: new InMemoryAuditLogStore(),
   };
 }
 
@@ -107,7 +115,7 @@ describe("tenant management routes", () => {
     const stores = buildStores();
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
 
     const created = await request(app)
       .post("/admin/tenants")
@@ -137,7 +145,7 @@ describe("tenant lifecycle: suspend and delete", () => {
   function buildApp(stores: Stores) {
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
     const auth = requireTenantAuth(stores.tenantStore);
     app.get("/whoami", auth, (req, res) => res.json({ tenantId: req.tenant!.id }));
     return app;
@@ -205,6 +213,185 @@ describe("tenant lifecycle: suspend and delete", () => {
 
     const second = await request(app).delete(`/admin/tenants/${TENANT.id}`).set("Authorization", "Bearer admin-secret");
     expect(second.status).toBe(404);
+  });
+});
+
+describe("admin audit log", () => {
+  beforeEach(() => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+  });
+  afterEach(() => {
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("records tenant create/admin_update/key_rotate/delete and lists them newest first", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "New Biz", timezone: "Africa/Johannesburg" });
+    const tenantId = created.body.id;
+
+    await request(app)
+      .patch(`/admin/tenants/${tenantId}`)
+      .set("Authorization", "Bearer admin-secret")
+      .send({ status: "suspended" });
+
+    await request(app).post(`/admin/tenants/${tenantId}/rotate-key`).set("Authorization", "Bearer admin-secret");
+
+    await request(app).delete(`/admin/tenants/${tenantId}`).set("Authorization", "Bearer admin-secret");
+
+    const log = await request(app).get("/admin/audit-log").set("Authorization", "Bearer admin-secret");
+    expect(log.status).toBe(200);
+    expect(log.headers["x-total-count"]).toBe("4");
+    expect(log.body.map((e: { action: string }) => e.action)).toEqual([
+      "tenant.delete",
+      "tenant.key_rotate",
+      "tenant.admin_update",
+      "tenant.create",
+    ]);
+    expect(log.body.every((e: { tenantId: string }) => e.tenantId === tenantId)).toBe(true);
+    // admin_update logs which fields changed, never the values (no credentials duplicated into a second store)
+    const updateEntry = log.body.find((e: { action: string }) => e.action === "tenant.admin_update");
+    expect(updateEntry.details).toEqual({ fieldsChanged: ["status"] });
+  });
+
+  it("requires admin auth", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app).get("/admin/audit-log");
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("admin failed-notifications visibility", () => {
+  beforeEach(() => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+  });
+  afterEach(() => {
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("lists a persisted failed notification for an admin to see", async () => {
+    const stores = buildStores();
+    await stores.notificationStore.recordFailure({
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      reason: "interested",
+      webhookUrl: "https://hooks.example.com/notify",
+      payload: { text: "hi" },
+      error: "network down",
+    });
+
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app).get("/admin/notifications/failed").set("Authorization", "Bearer admin-secret");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({ tenantId: TENANT.id, status: "pending", reason: "interested" });
+  });
+
+  it("requires admin auth", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app).get("/admin/notifications/failed");
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("tenant lifecycle: API key rotation", () => {
+  beforeEach(() => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+  });
+  afterEach(() => {
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  function buildApp(stores: Stores) {
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+    return app;
+  }
+
+  it("issues a new API key and invalidates the old one immediately", async () => {
+    const stores = buildStores();
+    const app = buildApp(stores);
+
+    const before = await request(app).get("/tenants/me").set("Authorization", `Bearer ${TENANT.apiKey}`);
+    expect(before.status).toBe(200);
+
+    const rotated = await request(app)
+      .post(`/admin/tenants/${TENANT.id}/rotate-key`)
+      .set("Authorization", "Bearer admin-secret");
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.apiKey).toBeTruthy();
+    expect(rotated.body.apiKey).not.toBe(TENANT.apiKey);
+
+    const withOldKey = await request(app).get("/tenants/me").set("Authorization", `Bearer ${TENANT.apiKey}`);
+    expect(withOldKey.status).toBe(401);
+
+    const withNewKey = await request(app).get("/tenants/me").set("Authorization", `Bearer ${rotated.body.apiKey}`);
+    expect(withNewKey.status).toBe(200);
+    expect(withNewKey.body.id).toBe(TENANT.id);
+  });
+
+  it("404s rotating the key for an unknown tenant", async () => {
+    const stores = buildStores();
+    const app = buildApp(stores);
+
+    const res = await request(app)
+      .post("/admin/tenants/no-such-tenant/rotate-key")
+      .set("Authorization", "Bearer admin-secret");
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("admin tenant listing pagination", () => {
+  beforeEach(() => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+  });
+  afterEach(() => {
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("supports ?limit=&offset= and always reports X-Total-Count", async () => {
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([
+        TENANT,
+        { ...TENANT, id: "tenant-2", apiKey: "key-2", name: "B Co" },
+        { ...TENANT, id: "tenant-3", apiKey: "key-3", name: "C Co" },
+      ]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const all = await request(app).get("/admin/tenants").set("Authorization", "Bearer admin-secret");
+    expect(all.status).toBe(200);
+    expect(all.body).toHaveLength(3);
+    expect(all.headers["x-total-count"]).toBe("3");
+
+    const page = await request(app).get("/admin/tenants?limit=1&offset=1").set("Authorization", "Bearer admin-secret");
+    expect(page.body).toHaveLength(1);
+    expect(page.body[0].id).toBe("tenant-2");
+    expect(page.headers["x-total-count"]).toBe("3");
   });
 });
 
@@ -320,6 +507,8 @@ describe("webhook: SendGrid delivery events", () => {
       leadStore: new InMemoryLeadStore([LEAD]),
       tenantStore: new InMemoryTenantStore([tenant]),
       messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
     };
     await stores.messageStore.logMessage({
       id: "msg-1",
@@ -396,6 +585,8 @@ describe("notify on interested reply", () => {
       leadStore: new InMemoryLeadStore([LEAD]),
       tenantStore: new InMemoryTenantStore([tenantWithHook]),
       messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
     };
     const app = express();
     app.use(createWebhookRoutes(stores));
@@ -425,6 +616,8 @@ describe("notify on interested reply", () => {
       leadStore: new InMemoryLeadStore([LEAD]),
       tenantStore: new InMemoryTenantStore([tenantWithHook]),
       messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
     };
     const app = express();
     app.use(createWebhookRoutes(stores));
@@ -449,7 +642,7 @@ describe("tenant self-service settings", () => {
     const stores = buildStores();
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
 
     const res = await request(app)
       .patch("/tenants/me")
@@ -465,7 +658,7 @@ describe("tenant self-service settings", () => {
     const stores = buildStores();
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
 
     const res = await request(app)
       .patch("/tenants/me")
@@ -479,7 +672,7 @@ describe("tenant self-service settings", () => {
     const stores = buildStores();
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
 
     const res = await request(app)
       .patch("/tenants/me")
@@ -493,7 +686,7 @@ describe("tenant self-service settings", () => {
     const stores = buildStores();
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
 
     const res = await request(app)
       .patch("/tenants/me")
@@ -507,7 +700,7 @@ describe("tenant self-service settings", () => {
     const stores = buildStores();
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
 
     const res = await request(app)
       .patch("/tenants/me")
@@ -521,7 +714,7 @@ describe("tenant self-service settings", () => {
     const stores = buildStores();
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
 
     const res = await request(app)
       .patch("/tenants/me")
@@ -535,7 +728,7 @@ describe("tenant self-service settings", () => {
     const stores = buildStores();
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
 
     const res = await request(app)
       .patch("/tenants/me")
@@ -549,7 +742,7 @@ describe("tenant self-service settings", () => {
     const stores = buildStores();
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
 
     const res = await request(app)
       .patch("/tenants/me")
@@ -567,7 +760,7 @@ describe("admin tenant creation validation", () => {
     const stores = buildStores();
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
 
     const res = await request(app)
       .post("/admin/tenants")
@@ -585,7 +778,7 @@ describe("rate limiting", () => {
     const stores = buildStores();
     const app = express();
     app.use(express.json());
-    app.use(createTenantRoutes(stores.tenantStore));
+    app.use(createTenantRoutes(stores));
 
     let lastStatus = 200;
     for (let i = 0; i < 31; i++) {
@@ -609,6 +802,8 @@ describe("chatbot auto-reply on inbound messages", () => {
       leadStore: new InMemoryLeadStore([LEAD]),
       tenantStore: new InMemoryTenantStore([tenant]),
       messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
     };
   }
 
@@ -706,6 +901,8 @@ describe("chatbot auto-reply on inbound messages", () => {
       leadStore: new InMemoryLeadStore([LEAD]),
       tenantStore: new InMemoryTenantStore([TENANT]), // autoReplyEnabled unset
       messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
     };
     const app = express();
     app.use(createWebhookRoutes(stores));

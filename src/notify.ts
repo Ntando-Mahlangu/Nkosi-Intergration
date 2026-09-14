@@ -1,6 +1,11 @@
 import type { Channel, Lead, Tenant } from "./types.js";
+import type { NotificationStore } from "./store/types.js";
+import { logger } from "./logger.js";
 
 export type NotifyReason = "interested" | "needs_human_reply";
+
+/** Total delivery cycles (the inline attempt below, plus worker-driven redeliveries) before giving up and marking a failure "dead". */
+export const NOTIFICATION_MAX_ATTEMPTS = 5;
 
 const SUMMARIES: Record<NotifyReason, (lead: Lead, channel: Channel, body: string) => string> = {
   interested: (lead, channel, body) => `🔥 ${lead.name ?? lead.id} replied "interested" via ${channel}: "${body}"`,
@@ -13,6 +18,35 @@ const EVENT_NAMES: Record<NotifyReason, string> = {
   needs_human_reply: "needs_human_reply",
 };
 
+function buildPayload(tenant: Tenant, lead: Lead, channel: Channel, body: string, reason: NotifyReason): Record<string, unknown> {
+  return {
+    text: SUMMARIES[reason](lead, channel, body),
+    event: EVENT_NAMES[reason],
+    tenantId: tenant.id,
+    lead: { id: lead.id, name: lead.name, phone: lead.phone, email: lead.email, requestedService: lead.requestedService },
+    channel,
+    message: body,
+  };
+}
+
+/** A single delivery attempt. Never throws — returns the failure reason instead. */
+export async function deliverNotification(
+  webhookUrl: string,
+  payload: Record<string, unknown>
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return { ok: false, error: `webhook responded ${res.status}` };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
 /**
  * Best-effort notification for the two cases a human should act on
  * promptly: a reply classified "interested", or one the auto-reply
@@ -20,10 +54,16 @@ const EVENT_NAMES: Record<NotifyReason, string> = {
  * escalated. POSTs a JSON body to tenant.notifyWebhookUrl; the `text`
  * field makes it work directly as a Slack (or similar) incoming webhook,
  * while the rest of the payload is there for a custom endpoint to use.
+ *
+ * Retries once inline after a short delay to absorb a single blip; if that
+ * still fails, persists the notification to `notificationStore` (when
+ * given) so it isn't silently lost — the worker retries pending ones on
+ * every tick (see worker.ts) until NOTIFICATION_MAX_ATTEMPTS is reached.
  * Never throws — a broken notification target must never fail the inbound
  * webhook request that triggered it.
  */
 export async function notifyHumanAttention(
+  notificationStore: NotificationStore | undefined,
   tenant: Tenant,
   lead: Lead,
   channel: Channel,
@@ -31,24 +71,26 @@ export async function notifyHumanAttention(
   reason: NotifyReason
 ): Promise<void> {
   if (!tenant.notifyWebhookUrl) return;
+  const webhookUrl = tenant.notifyWebhookUrl;
+  const payload = buildPayload(tenant, lead, channel, body, reason);
 
-  try {
-    const res = await fetch(tenant.notifyWebhookUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        text: SUMMARIES[reason](lead, channel, body),
-        event: EVENT_NAMES[reason],
-        tenantId: tenant.id,
-        lead: { id: lead.id, name: lead.name, phone: lead.phone, email: lead.email, requestedService: lead.requestedService },
-        channel,
-        message: body,
-      }),
-    });
-    if (!res.ok) {
-      console.error(`notifyHumanAttention: ${tenant.notifyWebhookUrl} responded ${res.status}`);
-    }
-  } catch (err) {
-    console.error(`notifyHumanAttention: failed to reach ${tenant.notifyWebhookUrl}:`, err);
+  let result = await deliverNotification(webhookUrl, payload);
+  if (!result.ok) {
+    logger.warn("notification_delivery_failed", { tenantId: tenant.id, leadId: lead.id, reason, error: result.error });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    result = await deliverNotification(webhookUrl, payload);
   }
+
+  if (result.ok) return;
+
+  logger.error("notification_delivery_failed_retrying", { tenantId: tenant.id, leadId: lead.id, reason, error: result.error });
+  if (!notificationStore) return;
+  await notificationStore.recordFailure({
+    tenantId: tenant.id,
+    leadId: lead.id,
+    reason,
+    webhookUrl,
+    payload,
+    error: result.error,
+  });
 }

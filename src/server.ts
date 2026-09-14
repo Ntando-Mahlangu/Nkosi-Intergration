@@ -2,40 +2,71 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { createStores } from "./store/index.js";
+import { getPool } from "./db/pool.js";
 import { requireTenantAuth } from "./middleware/auth.js";
 import { createTenantLimiter } from "./middleware/rateLimit.js";
 import { createTenantRoutes } from "./routes/tenants.js";
 import { createWebhookRoutes } from "./webhooks/index.js";
 import { buildFollowUpPlans, buildRecoveryPlans, runRecoveryWorkflow } from "./workflow.js";
-
-function parsePageParams(req: Request): { limit?: number; offset: number } {
-  const limitRaw = Number(req.query.limit);
-  const offsetRaw = Number(req.query.offset);
-  const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
-  const offset = Number.isInteger(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0;
-  return { limit, offset };
-}
-
-function paginate<T>(items: T[], { limit, offset }: { limit?: number; offset: number }): T[] {
-  if (limit === undefined && offset === 0) return items; // default: unchanged behavior, no params given
-  return items.slice(offset, limit === undefined ? undefined : offset + limit);
-}
+import { parsePageParams, paginate } from "./pagination.js";
+import { createCorsMiddleware } from "./middleware/cors.js";
+import { logger } from "./logger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function createApp() {
   const stores = createStores();
   const app = express();
+  app.use(createCorsMiddleware());
 
+  // Structured request log, aggregator-friendly. Skips /health and /ready —
+  // those get polled constantly by orchestrators/load balancers and would
+  // otherwise drown out everything else.
+  app.use((req: Request, res: Response, next) => {
+    if (req.path === "/health" || req.path === "/ready") {
+      next();
+      return;
+    }
+    const start = Date.now();
+    res.on("finish", () => {
+      logger.info("http_request", {
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        durationMs: Date.now() - start,
+      });
+    });
+    next();
+  });
+
+  // Liveness: the process is up. Deliberately checks nothing external — an
+  // orchestrator killing/restarting the container on a slow DB would only
+  // make things worse. Always 200 as long as the event loop is responsive.
   app.get("/health", (_req: Request, res: Response) => {
     res.json({ ok: true });
+  });
+
+  // Readiness: safe to receive traffic. Checks DB connectivity when
+  // configured, so an orchestrator can hold traffic back from an instance
+  // that can't reach Postgres instead of routing requests it can't serve.
+  app.get("/ready", async (_req: Request, res: Response) => {
+    if (!process.env.DATABASE_URL) {
+      res.json({ ok: true, database: "not configured" });
+      return;
+    }
+    try {
+      await getPool().query("SELECT 1");
+      res.json({ ok: true, database: "ok" });
+    } catch (err) {
+      res.status(503).json({ ok: false, database: "unreachable", error: (err as Error).message });
+    }
   });
 
   // Webhooks parse their own bodies (form-encoded/multipart) — mount before the global json() parser.
   app.use(createWebhookRoutes(stores));
 
   app.use(express.json());
-  app.use(createTenantRoutes(stores.tenantStore));
+  app.use(createTenantRoutes(stores));
 
   const auth = [createTenantLimiter(), requireTenantAuth(stores.tenantStore)];
 
@@ -79,6 +110,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.PORT ?? 3000);
   const app = createApp();
   app.listen(port, () => {
-    console.log(`LeadRecovery API listening on http://localhost:${port}`);
+    logger.info("server_listening", { port });
   });
 }

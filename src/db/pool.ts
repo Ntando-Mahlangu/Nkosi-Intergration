@@ -9,7 +9,8 @@ export function getPool(): pg.Pool {
     if (!connectionString) {
       throw new Error("DATABASE_URL is not set — cannot create a Postgres connection pool.");
     }
-    pool = new pg.Pool({ connectionString });
+    const max = Number(process.env.LEADRECOVERY_DB_POOL_MAX ?? 10);
+    pool = new pg.Pool({ connectionString, max });
   }
   return pool;
 }

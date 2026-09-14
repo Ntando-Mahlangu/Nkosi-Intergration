@@ -1,6 +1,69 @@
 import type { Lead, Message, Tenant } from "../types.js";
 
 /**
+ * A notification (an "interested" reply, or a chatbot escalation) that
+ * failed to reach tenant.notifyWebhookUrl even after notify.ts's inline
+ * retry — persisted so it isn't silently lost. The worker retries pending
+ * ones on each tick; after MAX_NOTIFICATION_ATTEMPTS (see notify.ts) it's
+ * marked "dead" and stays visible via the admin API for someone to notice
+ * and fix (e.g. a broken notifyWebhookUrl) rather than retrying forever.
+ */
+export interface FailedNotification {
+  id: string;
+  tenantId: string;
+  leadId?: string;
+  reason: "interested" | "needs_human_reply";
+  webhookUrl: string;
+  /** The exact JSON body that would be POSTed on a successful delivery. */
+  payload: Record<string, unknown>;
+  attempts: number;
+  lastError?: string;
+  status: "pending" | "dead";
+  createdAt: string;
+  lastAttemptAt: string;
+}
+
+export interface NotificationStore {
+  recordFailure(input: {
+    tenantId: string;
+    leadId?: string;
+    reason: FailedNotification["reason"];
+    webhookUrl: string;
+    payload: Record<string, unknown>;
+    error: string;
+  }): Promise<FailedNotification>;
+  /** All not-yet-dead notifications, across every tenant — the worker redelivers these each tick. */
+  listPending(): Promise<FailedNotification[]>;
+  /** Every failed notification (pending + dead), for admin visibility. */
+  listAll(): Promise<FailedNotification[]>;
+  markDelivered(id: string): Promise<void>;
+  /** Records another failed attempt; flips to "dead" once attempts reaches maxAttempts. */
+  markAttemptFailed(id: string, error: string, maxAttempts: number): Promise<void>;
+}
+
+/**
+ * Records admin actions (tenant create/update/delete/key-rotation) for
+ * accountability — there's currently one admin key, not per-admin-user
+ * identity, so `actor` is always "admin"; this still shows *what* changed
+ * and *when*, which is the part that matters for "who suspended tenant X
+ * and why is a client locked out."
+ */
+export interface AuditLogEntry {
+  id: string;
+  tenantId?: string;
+  action: "tenant.create" | "tenant.admin_update" | "tenant.delete" | "tenant.key_rotate";
+  actor: string;
+  details?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AuditLogStore {
+  record(entry: Omit<AuditLogEntry, "id" | "createdAt">): Promise<AuditLogEntry>;
+  list(params: { limit?: number; offset: number }): Promise<AuditLogEntry[]>;
+  count(): Promise<number>;
+}
+
+/**
  * Pluggable source of leads, scoped per tenant. The in-memory implementation
  * in memory.ts is for local development and tests. PostgresLeadStore (in
  * postgres.ts) is the production-shaped implementation.

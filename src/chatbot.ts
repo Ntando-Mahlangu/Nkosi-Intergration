@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { logger } from "./logger.js";
 import type { Lead, Message, Tenant } from "./types.js";
 
 export interface ChatbotResult {
@@ -106,7 +107,7 @@ export async function generateAutoReply(
     }
     return { action: "reply", replyBody: text };
   } catch (err) {
-    console.error("generateAutoReply failed, escalating to a human:", err);
+    logger.error("chatbot_reply_failed", { tenantId: tenant.id, leadId: lead.id, error: (err as Error).message });
     return { action: "escalate" };
   }
 }

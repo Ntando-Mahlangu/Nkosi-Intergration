@@ -1,7 +1,16 @@
 import type { Pool } from "pg";
 import type { ChannelCredentials, Lead, Message, Tenant } from "../types.js";
-import type { LeadStore, MessageStore, TenantStore } from "./types.js";
+import type {
+  AuditLogEntry,
+  AuditLogStore,
+  FailedNotification,
+  LeadStore,
+  MessageStore,
+  NotificationStore,
+  TenantStore,
+} from "./types.js";
 import { decryptSecret, encryptSecret } from "../crypto.js";
+import { generateId } from "../idgen.js";
 
 function leadFromRow(row: Record<string, unknown>): Lead {
   return {
@@ -327,5 +336,112 @@ export class PostgresMessageStore implements MessageStore {
       [tenantId, messageId, deliveryStatus]
     );
     return rows[0] ? messageFromRow(rows[0]) : undefined;
+  }
+}
+
+function failedNotificationFromRow(row: Record<string, unknown>): FailedNotification {
+  return {
+    id: row.id as string,
+    tenantId: row.tenant_id as string,
+    leadId: (row.lead_id as string | null) ?? undefined,
+    reason: row.reason as FailedNotification["reason"],
+    webhookUrl: row.webhook_url as string,
+    payload: row.payload as Record<string, unknown>,
+    attempts: row.attempts as number,
+    lastError: (row.last_error as string | null) ?? undefined,
+    status: row.status as FailedNotification["status"],
+    createdAt: new Date(row.created_at as string).toISOString(),
+    lastAttemptAt: new Date(row.last_attempt_at as string).toISOString(),
+  };
+}
+
+const FAILED_NOTIFICATION_COLUMNS = `id, tenant_id, lead_id, reason, webhook_url, payload, attempts, last_error, status, created_at, last_attempt_at`;
+
+export class PostgresNotificationStore implements NotificationStore {
+  constructor(private pool: Pool) {}
+
+  async recordFailure(input: {
+    tenantId: string;
+    leadId?: string;
+    reason: FailedNotification["reason"];
+    webhookUrl: string;
+    payload: Record<string, unknown>;
+    error: string;
+  }): Promise<FailedNotification> {
+    const { rows } = await this.pool.query(
+      `INSERT INTO failed_notifications (id, tenant_id, lead_id, reason, webhook_url, payload, attempts, last_error, status)
+       VALUES ($1,$2,$3,$4,$5,$6,1,$7,'pending')
+       RETURNING ${FAILED_NOTIFICATION_COLUMNS}`,
+      [generateId("failnotif"), input.tenantId, input.leadId ?? null, input.reason, input.webhookUrl, input.payload, input.error]
+    );
+    return failedNotificationFromRow(rows[0]);
+  }
+
+  async listPending(): Promise<FailedNotification[]> {
+    const { rows } = await this.pool.query(
+      `SELECT ${FAILED_NOTIFICATION_COLUMNS} FROM failed_notifications WHERE status = 'pending' ORDER BY created_at ASC`
+    );
+    return rows.map(failedNotificationFromRow);
+  }
+
+  async listAll(): Promise<FailedNotification[]> {
+    const { rows } = await this.pool.query(
+      `SELECT ${FAILED_NOTIFICATION_COLUMNS} FROM failed_notifications ORDER BY created_at DESC`
+    );
+    return rows.map(failedNotificationFromRow);
+  }
+
+  async markDelivered(id: string): Promise<void> {
+    await this.pool.query(`DELETE FROM failed_notifications WHERE id = $1`, [id]);
+  }
+
+  async markAttemptFailed(id: string, error: string, maxAttempts: number): Promise<void> {
+    await this.pool.query(
+      `UPDATE failed_notifications
+       SET attempts = attempts + 1, last_error = $2, last_attempt_at = now(),
+           status = CASE WHEN attempts + 1 >= $3 THEN 'dead' ELSE 'pending' END
+       WHERE id = $1`,
+      [id, error, maxAttempts]
+    );
+  }
+}
+
+function auditLogEntryFromRow(row: Record<string, unknown>): AuditLogEntry {
+  return {
+    id: row.id as string,
+    tenantId: (row.tenant_id as string | null) ?? undefined,
+    action: row.action as AuditLogEntry["action"],
+    actor: row.actor as string,
+    details: (row.details as Record<string, unknown> | null) ?? undefined,
+    createdAt: new Date(row.created_at as string).toISOString(),
+  };
+}
+
+const AUDIT_LOG_COLUMNS = `id, tenant_id, action, actor, details, created_at`;
+
+export class PostgresAuditLogStore implements AuditLogStore {
+  constructor(private pool: Pool) {}
+
+  async record(entry: Omit<AuditLogEntry, "id" | "createdAt">): Promise<AuditLogEntry> {
+    const { rows } = await this.pool.query(
+      `INSERT INTO audit_log (id, tenant_id, action, actor, details)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING ${AUDIT_LOG_COLUMNS}`,
+      [generateId("audit"), entry.tenantId ?? null, entry.action, entry.actor, entry.details ?? null]
+    );
+    return auditLogEntryFromRow(rows[0]);
+  }
+
+  async list({ limit, offset }: { limit?: number; offset: number }): Promise<AuditLogEntry[]> {
+    const { rows } = await this.pool.query(
+      `SELECT ${AUDIT_LOG_COLUMNS} FROM audit_log ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      [limit ?? null, offset]
+    );
+    return rows.map(auditLogEntryFromRow);
+  }
+
+  async count(): Promise<number> {
+    const { rows } = await this.pool.query(`SELECT COUNT(*)::int AS count FROM audit_log`);
+    return rows[0].count as number;
   }
 }

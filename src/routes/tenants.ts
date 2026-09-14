@@ -1,9 +1,10 @@
 import { Router } from "express";
-import type { TenantStore } from "../store/types.js";
+import type { Stores } from "../store/index.js";
 import { toPublicTenant, type Tenant } from "../types.js";
 import { requireAdminAuth, requireTenantAuth } from "../middleware/auth.js";
 import { createAdminLimiter, createTenantLimiter } from "../middleware/rateLimit.js";
 import { generateApiKey, generateId } from "../idgen.js";
+import { parsePageParams, paginate } from "../pagination.js";
 
 const MAX_KNOWLEDGE_BASE_LENGTH = 20_000;
 
@@ -109,7 +110,7 @@ function buildTenantPatch(body: Partial<TenantConfigBody>, { includeStatus }: { 
  * are how a new client gets onboarded programmatically; `npm run onboard`
  * wraps this same flow in an interactive CLI.
  */
-export function createTenantRoutes(tenantStore: TenantStore): Router {
+export function createTenantRoutes({ tenantStore, notificationStore, auditLogStore }: Stores): Router {
   const router = Router();
   const tenantAuth = requireTenantAuth(tenantStore);
   const adminAuth = requireAdminAuth();
@@ -141,9 +142,11 @@ export function createTenantRoutes(tenantStore: TenantStore): Router {
     res.json(toPublicTenant(updated!));
   });
 
-  router.get("/admin/tenants", createAdminLimiter(), adminAuth, async (_req, res) => {
+  // Optional ?limit=&offset= pagination; omitted (the default) returns everything, unchanged from before.
+  router.get("/admin/tenants", createAdminLimiter(), adminAuth, async (req, res) => {
     const tenants = await tenantStore.listTenants();
-    res.json(tenants.map(toPublicTenant));
+    res.set("X-Total-Count", String(tenants.length));
+    res.json(paginate(tenants, parsePageParams(req)).map(toPublicTenant));
   });
 
   router.post("/admin/tenants", createAdminLimiter(), adminAuth, async (req, res) => {
@@ -175,6 +178,12 @@ export function createTenantRoutes(tenantStore: TenantStore): Router {
     };
 
     const created = await tenantStore.createTenant(tenant);
+    await auditLogStore.record({
+      tenantId: created.id,
+      action: "tenant.create",
+      actor: "admin",
+      details: { name: created.name, timezone: created.timezone },
+    });
     // Only place the raw API key is ever returned — the client must save it now.
     res.status(201).json({ ...toPublicTenant(created), apiKey: created.apiKey });
   });
@@ -196,7 +205,30 @@ export function createTenantRoutes(tenantStore: TenantStore): Router {
     }
 
     const updated = await tenantStore.updateTenant(req.params.id, buildTenantPatch(body, { includeStatus: true }));
+    await auditLogStore.record({
+      tenantId: req.params.id,
+      action: "tenant.admin_update",
+      actor: "admin",
+      // Field names only — never the values, so this never duplicates a
+      // credential/secret into a second store.
+      details: { fieldsChanged: Object.keys(body) },
+    });
     res.json(toPublicTenant(updated!));
+  });
+
+  // Rotates a tenant's API key without touching anything else — the old key
+  // stops working immediately. Use this instead of delete+recreate when a
+  // key has leaked; the tenant keeps its id, leads, and message history.
+  router.post("/admin/tenants/:id/rotate-key", createAdminLimiter(), adminAuth, async (req, res) => {
+    const existing = await tenantStore.getTenant(req.params.id);
+    if (!existing) {
+      res.status(404).json({ error: "no such tenant" });
+      return;
+    }
+    const updated = await tenantStore.updateTenant(req.params.id, { apiKey: generateApiKey() });
+    await auditLogStore.record({ tenantId: req.params.id, action: "tenant.key_rotate", actor: "admin" });
+    // Only place the new raw API key is ever returned — the client must save it now.
+    res.json({ ...toPublicTenant(updated!), apiKey: updated!.apiKey });
   });
 
   // Permanently removes a tenant. In Postgres this cascades to the tenant's
@@ -207,7 +239,26 @@ export function createTenantRoutes(tenantStore: TenantStore): Router {
       res.status(404).json({ error: "no such tenant" });
       return;
     }
+    await auditLogStore.record({ tenantId: req.params.id, action: "tenant.delete", actor: "admin" });
     res.status(204).send();
+  });
+
+  // Visibility into notify.ts's dead-letter queue: notifications ("interested"
+  // replies / chatbot escalations) that failed to reach a tenant's
+  // notifyWebhookUrl even after retries. "pending" ones are still being
+  // retried by the worker each tick; "dead" ones gave up after
+  // NOTIFICATION_MAX_ATTEMPTS and need a human to notice (usually a broken
+  // notifyWebhookUrl) and fix the target, at which point new notifications
+  // succeed again — this endpoint is how you'd notice in the first place.
+  router.get("/admin/notifications/failed", createAdminLimiter(), adminAuth, async (_req, res) => {
+    res.json(await notificationStore.listAll());
+  });
+
+  // Optional ?limit=&offset= pagination; omitted returns everything.
+  router.get("/admin/audit-log", createAdminLimiter(), adminAuth, async (req, res) => {
+    const total = await auditLogStore.count();
+    res.set("X-Total-Count", String(total));
+    res.json(await auditLogStore.list(parsePageParams(req)));
   });
 
   return router;

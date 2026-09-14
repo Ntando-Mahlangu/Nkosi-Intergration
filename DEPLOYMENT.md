@@ -12,7 +12,9 @@ Three long-running things, plus a one-off migration step:
 
 - **`app`** — the Express API server (`node dist/server.js`). Serves the
   dashboards, the REST API, and all webhooks. Safe to run multiple
-  replicas of.
+  replicas of — rate limiting is backed by Postgres when `DATABASE_URL` is
+  set, so limits are enforced across replicas rather than resetting per
+  process (see `src/middleware/pgRateLimitStore.ts`).
 - **`worker`** — the cron loop that sends initial outreach and due
   follow-ups (`node dist/worker.js`). **Run exactly one replica.** Nothing
   coordinates sends across separate worker processes — a second replica
@@ -173,6 +175,23 @@ which depends on how the app sees its own address. See "SendGrid Event
 Webhook signing" in `README.md`/`ONBOARDING.md` for how to obtain and set
 that key per tenant.
 
+## Verifying provider credentials
+
+Before a tenant's first real send, run:
+
+```bash
+npm run check-providers -- --tenant <id>
+```
+
+This makes one real, lightweight, authenticated call per configured
+provider (a Twilio account fetch, a SendGrid API-key scope check, an
+Anthropic models list if the chatbot or LLM classification is enabled) and
+reports pass/fail per provider, exiting non-zero if any fail. It's the
+closest thing this repo has to an integration test against real
+infrastructure — CI and the unit suite only ever run against emulators
+(`pg-mem`) and mocked SDKs, so this is worth running again after rotating
+any tenant's credentials, not just at onboarding time.
+
 ## Migrations
 
 `src/db/migrations/*.sql` are applied in filename order by
@@ -182,9 +201,69 @@ deploy of a given database, and again any time you pull a commit that adds
 a new migration file — there's no separate "pending migrations" tracking,
 so just re-run it.
 
+## Backups
+
+Everything precious lives in Postgres (tenants, leads, messages) and in
+`LEADRECOVERY_ENCRYPTION_KEY` (without it, backed-up tenant channel
+credentials are permanently unreadable — see below). Everything else
+(the built image, `dist/`, this repo) is regenerable from source and
+doesn't need backing up.
+
+- **Docker Compose**: the `postgres` service's data lives in the `pgdata`
+  named volume. Back up with a logical dump rather than the volume's raw
+  files, so restores aren't tied to matching Postgres versions:
+  ```bash
+  docker compose exec postgres pg_dump -U leadrecovery leadrecovery > backup.sql
+  ```
+  Restore into a fresh instance with:
+  ```bash
+  docker compose up -d postgres
+  cat backup.sql | docker compose exec -T postgres psql -U leadrecovery leadrecovery
+  ```
+- **Your own managed Postgres** (Option 2/3): use whatever
+  `pg_dump`/point-in-time-recovery your provider offers; there's nothing
+  LeadRecovery-specific here beyond backing up the whole `leadrecovery`
+  database (all tables, not just `tenants`).
+- **`LEADRECOVERY_ENCRYPTION_KEY` must be backed up separately from the
+  database**, in a secrets manager or equivalent — not alongside the SQL
+  dump, and not only on the host running the app. A database restore
+  without the matching key restores tenants with permanently undecryptable
+  Twilio/SendGrid credentials; there's no way to recover them after the
+  fact, only to re-enter them per tenant.
+- Agree a retention/schedule with whoever hosts the database (daily dumps
+  kept for N days is a reasonable starting point for a small deployment);
+  this repo doesn't automate backups itself.
+- Test a restore before you need one — an untested backup is not a backup.
+
+## Logs and observability
+
+The server and worker log structured JSON lines (one object per line —
+`src/logger.ts`) instead of free-form text: request logs, per-tenant worker
+tick results, and send/notification/chatbot failures. Pipe stdout/stderr
+into whatever log aggregator you use (CloudWatch Logs, Loki, Datadog,
+Google Cloud Logging, ...) — no special configuration needed, it's already
+one JSON object per line. There's no metrics/APM or error-tracking (e.g.
+Sentry) integration built in; add one at the platform level if you need
+alerting beyond "grep the logs."
+
+A notification (an `interested` reply, or a chatbot escalation) that fails
+to reach a tenant's `notifyWebhookUrl` is retried, then persisted rather
+than dropped, and retried again by the worker on every subsequent tick —
+see `GET /admin/notifications/failed` in the README's API reference. Check
+this endpoint (or alert on it) periodically; a growing `dead` count usually
+means a tenant's Slack webhook/URL broke.
+
 ## Health checks
 
-`GET /health` returns 200 with no auth required — point your platform's or
-proxy's health check at it. It does not check database connectivity; a
-persistently red app after a green `/health` check usually means the
-worker or a webhook is failing against Postgres, not that the app is down.
+Two separate endpoints, no auth required:
+
+- **`GET /health`** — pure liveness: 200 as long as the process is up.
+  Checks nothing external on purpose — an orchestrator killing/restarting
+  the container because the database is briefly unreachable only makes
+  things worse. Point a "restart if this fails" check here.
+- **`GET /ready`** — readiness: also checks Postgres connectivity
+  (`SELECT 1`) when `DATABASE_URL` is set, returning 503 if it can't reach
+  the database. Point a "hold traffic back from this instance" check
+  (e.g. a Kubernetes readiness probe or load balancer health check) here
+  instead — an instance that can't reach the database shouldn't receive
+  requests, but doesn't need to be killed either.

@@ -1,4 +1,17 @@
 import rateLimit from "express-rate-limit";
+import { getPool } from "../db/pool.js";
+import { PgRateLimitStore } from "./pgRateLimitStore.js";
+
+/**
+ * A distributed Postgres-backed store when DATABASE_URL is set (so limits
+ * hold across every app replica sharing that database), otherwise
+ * express-rate-limit's own in-memory default — correct for the
+ * single-process demo/test setup and avoids requiring a database just to
+ * run the unit suite.
+ */
+function distributedStoreIfConfigured() {
+  return process.env.DATABASE_URL ? new PgRateLimitStore(getPool()) : undefined;
+}
 
 /** Guards tenant onboarding/management — low volume by nature, so a tight limit doesn't hurt legitimate use. */
 export function createAdminLimiter() {
@@ -7,6 +20,7 @@ export function createAdminLimiter() {
     limit: 30,
     standardHeaders: true,
     legacyHeaders: false,
+    store: distributedStoreIfConfigured(),
   });
 }
 
@@ -17,6 +31,7 @@ export function createWebhookLimiter() {
     limit: 120,
     standardHeaders: true,
     legacyHeaders: false,
+    store: distributedStoreIfConfigured(),
   });
 }
 
@@ -27,5 +42,6 @@ export function createTenantLimiter() {
     limit: 60,
     standardHeaders: true,
     legacyHeaders: false,
+    store: distributedStoreIfConfigured(),
   });
 }

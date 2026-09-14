@@ -1,5 +1,14 @@
 import type { Lead, Message, Tenant } from "../types.js";
-import type { LeadStore, MessageStore, TenantStore } from "./types.js";
+import { generateId } from "../idgen.js";
+import type {
+  AuditLogEntry,
+  AuditLogStore,
+  FailedNotification,
+  LeadStore,
+  MessageStore,
+  NotificationStore,
+  TenantStore,
+} from "./types.js";
 
 export class InMemoryLeadStore implements LeadStore {
   private leads: Map<string, Lead>;
@@ -101,5 +110,75 @@ export class InMemoryMessageStore implements MessageStore {
     if (!message) return undefined;
     message.deliveryStatus = deliveryStatus;
     return message;
+  }
+}
+
+export class InMemoryNotificationStore implements NotificationStore {
+  private failures: FailedNotification[] = [];
+
+  async recordFailure(input: {
+    tenantId: string;
+    leadId?: string;
+    reason: FailedNotification["reason"];
+    webhookUrl: string;
+    payload: Record<string, unknown>;
+    error: string;
+  }): Promise<FailedNotification> {
+    const now = new Date().toISOString();
+    const failure: FailedNotification = {
+      id: generateId("failnotif"),
+      tenantId: input.tenantId,
+      leadId: input.leadId,
+      reason: input.reason,
+      webhookUrl: input.webhookUrl,
+      payload: input.payload,
+      attempts: 1,
+      lastError: input.error,
+      status: "pending",
+      createdAt: now,
+      lastAttemptAt: now,
+    };
+    this.failures.push(failure);
+    return failure;
+  }
+
+  async listPending(): Promise<FailedNotification[]> {
+    return this.failures.filter((f) => f.status === "pending");
+  }
+
+  async listAll(): Promise<FailedNotification[]> {
+    return [...this.failures];
+  }
+
+  async markDelivered(id: string): Promise<void> {
+    this.failures = this.failures.filter((f) => f.id !== id);
+  }
+
+  async markAttemptFailed(id: string, error: string, maxAttempts: number): Promise<void> {
+    const failure = this.failures.find((f) => f.id === id);
+    if (!failure) return;
+    failure.attempts += 1;
+    failure.lastError = error;
+    failure.lastAttemptAt = new Date().toISOString();
+    if (failure.attempts >= maxAttempts) failure.status = "dead";
+  }
+}
+
+export class InMemoryAuditLogStore implements AuditLogStore {
+  private entries: AuditLogEntry[] = [];
+
+  async record(entry: Omit<AuditLogEntry, "id" | "createdAt">): Promise<AuditLogEntry> {
+    const full: AuditLogEntry = { ...entry, id: generateId("audit"), createdAt: new Date().toISOString() };
+    this.entries.push(full);
+    return full;
+  }
+
+  async list({ limit, offset }: { limit?: number; offset: number }): Promise<AuditLogEntry[]> {
+    const sorted = [...this.entries].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return sorted.slice(offset, limit === undefined ? undefined : offset + limit);
+  }
+
+  async count(): Promise<number> {
+    return this.entries.length;
   }
 }

@@ -15,6 +15,7 @@
     "onboard": "tsx src/scripts/onboardTenant.ts",
     "import-leads": "tsx src/scripts/importLeads.ts",
     "migrate": "tsx src/scripts/migrate.ts",
+    "check-providers": "tsx src/scripts/checkProviders.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

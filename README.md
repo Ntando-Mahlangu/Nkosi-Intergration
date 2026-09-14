@@ -71,7 +71,10 @@ deployment serves many clients with fully isolated data.
 - **`src/webhooks/`** — inbound Twilio SMS/voice-status/delivery-status,
   SendGrid inbound parse/delivery events, and a generic JSON lead-intake
   endpoint for connecting a CRM via an outgoing webhook or Zapier/Make/n8n.
-  Rate limited (`src/middleware/rateLimit.ts`) against flooding/abuse.
+  Rate limited (`src/middleware/rateLimit.ts`) against flooding/abuse —
+  backed by Postgres (`src/middleware/pgRateLimitStore.ts`) when
+  `DATABASE_URL` is set, so limits hold across every `app` replica sharing
+  that database rather than resetting per-process.
 - **`src/reply/classify.ts`** — classifies inbound replies (stop / interested
   / not_interested / question / unknown). Keyword-based and fully offline by
   default; STOP detection *always* runs offline first so an opt-out is never
@@ -87,9 +90,12 @@ deployment serves many clients with fully isolated data.
   (price negotiation, complaints, complex requests, an explicit ask for a
   human) — any API error, missing config, or non-clean response also fails
   safe to escalate rather than risk a fabricated answer reaching a customer.
-- **`src/notify.ts`** — best-effort POST to the tenant's `notifyWebhookUrl`
-  (e.g. a Slack incoming webhook) when a reply is `interested` or the
-  chatbot escalates — the two moments a human should act promptly.
+- **`src/notify.ts`** — POSTs to the tenant's `notifyWebhookUrl` (e.g. a
+  Slack incoming webhook) when a reply is `interested` or the chatbot
+  escalates — the two moments a human should act promptly. Retries once
+  inline; if that still fails, persists the notification (never silently
+  dropping it) so the worker can keep retrying it on every tick until it
+  succeeds or `GET /admin/notifications/failed` shows it as `dead`.
 - **`src/workflow.ts`** — orchestrates the whole pipeline per tenant, and
   generates each message's id up front so Twilio/SendGrid delivery-status
   callbacks can correlate back to it.
@@ -104,6 +110,14 @@ deployment serves many clients with fully isolated data.
 - **`src/security.ts`**, **`src/crypto.ts`** — constant-time secret
   comparison and AES-256-GCM encryption for tenant provider credentials at
   rest (required in Postgres mode — see Environment variables below).
+- **`src/logger.ts`** — structured JSON logging for the server/worker
+  (request log, worker ticks, send/notification/chatbot failures) so
+  output drops straight into any log aggregator. The interactive CLI
+  scripts print plain human-facing text instead, on purpose.
+- Every admin tenant mutation (create, config/status change, key rotation,
+  delete) is recorded to an audit log (`GET /admin/audit-log`) — config
+  updates log which fields changed, never the values, so credentials are
+  never duplicated into a second store.
 - **`src/messaging.ts`** / **`src/followup.ts`** also support a per-tenant
   `templates` override (`tenant.templates.initialGrounded` /
   `initialUngrounded` / `followUps[]`, with `{name}`/`{businessName}`/
@@ -151,7 +165,11 @@ credentials required.
    for correct Twilio webhook signature verification behind a proxy/load
    balancer, and for delivery-status callback URLs.
 6. **Onboard a tenant**: `npm run onboard` (interactive CLI) or `POST
-   /admin/tenants` — see `ONBOARDING.md`.
+   /admin/tenants` — see `ONBOARDING.md`. Then run `npm run check-providers
+   -- --tenant <id>` to verify every configured provider credential
+   (Twilio/SendGrid/Anthropic) actually authenticates before going live —
+   catches a typo'd/revoked credential now instead of it failing silently
+   on a real customer's first message.
 7. **Import existing leads**: `npm run import-leads -- --tenant <id> --file leads.csv`,
    or point the client's CRM's outgoing webhook / a Zapier automation at
    `POST /webhooks/lead` with `Authorization: Bearer <tenant api key>`.
@@ -178,6 +196,11 @@ credentials required.
 
 ## API reference
 
+A machine-readable reference for everything below (request/response
+schemas included) is in [`openapi.yaml`](./openapi.yaml) — paste it into
+any OpenAPI viewer (Swagger UI, Redoc, Postman's import) for interactive
+docs.
+
 All routes except `/health` and the webhooks require `Authorization: Bearer
 <tenant api key>`. Admin routes require `Authorization: Bearer
 <ADMIN_API_KEY>` instead. All routes are rate limited
@@ -186,13 +209,17 @@ All routes except `/health` and the webhooks require `Authorization: Bearer
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/health` | Liveness check |
+| GET | `/health` | Liveness check (checks nothing external) |
+| GET | `/ready` | Readiness check — verifies Postgres connectivity when `DATABASE_URL` is set |
 | GET | `/tenants/me` | The authenticated tenant's public info |
 | PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled |
 | GET | `/admin/tenants` | List tenants (admin) |
 | POST | `/admin/tenants` | Create a tenant (admin); returns the API key once |
 | PATCH | `/admin/tenants/:id` | Admin update: any self-service field, plus `status` (`"active"` \| `"suspended"`) — the only way to suspend/reactivate a tenant |
+| POST | `/admin/tenants/:id/rotate-key` | Issue a new API key for a tenant (admin); the old key stops working immediately |
 | DELETE | `/admin/tenants/:id` | Permanently delete a tenant (admin) — cascades to its leads/messages in Postgres; no undo |
+| GET | `/admin/notifications/failed` | Notifications ("interested"/escalation) that failed to reach `notifyWebhookUrl` even after retries — `pending` ones are still being retried by the worker, `dead` ones gave up and need attention |
+| GET | `/admin/audit-log` | Admin action history (tenant create/update/delete/key-rotation), newest first. Optional `?limit=&offset=` |
 | GET | `/leads` | List the tenant's leads. Optional `?limit=&offset=`; always sets `X-Total-Count` |
 | GET | `/leads/plan` | Dry run: scored + composed plans, nothing sent. Same optional pagination |
 | GET | `/leads/:id/messages` | Conversation history for one lead (includes delivery status) |
@@ -213,6 +240,7 @@ See [`.env.example`](./.env.example) for the copyable version with full comments
 | `DATABASE_URL` | Postgres connection string; omit for the in-memory demo |
 | `LEADRECOVERY_ENCRYPTION_KEY` | **Required** when `DATABASE_URL` is set — encrypts tenant provider credentials at rest |
 | `ADMIN_API_KEY` | Enables `/admin/tenants`; unset disables tenant management |
+| `LEADRECOVERY_CORS_ORIGIN` | Comma-separated allowed origins for cross-origin API calls (or `*`); unset sends no CORS headers, which is fine for the bundled same-origin dashboards |
 | `PUBLIC_BASE_URL` | This app's public HTTPS base URL — needed for correct Twilio signature verification behind a proxy, and for delivery-status callback URLs |
 | `PORT` | API server port (default 3000) |
 | `LEADRECOVERY_CRON_SCHEDULE` | Worker cron expression (default hourly) |
@@ -249,9 +277,12 @@ is messaging with an automated system.
 
 ## CI
 
-`.github/workflows/ci.yml` runs two jobs on every push and pull request:
-`test` (`typecheck`, `test`, `build`) and a separate `e2e` job that installs
-a Playwright browser and runs `test:e2e`.
+`.github/workflows/ci.yml` runs three jobs on every push and pull request:
+`test` (`typecheck`, `test`, `build`), a separate `e2e` job that installs a
+Playwright browser and runs `test:e2e`, and a `docker` job that builds the
+image from `Dockerfile` — the actual, continuous check that it still builds
+(a real Docker build needs full internet access to pull the base image and
+isn't something every local/sandboxed dev environment can run).
 
 ## Testing
 
@@ -268,14 +299,19 @@ needed), the chatbot (reply/escalate/disabled outcomes, conversation-
 history capping, the per-lead auto-reply rate limit, and that it never
 calls the network when disabled), encryption/constant-time-compare
 (`src/crypto.ts`/`src/security.ts`), bounded-concurrency tenant processing
-(`src/concurrency.ts`), the end-to-end workflow, the Postgres store
-implementations (run against an in-memory Postgres emulator via `pg-mem`,
-so the actual SQL is exercised without a live database, including
-credential encryption at rest, delivery-status updates, tenant status, and
-`deleteTenant`'s cascade to a tenant's leads/messages), and the HTTP auth/
-webhook/rate-limiting routes — including the full question→auto-reply and
-question→escalate flows, tenant suspend/reactivate/delete, and real
-SendGrid Event Webhook ECDSA signature verification — via `supertest`.
+(`src/concurrency.ts`), notification retry/dead-letter behavior
+(`src/notify.ts`, with fake timers so the inline retry delay costs no real
+time in the suite), CORS, the `/health`/`/ready` endpoints, the end-to-end
+workflow, the Postgres store implementations (run against an in-memory
+Postgres emulator via `pg-mem`, so the actual SQL is exercised without a
+live database, including credential encryption at rest, delivery-status
+updates, tenant status, `deleteTenant`'s cascade to a tenant's
+leads/messages, failed-notification bookkeeping, and the audit log), and
+the HTTP auth/webhook/rate-limiting routes — including the full
+question→auto-reply and question→escalate flows, tenant
+suspend/reactivate/delete/key-rotation, admin audit log and failed-
+notification visibility, admin listing pagination, and real SendGrid Event
+Webhook ECDSA signature verification — via `supertest`.
 
 `npm run test:e2e` drives `public/index.html` (Command Center) and
 `public/dashboard.html` in a real headless browser via

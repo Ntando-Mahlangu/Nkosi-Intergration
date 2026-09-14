@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { logger } from "../logger.js";
 import type { ReplyClassification } from "../types.js";
 
 const STOP_KEYWORDS = ["stop", "unsubscribe", "cancel", "quit", "remove me", "opt out", "optout"];
@@ -73,7 +74,7 @@ export async function classifyReply(body: string): Promise<ReplyClassification> 
   try {
     return await classifyReplyWithClaude(body);
   } catch (err) {
-    console.error("classifyReplyWithClaude failed, falling back to keyword classification:", err);
+    logger.warn("llm_classification_failed", { error: (err as Error).message });
     return keywordResult;
   }
 }

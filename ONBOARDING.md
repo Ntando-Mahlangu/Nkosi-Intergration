@@ -88,6 +88,19 @@ the client and get explicit sign-off on:
 
 ## 6. Pilot
 
+Before sending anything real, verify every provider credential actually
+authenticates:
+
+```bash
+npm run check-providers -- --tenant <id>
+```
+
+This makes one real, lightweight, read-only call per configured provider
+(Twilio account fetch, SendGrid scope check, Anthropic if the chatbot or
+LLM classification is enabled) and reports pass/fail — catching a
+typo'd/revoked/misscoped credential now instead of it failing silently on
+a real customer's first message.
+
 Flip a small batch live first:
 
 - Either temporarily restrict the imported leads to a handful of test
@@ -162,6 +175,9 @@ reply — see step 8 below for setting that up.
   without deleting anything. Reactivate the same way with `{"status":
   "active"}`. A tenant cannot suspend or reactivate itself; this is
   admin-only by design.
+- **A tenant's API key leaked**: `POST /admin/tenants/<id>/rotate-key`
+  issues a new key immediately (the old one stops working) without
+  touching anything else — no need to delete and recreate the tenant.
 - **Offboard permanently**: `DELETE /admin/tenants/<id>`. This is
   irreversible — in Postgres it cascades to every lead and message that
   tenant ever had. Confirm with the client (and check any contractual data-

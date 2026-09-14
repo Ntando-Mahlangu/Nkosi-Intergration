@@ -4,7 +4,13 @@ import path from "node:path";
 import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { beforeEach, describe, expect, it } from "vitest";
-import { PostgresLeadStore, PostgresMessageStore, PostgresTenantStore } from "../src/store/postgres.js";
+import {
+  PostgresAuditLogStore,
+  PostgresLeadStore,
+  PostgresMessageStore,
+  PostgresNotificationStore,
+  PostgresTenantStore,
+} from "../src/store/postgres.js";
 import { generateEncryptionKey } from "../src/crypto.js";
 import type { Lead, Message, Tenant } from "../src/types.js";
 
@@ -259,5 +265,69 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
   it("deleteTenant returns false for an unknown tenant id", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     expect(await tenantStore.deleteTenant("no-such-tenant")).toBe(false);
+  });
+
+  it("round-trips a failed notification and supports the delivered/dead lifecycle", async () => {
+    const notificationStore = new PostgresNotificationStore(pool);
+    const recorded = await notificationStore.recordFailure({
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      reason: "interested",
+      webhookUrl: "https://hooks.example.com/notify",
+      payload: { text: "hi", event: "lead_interested" },
+      error: "network down",
+    });
+    expect(recorded.attempts).toBe(1);
+    expect(recorded.status).toBe("pending");
+
+    const pending = await notificationStore.listPending();
+    expect(pending).toHaveLength(1);
+    expect(pending[0].payload).toEqual({ text: "hi", event: "lead_interested" });
+
+    await notificationStore.markAttemptFailed(recorded.id, "still down", 2);
+    const [afterSecondFailure] = await notificationStore.listAll();
+    expect(afterSecondFailure.attempts).toBe(2);
+    expect(afterSecondFailure.status).toBe("dead");
+    expect(await notificationStore.listPending()).toHaveLength(0);
+  });
+
+  it("removes a failed notification from listPending/listAll once markDelivered", async () => {
+    const notificationStore = new PostgresNotificationStore(pool);
+    const recorded = await notificationStore.recordFailure({
+      tenantId: TENANT.id,
+      reason: "needs_human_reply",
+      webhookUrl: "https://hooks.example.com/notify",
+      payload: { text: "hi" },
+      error: "boom",
+    });
+    await notificationStore.markDelivered(recorded.id);
+    expect(await notificationStore.listAll()).toHaveLength(0);
+  });
+
+  it("records and lists audit log entries, newest first, with pagination", async () => {
+    const auditLogStore = new PostgresAuditLogStore(pool);
+    await auditLogStore.record({ tenantId: TENANT.id, action: "tenant.create", actor: "admin", details: { name: "Acme Co" } });
+    await auditLogStore.record({ tenantId: TENANT.id, action: "tenant.admin_update", actor: "admin", details: { fieldsChanged: ["status"] } });
+    await auditLogStore.record({ tenantId: TENANT.id, action: "tenant.delete", actor: "admin" });
+
+    expect(await auditLogStore.count()).toBe(3);
+
+    const all = await auditLogStore.list({ offset: 0 });
+    expect(all.map((e) => e.action)).toEqual(["tenant.delete", "tenant.admin_update", "tenant.create"]);
+
+    const page = await auditLogStore.list({ limit: 1, offset: 1 });
+    expect(page).toHaveLength(1);
+    expect(page[0].action).toBe("tenant.admin_update");
+  });
+
+  it("audit log entries survive the tenant they describe being deleted", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    const auditLogStore = new PostgresAuditLogStore(pool);
+    await tenantStore.createTenant(TENANT);
+    await auditLogStore.record({ tenantId: TENANT.id, action: "tenant.delete", actor: "admin" });
+
+    await tenantStore.deleteTenant(TENANT.id);
+
+    expect(await auditLogStore.count()).toBe(1);
   });
 });

@@ -1,0 +1,661 @@
+openapi: 3.0.3
+info:
+  title: LeadRecovery API
+  description: >
+    Multi-tenant lead recovery and reactivation API. Every route except
+    /health, /ready, and the provider webhooks requires
+    `Authorization: Bearer <tenant api key>`; admin routes require
+    `Authorization: Bearer <ADMIN_API_KEY>` instead. See README.md for the
+    full narrative reference — this file is the machine-readable version of
+    the same routes.
+  version: "0.2.0"
+servers:
+  - url: http://localhost:3000
+    description: Local demo server (npm run dev)
+tags:
+  - name: health
+  - name: tenant-self-service
+  - name: admin
+  - name: leads
+  - name: webhooks
+
+security: []
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness check
+      description: Always 200 as long as the process is up. Checks nothing external.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+
+  /ready:
+    get:
+      tags: [health]
+      summary: Readiness check
+      description: Checks Postgres connectivity (SELECT 1) when DATABASE_URL is set.
+      security: []
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  database: { type: string, example: "ok" }
+        "503":
+          description: Database unreachable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: false }
+                  database: { type: string, example: "unreachable" }
+                  error: { type: string }
+
+  /tenants/me:
+    get:
+      tags: [tenant-self-service]
+      summary: The authenticated tenant's public info
+      security: [{ tenantAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicTenant" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+    patch:
+      tags: [tenant-self-service]
+      summary: Update the tenant's own operational config
+      description: >
+        Updates timezone/quietHours/devMode/channels/notifyWebhookUrl/
+        templates/knowledgeBase/autoReplyEnabled. `status` cannot be changed
+        here — a tenant can't un-suspend itself; use the admin API.
+      security: [{ tenantAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TenantConfigBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicTenant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+
+  /admin/tenants:
+    get:
+      tags: [admin]
+      summary: List tenants
+      security: [{ adminAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Total-Count: { schema: { type: integer } }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PublicTenant" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/AdminDisabled" }
+    post:
+      tags: [admin]
+      summary: Create a tenant
+      description: Returns the raw API key exactly once — it is never shown again.
+      security: [{ adminAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/TenantConfigBody" }
+                - type: object
+                  required: [name, timezone]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/PublicTenant" }
+                  - type: object
+                    properties:
+                      apiKey: { type: string, description: "Shown only in this response." }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /admin/tenants/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [admin]
+      summary: Admin update — any self-service field, plus status
+      description: 'The only way to suspend/reactivate a tenant (`status`: `"active"` or `"suspended"`).'
+      security: [{ adminAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TenantConfigBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicTenant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [admin]
+      summary: Permanently delete a tenant
+      description: Cascades to the tenant's leads/messages in Postgres. No undo.
+      security: [{ adminAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/tenants/{id}/rotate-key:
+    post:
+      tags: [admin]
+      summary: Issue a new API key for a tenant
+      description: The old key stops working immediately. Returns the new raw key exactly once.
+      security: [{ adminAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Rotated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/PublicTenant" }
+                  - type: object
+                    properties:
+                      apiKey: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/notifications/failed:
+    get:
+      tags: [admin]
+      summary: Notifications that failed to reach a tenant's notifyWebhookUrl
+      description: >
+        "pending" ones are still being retried by the worker each tick;
+        "dead" ones gave up after the max attempt count and need attention
+        (usually a broken notifyWebhookUrl).
+      security: [{ adminAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/FailedNotification" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /admin/audit-log:
+    get:
+      tags: [admin]
+      summary: Admin action history, newest first
+      security: [{ adminAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Total-Count: { schema: { type: integer } }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditLogEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /leads:
+    get:
+      tags: [leads]
+      summary: List the tenant's leads
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Total-Count: { schema: { type: integer } }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Lead" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+
+  /leads/plan:
+    get:
+      tags: [leads]
+      summary: Dry run — scored + composed plans, nothing sent
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Total-Count: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkflowResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+
+  /leads/{id}/messages:
+    get:
+      tags: [leads]
+      summary: Conversation history for one lead
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+
+  /workflow/run:
+    post:
+      tags: [leads]
+      summary: Send initial outreach + due follow-ups
+      security: [{ tenantAuth: [] }]
+      responses:
+        "200":
+          description: Run result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent: { type: array, items: { type: object } }
+                  skipped: { type: array, items: { type: object } }
+                  deferred: { type: array, items: { type: object } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+
+  /webhooks/lead:
+    post:
+      tags: [webhooks]
+      summary: Generic lead intake
+      description: Connect an arbitrary CRM via its outgoing webhook, or a Zapier/Make/n8n automation.
+      security: [{ tenantAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Lead" }
+      responses:
+        "201": { description: Created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /webhooks/{tenantId}/twilio/sms:
+    post:
+      tags: [webhooks]
+      summary: Twilio inbound SMS/WhatsApp reply
+      description: Signature-verified via the Twilio request signature (PUBLIC_BASE_URL-aware).
+      security: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object }
+      responses:
+        "200": { description: Handled }
+        "403": { description: Invalid Twilio signature }
+
+  /webhooks/{tenantId}/twilio/voice-status:
+    post:
+      tags: [webhooks]
+      summary: Twilio call status — missed-call detection
+      description: Signature-verified.
+      security: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object }
+      responses:
+        "200": { description: Handled }
+        "403": { description: Invalid Twilio signature }
+
+  /webhooks/{tenantId}/twilio/status:
+    post:
+      tags: [webhooks]
+      summary: Twilio delivery-status callback
+      description: Signature-verified. URL is set automatically per-send when PUBLIC_BASE_URL is configured.
+      security: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object }
+      responses:
+        "200": { description: Handled }
+        "403": { description: Invalid Twilio signature }
+
+  /webhooks/{tenantId}/sendgrid/email:
+    post:
+      tags: [webhooks]
+      summary: SendGrid inbound parse
+      description: Guarded by a shared `?token=` secret (SendGrid has no signing option for Inbound Parse).
+      security: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          multipart/form-data:
+            schema: { type: object }
+      responses:
+        "200": { description: Handled }
+        "403": { description: Invalid token }
+
+  /webhooks/{tenantId}/sendgrid/events:
+    post:
+      tags: [webhooks]
+      summary: SendGrid Event Webhook — delivered/bounce/etc.
+      description: >
+        Verifies a real ECDSA signature when the tenant's
+        channels.email.eventWebhookPublicKey is set; otherwise falls back to
+        a shared `?token=` secret.
+      security: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: token
+          in: query
+          required: false
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: array, items: { type: object } }
+      responses:
+        "200": { description: Handled }
+        "403": { description: Invalid signature/token }
+
+components:
+  securitySchemes:
+    tenantAuth:
+      type: http
+      scheme: bearer
+      description: A tenant's own API key.
+    adminAuth:
+      type: http
+      scheme: bearer
+      description: ADMIN_API_KEY.
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1 }
+    Offset:
+      name: offset
+      in: query
+      required: false
+      schema: { type: integer, minimum: 0, default: 0 }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid Authorization header
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Suspended:
+      description: Tenant is suspended
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such resource
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: Invalid request body
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    AdminDisabled:
+      description: ADMIN_API_KEY is not configured — the admin API is disabled entirely
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+    QuietHours:
+      type: object
+      properties:
+        startHour: { type: integer, minimum: 0, maximum: 23 }
+        endHour: { type: integer, minimum: 0, maximum: 23 }
+
+    MessageTemplates:
+      type: object
+      properties:
+        initialGrounded: { type: string }
+        initialUngrounded: { type: string }
+        followUps: { type: array, items: { type: string } }
+        notInterestedCloser: { type: string }
+
+    TenantConfigBody:
+      type: object
+      description: Fields accepted by PATCH /tenants/me, POST /admin/tenants, and PATCH /admin/tenants/:id (status only via the admin routes).
+      properties:
+        name: { type: string }
+        timezone: { type: string, description: "IANA timezone, e.g. Africa/Johannesburg" }
+        quietHours: { $ref: "#/components/schemas/QuietHours" }
+        devMode: { type: boolean }
+        channels:
+          type: object
+          description: Per-channel provider credentials — write-only, never returned by any GET.
+        notifyWebhookUrl: { type: string, format: uri }
+        templates: { $ref: "#/components/schemas/MessageTemplates" }
+        knowledgeBase: { type: string, maxLength: 20000 }
+        autoReplyEnabled: { type: boolean }
+        status:
+          type: string
+          enum: [active, suspended]
+          description: Admin-only — rejected with 400 on PATCH /tenants/me.
+
+    PublicTenant:
+      type: object
+      description: Tenant shape with all secrets stripped (no apiKey, no raw channel credentials).
+      properties:
+        id: { type: string }
+        name: { type: string }
+        timezone: { type: string }
+        quietHours: { $ref: "#/components/schemas/QuietHours" }
+        devMode: { type: boolean }
+        channels:
+          type: object
+          properties:
+            sms: { type: boolean }
+            whatsapp: { type: boolean }
+            email: { type: boolean }
+        notifyWebhookUrl: { type: string }
+        templates: { $ref: "#/components/schemas/MessageTemplates" }
+        knowledgeBase: { type: string }
+        autoReplyEnabled: { type: boolean }
+        status: { type: string, enum: [active, suspended] }
+        createdAt: { type: string, format: date-time }
+
+    Lead:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        email: { type: string }
+        source:
+          type: string
+          enum: [crm, website_form, missed_call, booking_software, email, sms, whatsapp, spreadsheet, customer_database, other]
+        createdAt: { type: string, format: date-time }
+        status:
+          type: string
+          enum:
+            [
+              new,
+              contacted_no_response,
+              responded,
+              booked,
+              converted,
+              do_not_contact,
+              unqualified,
+              fraudulent,
+              active_conversation,
+              opted_out,
+            ]
+        requestedService: { type: string }
+        previousQuote: { type: string }
+        notes: { type: string }
+
+    Message:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        leadId: { type: string }
+        channel: { type: string, enum: [sms, whatsapp, email] }
+        direction: { type: string, enum: [outbound, inbound] }
+        body: { type: string }
+        at: { type: string, format: date-time }
+        classification: { type: string, enum: [stop, interested, not_interested, question, unknown] }
+        deliveryStatus: { type: string }
+        kind: { type: string, enum: [initial, followup, closer, auto_reply] }
+
+    RecoveryPlan:
+      type: object
+      properties:
+        lead: { $ref: "#/components/schemas/Lead" }
+        priority: { type: string, enum: [HIGH, MEDIUM, LOW] }
+        priorityReasons: { type: array, items: { type: string } }
+        reason:
+          type: object
+          properties:
+            text: { type: string }
+            grounded: { type: boolean }
+        message:
+          type: object
+          properties:
+            channel: { type: string, enum: [sms, whatsapp, email] }
+            body: { type: string }
+
+    WorkflowResult:
+      type: object
+      properties:
+        plans: { type: array, items: { $ref: "#/components/schemas/RecoveryPlan" } }
+        skipped:
+          type: array
+          items:
+            type: object
+            properties:
+              lead: { $ref: "#/components/schemas/Lead" }
+              reason: { type: string }
+
+    FailedNotification:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        leadId: { type: string }
+        reason: { type: string, enum: [interested, needs_human_reply] }
+        webhookUrl: { type: string }
+        payload: { type: object }
+        attempts: { type: integer }
+        lastError: { type: string }
+        status: { type: string, enum: [pending, dead] }
+        createdAt: { type: string, format: date-time }
+        lastAttemptAt: { type: string, format: date-time }
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        action:
+          type: string
+          enum: [tenant.create, tenant.admin_update, tenant.delete, tenant.key_rotate]
+        actor: { type: string, example: admin }
+        details: { type: object }
+        createdAt: { type: string, format: date-time }

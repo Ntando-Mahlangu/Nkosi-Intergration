@@ -23,6 +23,8 @@ jobs:
 
       - run: npm run build
 
+      - run: npx --yes swagger-cli validate openapi.yaml
+
   e2e:
     runs-on: ubuntu-latest
     steps:
@@ -38,3 +40,12 @@ jobs:
       - run: npx playwright install --with-deps chromium
 
       - run: npm run test:e2e
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - run: docker build -t leadrecovery:ci .

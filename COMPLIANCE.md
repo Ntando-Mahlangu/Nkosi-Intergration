@@ -109,6 +109,12 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
   deletion, suspend the tenant (`PATCH /admin/tenants/<id>` with
   `{"status": "suspended"}`), which blocks all access without touching
   stored data.
+- Every admin action (tenant creation, config/status change, key rotation,
+  deletion) is recorded in an audit log (`GET /admin/audit-log`) — useful
+  evidence for "who suspended/deleted this tenant, and when" if a client
+  ever disputes it. Config-change entries record only which fields
+  changed, never the new values, so credentials are never duplicated
+  outside their encrypted storage.
 
 ## Ongoing
 
