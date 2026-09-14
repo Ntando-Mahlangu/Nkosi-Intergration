@@ -131,6 +131,19 @@ export interface QuietHours {
   endHour: number;
 }
 
+/**
+ * Optional per-tenant overrides for outreach copy. Each string is run
+ * through substituteTemplate with placeholders {name}, {businessName},
+ * {reason} (initialGrounded only), {service} (initialUngrounded only).
+ * Unset fields fall back to the built-in default wording.
+ */
+export interface MessageTemplates {
+  initialGrounded?: string;
+  initialUngrounded?: string;
+  /** Indexed by follow-up attempt (0 = first follow-up, 1 = second, ...). */
+  followUps?: string[];
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -147,6 +160,9 @@ export interface Tenant {
    */
   devMode?: boolean;
   channels: ChannelCredentials;
+  /** Where to POST a notification when a reply classifies as "interested" (e.g. a Slack incoming webhook URL). */
+  notifyWebhookUrl?: string;
+  templates?: MessageTemplates;
   createdAt: string;
 }
 
@@ -180,4 +196,8 @@ export interface Message {
   body: string;
   at: string; // ISO date
   classification?: ReplyClassification;
+  /** Provider's own message id (Twilio SID, etc.), when the send returned one. */
+  providerMessageId?: string;
+  /** Latest delivery status reported by the provider (e.g. "delivered", "failed", "bounce"). */
+  deliveryStatus?: string;
 }

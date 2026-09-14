@@ -4,20 +4,50 @@ import multer from "multer";
 import type { Stores } from "../store/index.js";
 import { classifyReply } from "../reply/classify.js";
 import { requireTenantAuth } from "../middleware/auth.js";
+import { createWebhookLimiter } from "../middleware/rateLimit.js";
 import { generateId } from "../idgen.js";
+import { publicBaseUrl } from "../publicUrl.js";
+import { safeCompare } from "../security.js";
+import { notifyInterestedLead } from "../notify.js";
 import type { Lead, LeadSource, Message } from "../types.js";
 
 const upload = multer();
 
-/** Twilio signs the exact URL it POSTed to — reconstruct it rather than trusting req.originalUrl behind a proxy. */
+const LEAD_SOURCES: ReadonlySet<LeadSource> = new Set([
+  "crm",
+  "website_form",
+  "missed_call",
+  "booking_software",
+  "email",
+  "sms",
+  "whatsapp",
+  "spreadsheet",
+  "customer_database",
+  "other",
+]);
+
+function normalizeSource(raw: unknown): LeadSource {
+  return typeof raw === "string" && LEAD_SOURCES.has(raw as LeadSource) ? (raw as LeadSource) : "other";
+}
+
+/**
+ * Twilio signs the exact URL it POSTed to. When PUBLIC_BASE_URL is
+ * configured, use it — trusting req.protocol/req.get("host") instead only
+ * works when this process is directly internet-facing, and silently breaks
+ * signature verification behind a TLS-terminating proxy/load balancer that
+ * doesn't forward the original scheme/host (or if it did, would be trusting
+ * a client-influenceable Host header for a security check).
+ */
 function requestUrl(req: Request): string {
+  const base = publicBaseUrl();
+  if (base) return `${base}${req.originalUrl}`;
   return `${req.protocol}://${req.get("host")}${req.originalUrl}`;
 }
 
 async function recordInboundAndClassify(
   stores: Stores,
   tenantId: string,
-  leadId: string,
+  lead: Lead,
   channel: Message["channel"],
   body: string
 ): Promise<{ classification: Awaited<ReturnType<typeof classifyReply>> }> {
@@ -26,7 +56,7 @@ async function recordInboundAndClassify(
   await stores.messageStore.logMessage({
     id: generateId("msg"),
     tenantId,
-    leadId,
+    leadId: lead.id,
     channel,
     direction: "inbound",
     body,
@@ -35,22 +65,28 @@ async function recordInboundAndClassify(
   });
 
   if (classification === "stop") {
-    await stores.leadStore.updateLead(tenantId, leadId, { status: "opted_out" });
+    await stores.leadStore.updateLead(tenantId, lead.id, { status: "opted_out" });
   } else {
-    await stores.leadStore.updateLead(tenantId, leadId, { status: "responded" });
+    await stores.leadStore.updateLead(tenantId, lead.id, { status: "responded" });
+    if (classification === "interested") {
+      const tenant = await stores.tenantStore.getTenant(tenantId);
+      if (tenant) void notifyInterestedLead(tenant, lead, channel, body);
+    }
   }
 
   return { classification };
 }
 
 /**
- * Inbound webhooks: Twilio SMS/voice-status (signature-verified per tenant),
- * a SendGrid inbound-parse endpoint for email replies, and a generic JSON
- * lead-intake endpoint for connecting an arbitrary CRM via an outgoing
- * webhook or a Zapier/Make/n8n automation.
+ * Inbound webhooks: Twilio SMS/voice-status/delivery-status (signature-
+ * verified per tenant), SendGrid inbound parse + delivery events, and a
+ * generic JSON lead-intake endpoint for connecting an arbitrary CRM via an
+ * outgoing webhook or a Zapier/Make/n8n automation. All routes are rate
+ * limited against flooding/abuse.
  */
 export function createWebhookRoutes(stores: Stores): Router {
   const router = Router();
+  router.use(createWebhookLimiter());
 
   // --- Twilio inbound SMS/WhatsApp replies ---
   router.post(
@@ -77,7 +113,7 @@ export function createWebhookRoutes(stores: Stores): Router {
 
       if (lead) {
         const channel = from?.startsWith("whatsapp:") ? "whatsapp" : "sms";
-        await recordInboundAndClassify(stores, tenant.id, lead.id, channel, body);
+        await recordInboundAndClassify(stores, tenant.id, lead, channel, body);
       }
 
       res.type("text/xml").send("<Response></Response>");
@@ -107,11 +143,11 @@ export function createWebhookRoutes(stores: Stores): Router {
       const missed = callStatus === "no-answer" || callStatus === "busy" || callStatus === "failed";
 
       if (from && missed) {
-        let lead = await stores.leadStore.findLeadByContact(tenant.id, { phone: from });
+        const lead = await stores.leadStore.findLeadByContact(tenant.id, { phone: from });
         if (lead) {
           await stores.leadStore.updateLead(tenant.id, lead.id, { hadMissedCall: true });
         } else {
-          lead = await stores.leadStore.createLead({
+          await stores.leadStore.createLead({
             id: generateId("lead"),
             tenantId: tenant.id,
             phone: from,
@@ -121,6 +157,35 @@ export function createWebhookRoutes(stores: Stores): Router {
             hadMissedCall: true,
           });
         }
+      }
+
+      res.status(204).send();
+    }
+  );
+
+  // --- Twilio delivery-status callback (SMS/WhatsApp): queued/sent/delivered/failed/undelivered ---
+  router.post(
+    "/webhooks/:tenantId/twilio/status",
+    express.urlencoded({ extended: false }),
+    async (req, res) => {
+      const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
+      const authToken = tenant?.channels.sms?.authToken ?? tenant?.channels.whatsapp?.authToken;
+      if (!tenant || !authToken) {
+        res.status(404).send();
+        return;
+      }
+
+      const signature = req.header("x-twilio-signature") ?? "";
+      const valid = twilio.validateRequest(authToken, signature, requestUrl(req), req.body);
+      if (!valid) {
+        res.status(403).send("invalid Twilio signature");
+        return;
+      }
+
+      const messageId = req.query.messageId as string | undefined;
+      const status = req.body.MessageStatus as string | undefined;
+      if (messageId && status) {
+        await stores.messageStore.updateMessageStatus(tenant.id, messageId, status);
       }
 
       res.status(204).send();
@@ -138,7 +203,8 @@ export function createWebhookRoutes(stores: Stores): Router {
       res.status(404).send();
       return;
     }
-    if (req.query.token !== tenant.apiKey) {
+    const token = req.query.token;
+    if (typeof token !== "string" || !safeCompare(token, tenant.apiKey)) {
       res.status(403).send("invalid token");
       return;
     }
@@ -150,7 +216,34 @@ export function createWebhookRoutes(stores: Stores): Router {
 
     const lead = fromEmail ? await stores.leadStore.findLeadByContact(tenant.id, { email: fromEmail }) : undefined;
     if (lead) {
-      await recordInboundAndClassify(stores, tenant.id, lead.id, "email", text);
+      await recordInboundAndClassify(stores, tenant.id, lead, "email", text);
+    }
+
+    res.status(204).send();
+  });
+
+  // --- SendGrid Event Webhook (delivery/bounce/etc.) ---
+  // Same pragmatic ?token= guard as the inbound parse endpoint above — swap
+  // for SendGrid's Event Webhook signature verification before real traffic.
+  router.post("/webhooks/:tenantId/sendgrid/events", express.json(), async (req, res) => {
+    const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
+    if (!tenant) {
+      res.status(404).send();
+      return;
+    }
+    const token = req.query.token;
+    if (typeof token !== "string" || !safeCompare(token, tenant.apiKey)) {
+      res.status(403).send("invalid token");
+      return;
+    }
+
+    const events = Array.isArray(req.body) ? req.body : [];
+    for (const event of events) {
+      const messageId = event?.leadrecovery_message_id;
+      const status = event?.event;
+      if (typeof messageId === "string" && typeof status === "string") {
+        await stores.messageStore.updateMessageStatus(tenant.id, messageId, status);
+      }
     }
 
     res.status(204).send();
@@ -172,7 +265,7 @@ export function createWebhookRoutes(stores: Stores): Router {
       name: body.name,
       phone: body.phone,
       email: body.email,
-      source: (body.source as LeadSource) ?? "other",
+      source: normalizeSource(body.source),
       createdAt: new Date().toISOString(),
       status: "new",
       requestedService: body.requestedService,

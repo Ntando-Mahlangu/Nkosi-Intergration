@@ -76,10 +76,12 @@ wording per lead. This shows the exact priority, reason, and drafted
 message for every lead **without sending anything**. Walk through this with
 the client and get explicit sign-off on:
 
-- Tone/wording of the templates (edit `src/messaging.ts` /
-  `src/followup.ts` if they want different phrasing — these are shared
-  across tenants today; a per-tenant template override is a natural next
-  step if clients want to customize independently).
+- Tone/wording of the templates. The built-in default wording lives in
+  `src/messaging.ts`/`src/followup.ts`; a specific client can override it
+  without a code change via `PATCH /tenants/me` (or the admin API), setting
+  `templates.initialGrounded` / `templates.initialUngrounded` /
+  `templates.followUps[]` with `{name}`/`{businessName}`/`{reason}`/
+  `{service}` placeholders.
 - Which leads are being excluded and why (the `skipped` list) — this is
   where you catch a bad CSV import or a missing do-not-contact entry before
   it becomes a real problem.
@@ -100,9 +102,11 @@ Flip a small batch live first:
   scheduler at `LEADRECOVERY_RUN_ONCE=true npm run worker` on the cadence
   you want).
 - Make sure someone on the client's side is watching for `interested`
-  replies (visible via `GET /leads/:id/messages`, or extend the webhook
-  handlers to notify their sales team directly — a Slack/email hook on a
-  classified-as-interested reply is a natural next addition).
+  replies. Set `notifyWebhookUrl` on the tenant (via `PATCH /tenants/me` or
+  the admin API) to a Slack incoming webhook URL (or any endpoint that
+  accepts a JSON POST) and LeadRecovery notifies it automatically the
+  moment a reply classifies as interested — no need to poll
+  `GET /leads/:id/messages`.
 - Agree on a reporting cadence (conversations recovered, appointments
   booked, revenue attributed) — this is the number that justifies the
   service to the client.

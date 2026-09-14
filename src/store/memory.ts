@@ -88,4 +88,11 @@ export class InMemoryMessageStore implements MessageStore {
       .filter((m) => m.tenantId === tenantId && m.leadId === leadId)
       .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   }
+
+  async updateMessageStatus(tenantId: string, messageId: string, deliveryStatus: string): Promise<Message | undefined> {
+    const message = this.messages.find((m) => m.tenantId === tenantId && m.id === messageId);
+    if (!message) return undefined;
+    message.deliveryStatus = deliveryStatus;
+    return message;
+  }
 }

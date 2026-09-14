@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import type { ChannelCredentials, Lead, Message, Tenant } from "../types.js";
 import type { LeadStore, MessageStore, TenantStore } from "./types.js";
+import { decryptSecret, encryptSecret } from "../crypto.js";
 
 function leadFromRow(row: Record<string, unknown>): Lead {
   return {
@@ -141,45 +142,75 @@ export class PostgresLeadStore implements LeadStore {
   }
 }
 
-function tenantFromRow(row: Record<string, unknown>): Tenant {
-  const quietStart = row.quiet_hours_start as number | null;
-  const quietEnd = row.quiet_hours_end as number | null;
-  return {
-    id: row.id as string,
-    name: row.name as string,
-    apiKey: row.api_key as string,
-    timezone: row.timezone as string,
-    quietHours: quietStart !== null && quietEnd !== null ? { startHour: quietStart, endHour: quietEnd } : undefined,
-    devMode: Boolean(row.dev_mode),
-    channels: (row.channels as ChannelCredentials) ?? {},
-    createdAt: new Date(row.created_at as string).toISOString(),
-  };
-}
+const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at,
+  notify_webhook_url, templates`;
 
-const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at`;
-
+/**
+ * Tenant provider credentials (Twilio auth tokens, SendGrid API keys) are
+ * encrypted at rest with AES-256-GCM (see src/crypto.ts) when an encryption
+ * key is configured — required in production (see store/index.ts). The
+ * `channels` JSONB column then holds `{"_encrypted": "<ciphertext>"}`
+ * instead of the plaintext credentials object.
+ */
 export class PostgresTenantStore implements TenantStore {
-  constructor(private pool: Pool) {}
+  constructor(private pool: Pool, private encryptionKey?: string) {}
+
+  private encodeChannels(channels: ChannelCredentials): string {
+    if (!this.encryptionKey) return JSON.stringify(channels);
+    return JSON.stringify({ _encrypted: encryptSecret(JSON.stringify(channels), this.encryptionKey) });
+  }
+
+  private decodeChannels(raw: unknown): ChannelCredentials {
+    const parsed = raw as { _encrypted?: string } | ChannelCredentials | null;
+    if (!parsed) return {};
+    if ("_encrypted" in parsed && parsed._encrypted) {
+      if (!this.encryptionKey) {
+        throw new Error(
+          "Tenant channel credentials are encrypted but no encryption key is configured " +
+            "(set LEADRECOVERY_ENCRYPTION_KEY to the key used when they were saved)."
+        );
+      }
+      return JSON.parse(decryptSecret(parsed._encrypted, this.encryptionKey)) as ChannelCredentials;
+    }
+    return parsed as ChannelCredentials;
+  }
+
+  private fromRow(row: Record<string, unknown>): Tenant {
+    const quietStart = row.quiet_hours_start as number | null;
+    const quietEnd = row.quiet_hours_end as number | null;
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      apiKey: row.api_key as string,
+      timezone: row.timezone as string,
+      quietHours: quietStart !== null && quietEnd !== null ? { startHour: quietStart, endHour: quietEnd } : undefined,
+      devMode: Boolean(row.dev_mode),
+      channels: this.decodeChannels(row.channels),
+      notifyWebhookUrl: (row.notify_webhook_url as string | null) ?? undefined,
+      templates: (row.templates as Tenant["templates"] | null) ?? undefined,
+      createdAt: new Date(row.created_at as string).toISOString(),
+    };
+  }
 
   async getTenant(id: string): Promise<Tenant | undefined> {
     const { rows } = await this.pool.query(`SELECT ${TENANT_COLUMNS} FROM tenants WHERE id = $1`, [id]);
-    return rows[0] ? tenantFromRow(rows[0]) : undefined;
+    return rows[0] ? this.fromRow(rows[0]) : undefined;
   }
 
   async getTenantByApiKey(apiKey: string): Promise<Tenant | undefined> {
     const { rows } = await this.pool.query(`SELECT ${TENANT_COLUMNS} FROM tenants WHERE api_key = $1`, [apiKey]);
-    return rows[0] ? tenantFromRow(rows[0]) : undefined;
+    return rows[0] ? this.fromRow(rows[0]) : undefined;
   }
 
   async listTenants(): Promise<Tenant[]> {
     const { rows } = await this.pool.query(`SELECT ${TENANT_COLUMNS} FROM tenants ORDER BY created_at ASC`);
-    return rows.map(tenantFromRow);
+    return rows.map((row) => this.fromRow(row));
   }
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         tenant.id,
         tenant.name,
@@ -188,8 +219,10 @@ export class PostgresTenantStore implements TenantStore {
         tenant.quietHours?.startHour ?? null,
         tenant.quietHours?.endHour ?? null,
         tenant.devMode ?? false,
-        JSON.stringify(tenant.channels),
+        this.encodeChannels(tenant.channels),
         tenant.createdAt,
+        tenant.notifyWebhookUrl ?? null,
+        tenant.templates ? JSON.stringify(tenant.templates) : null,
       ]
     );
     return tenant;
@@ -202,7 +235,8 @@ export class PostgresTenantStore implements TenantStore {
 
     await this.pool.query(
       `UPDATE tenants SET name = $2, api_key = $3, timezone = $4, quiet_hours_start = $5,
-        quiet_hours_end = $6, dev_mode = $7, channels = $8 WHERE id = $1`,
+        quiet_hours_end = $6, dev_mode = $7, channels = $8, notify_webhook_url = $9, templates = $10
+      WHERE id = $1`,
       [
         id,
         merged.name,
@@ -211,7 +245,9 @@ export class PostgresTenantStore implements TenantStore {
         merged.quietHours?.startHour ?? null,
         merged.quietHours?.endHour ?? null,
         merged.devMode ?? false,
-        JSON.stringify(merged.channels),
+        this.encodeChannels(merged.channels),
+        merged.notifyWebhookUrl ?? null,
+        merged.templates ? JSON.stringify(merged.templates) : null,
       ]
     );
     return merged;
@@ -228,16 +264,20 @@ function messageFromRow(row: Record<string, unknown>): Message {
     body: row.body as string,
     at: new Date(row.at as string).toISOString(),
     classification: (row.classification as Message["classification"]) ?? undefined,
+    providerMessageId: (row.provider_message_id as string | null) ?? undefined,
+    deliveryStatus: (row.delivery_status as string | null) ?? undefined,
   };
 }
+
+const MESSAGE_COLUMNS = `id, tenant_id, lead_id, channel, direction, body, at, classification, provider_message_id, delivery_status`;
 
 export class PostgresMessageStore implements MessageStore {
   constructor(private pool: Pool) {}
 
   async logMessage(message: Message): Promise<Message> {
     await this.pool.query(
-      `INSERT INTO messages (id, tenant_id, lead_id, channel, direction, body, at, classification)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      `INSERT INTO messages (id, tenant_id, lead_id, channel, direction, body, at, classification, provider_message_id, delivery_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [
         message.id,
         message.tenantId,
@@ -247,6 +287,8 @@ export class PostgresMessageStore implements MessageStore {
         message.body,
         message.at,
         message.classification ?? null,
+        message.providerMessageId ?? null,
+        message.deliveryStatus ?? null,
       ]
     );
     return message;
@@ -254,10 +296,17 @@ export class PostgresMessageStore implements MessageStore {
 
   async getMessagesForLead(tenantId: string, leadId: string): Promise<Message[]> {
     const { rows } = await this.pool.query(
-      `SELECT id, tenant_id, lead_id, channel, direction, body, at, classification
-       FROM messages WHERE tenant_id = $1 AND lead_id = $2 ORDER BY at ASC`,
+      `SELECT ${MESSAGE_COLUMNS} FROM messages WHERE tenant_id = $1 AND lead_id = $2 ORDER BY at ASC`,
       [tenantId, leadId]
     );
     return rows.map(messageFromRow);
+  }
+
+  async updateMessageStatus(tenantId: string, messageId: string, deliveryStatus: string): Promise<Message | undefined> {
+    const { rows } = await this.pool.query(
+      `UPDATE messages SET delivery_status = $3 WHERE tenant_id = $1 AND id = $2 RETURNING ${MESSAGE_COLUMNS}`,
+      [tenantId, messageId, deliveryStatus]
+    );
+    return rows[0] ? messageFromRow(rows[0]) : undefined;
   }
 }

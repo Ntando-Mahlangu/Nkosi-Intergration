@@ -93,4 +93,11 @@ describe("composeFollowUpMessage", () => {
       expect(body).toContain("Jordan");
     }
   });
+
+  it("uses a tenant's custom follow-up templates when set", () => {
+    const lead = makeContactedLead({});
+    const tenant = { ...TENANT, templates: { followUps: ["Nudge 1 for {name} from {businessName}."] } };
+    const message = composeFollowUpMessage(lead, 0, "sms", tenant);
+    expect(message.body).toBe("Nudge 1 for Jordan from Acme Co.");
+  });
 });

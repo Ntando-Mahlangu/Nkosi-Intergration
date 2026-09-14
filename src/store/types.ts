@@ -25,4 +25,6 @@ export interface TenantStore {
 export interface MessageStore {
   logMessage(message: Message): Promise<Message>;
   getMessagesForLead(tenantId: string, leadId: string): Promise<Message[]>;
+  /** Updates delivery status for a message previously logged with this id (used by provider delivery-status webhooks). */
+  updateMessageStatus(tenantId: string, messageId: string, deliveryStatus: string): Promise<Message | undefined>;
 }

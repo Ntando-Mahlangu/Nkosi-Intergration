@@ -1,6 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { TenantStore } from "../store/types.js";
 import type { Tenant } from "../types.js";
+import { safeCompare } from "../security.js";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -45,7 +46,7 @@ export function requireAdminAuth(): RequestHandler {
       return;
     }
     const token = extractBearerToken(req);
-    if (token !== adminKey) {
+    if (!token || !safeCompare(token, adminKey)) {
       res.status(401).json({ error: "invalid admin key" });
       return;
     }

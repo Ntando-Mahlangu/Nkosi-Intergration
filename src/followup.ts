@@ -1,5 +1,6 @@
 import type { ComposedMessage, ContactReason, Lead, Tenant } from "./types.js";
 import { checkSuppression } from "./compliance.js";
+import { substituteTemplate } from "./templateSubstitute.js";
 
 /** Days after the previous contact before each successive follow-up is due. */
 export const FOLLOWUP_INTERVAL_DAYS = [3, 7, 14] as const;
@@ -36,13 +37,10 @@ export function getLeadsDueForFollowUp(leads: Lead[], now: Date = new Date()): L
   return leads.filter((lead) => isDueForFollowUp(lead, now));
 }
 
-const FOLLOWUP_TEMPLATES = [
-  (name: string, businessName: string) =>
-    `Hi ${name}, just following up from ${businessName} in case our last message got buried — still keen to help whenever you're ready. Reply STOP to opt out.`,
-  (name: string, businessName: string) =>
-    `Hi ${name}, one more check-in from ${businessName} — no pressure at all, just didn't want to leave you hanging. Reply STOP anytime.`,
-  (name: string, businessName: string) =>
-    `Hi ${name}, last note from ${businessName} for now — reach out whenever suits you and we'll pick up where we left off. Reply STOP to opt out.`,
+const DEFAULT_FOLLOWUP_TEMPLATES = [
+  "Hi {name}, just following up from {businessName} in case our last message got buried — still keen to help whenever you're ready. Reply STOP to opt out.",
+  "Hi {name}, one more check-in from {businessName} — no pressure at all, just didn't want to leave you hanging. Reply STOP anytime.",
+  "Hi {name}, last note from {businessName} for now — reach out whenever suits you and we'll pick up where we left off. Reply STOP to opt out.",
 ];
 
 function firstName(lead: Lead): string {
@@ -53,7 +51,9 @@ function firstName(lead: Lead): string {
 /**
  * Composes a follow-up nudge for a lead already past its initial message.
  * Deliberately distinct wording per attempt (spec: "never repeat the same
- * phrasing") and always short, low-pressure, and easy to opt out of.
+ * phrasing") and always short, low-pressure, and easy to opt out of. Uses
+ * the tenant's own template override (tenant.templates.followUps[index])
+ * when set, otherwise the built-in default wording for that attempt.
  */
 export function composeFollowUpMessage(
   lead: Lead,
@@ -61,8 +61,11 @@ export function composeFollowUpMessage(
   channel: ComposedMessage["channel"],
   tenant: Tenant
 ): ComposedMessage {
-  const template = FOLLOWUP_TEMPLATES[Math.min(followUpIndex, FOLLOWUP_TEMPLATES.length - 1)];
-  return { channel, body: template(firstName(lead), tenant.name) };
+  const custom = tenant.templates?.followUps;
+  const template =
+    (custom && custom[Math.min(followUpIndex, custom.length - 1)]) ??
+    DEFAULT_FOLLOWUP_TEMPLATES[Math.min(followUpIndex, DEFAULT_FOLLOWUP_TEMPLATES.length - 1)];
+  return { channel, body: substituteTemplate(template, { name: firstName(lead), businessName: tenant.name }) };
 }
 
 /** Reason attached to a follow-up plan, for consistency with the initial-contact ContactReason shape. */

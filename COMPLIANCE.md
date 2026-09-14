@@ -46,23 +46,31 @@ document is not a substitute for that review.
   the inbound webhook flips matching leads to `opted_out` immediately, but
   confirm this satisfies the client's jurisdiction's specific requirements
   (e.g. a physical mailing address in the footer for CAN-SPAM).
-- **SendGrid Inbound Parse signing**: `src/webhooks/index.ts`'s email
-  webhook uses a simple `?token=` shared secret as an MVP guard. Before
-  handling real client traffic, switch to SendGrid's signed webhook
-  verification (ECDSA signature over the request) for stronger assurance
-  the request actually came from SendGrid.
+- **SendGrid Inbound Parse / Event Webhook signing**: `src/webhooks/index.ts`'s
+  email and delivery-events webhooks use a constant-time-compared `?token=`
+  shared secret as an MVP guard (see `src/security.ts`). Before handling
+  real client traffic, switch to SendGrid's signed webhook verification
+  (ECDSA signature over the request) for stronger assurance the request
+  actually came from SendGrid.
 
 ## Data handling
 
 - Tenant channel credentials (Twilio auth tokens, SendGrid API keys) are
-  currently stored in cleartext in the `tenants.channels` JSONB column. For
-  production use with real client credentials, put these behind a secrets
-  manager (e.g. store a reference/ID in Postgres, the actual secret in AWS
-  Secrets Manager / Vault / similar) rather than in the database directly.
+  encrypted at rest (AES-256-GCM, `src/crypto.ts`) in the `tenants.channels`
+  JSONB column, keyed by `LEADRECOVERY_ENCRYPTION_KEY`. This still isn't a
+  substitute for a real secrets manager for defense-in-depth (rotation,
+  audit logging, access control finer than "has the app's encryption key")
+  — consider AWS Secrets Manager/Vault/similar for higher-stakes deployments.
+  **Losing the encryption key makes existing tenants' credentials
+  unrecoverable** — back it up somewhere durable, separate from the database.
 - Lead and message data includes PII (names, phone numbers, emails,
   conversation content). Make sure the Postgres instance is encrypted at
   rest and access is restricted appropriately, and agree a data-retention
   policy with the client.
+- Admin key and webhook shared-secret comparisons use constant-time
+  comparison (`src/security.ts`) to avoid leaking timing information; all
+  admin/webhook/tenant-authed routes are also rate limited
+  (`src/middleware/rateLimit.ts`) against brute-force/flooding.
 
 ## Ongoing
 

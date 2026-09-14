@@ -1,17 +1,23 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { beforeEach, describe, expect, it } from "vitest";
 import { PostgresLeadStore, PostgresMessageStore, PostgresTenantStore } from "../src/store/postgres.js";
+import { generateEncryptionKey } from "../src/crypto.js";
 import type { Lead, Message, Tenant } from "../src/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MIGRATION_SQL = readFileSync(
-  path.join(__dirname, "..", "src", "db", "migrations", "0001_init.sql"),
-  "utf-8"
-);
+const MIGRATIONS_DIR = path.join(__dirname, "..", "src", "db", "migrations");
+// Apply every migration in order, same as src/scripts/migrate.ts, so this test always
+// exercises the store against the same schema the real app runs migrations to produce.
+const MIGRATION_SQLS = readdirSync(MIGRATIONS_DIR)
+  .filter((f) => f.endsWith(".sql"))
+  .sort()
+  .map((f) => readFileSync(path.join(MIGRATIONS_DIR, f), "utf-8"));
+
+const TEST_ENCRYPTION_KEY = generateEncryptionKey();
 
 function createTestPool(): Pool {
   const db = newDb({ autoCreateForeignKeyIndices: true });
@@ -48,11 +54,11 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
 
   beforeEach(async () => {
     pool = createTestPool();
-    await pool.query(MIGRATION_SQL);
+    for (const sql of MIGRATION_SQLS) await pool.query(sql);
   });
 
   it("round-trips a tenant, including quiet hours and channel credentials", async () => {
-    const tenantStore = new PostgresTenantStore(pool);
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant(TENANT);
 
     const byId = await tenantStore.getTenant(TENANT.id);
@@ -66,8 +72,27 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(missing).toBeUndefined();
   });
 
+  it("never stores channel credentials in cleartext in the database", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant(TENANT);
+
+    const { rows } = await pool.query("SELECT channels FROM tenants WHERE id = $1", [TENANT.id]);
+    const raw = JSON.stringify(rows[0].channels);
+    expect(raw).not.toContain("tok"); // the plaintext Twilio auth token
+    expect(raw).not.toContain("+15550000");
+    expect(rows[0].channels._encrypted).toBeTruthy();
+  });
+
+  it("refuses to decrypt encrypted channels without the right key", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant(TENANT);
+
+    const storeWithNoKey = new PostgresTenantStore(pool);
+    await expect(storeWithNoKey.getTenant(TENANT.id)).rejects.toThrow(/encryption key/i);
+  });
+
   it("round-trips a lead and supports lookup by phone/email and partial updates", async () => {
-    const tenantStore = new PostgresTenantStore(pool);
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant(TENANT);
     const leadStore = new PostgresLeadStore(pool);
 
@@ -93,7 +118,7 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
   });
 
   it("scopes leads strictly per tenant", async () => {
-    const tenantStore = new PostgresTenantStore(pool);
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     const leadStore = new PostgresLeadStore(pool);
     await tenantStore.createTenant(TENANT);
     await tenantStore.createTenant({ ...TENANT, id: "tenant-2", apiKey: "other-key" });
@@ -106,7 +131,7 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
   });
 
   it("logs and retrieves messages for a lead in chronological order", async () => {
-    const tenantStore = new PostgresTenantStore(pool);
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     const leadStore = new PostgresLeadStore(pool);
     const messageStore = new PostgresMessageStore(pool);
     await tenantStore.createTenant(TENANT);
@@ -138,5 +163,34 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     const history = await messageStore.getMessagesForLead(TENANT.id, LEAD.id);
     expect(history.map((m) => m.id)).toEqual(["msg-1", "msg-2"]);
     expect(history[1].classification).toBe("stop");
+  });
+
+  it("records and updates delivery status by message id", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    const leadStore = new PostgresLeadStore(pool);
+    const messageStore = new PostgresMessageStore(pool);
+    await tenantStore.createTenant(TENANT);
+    await leadStore.createLead(LEAD);
+
+    await messageStore.logMessage({
+      id: "msg-out-1",
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      channel: "sms",
+      direction: "outbound",
+      body: "Hi Jordan...",
+      at: new Date("2026-09-01T00:00:00.000Z").toISOString(),
+      providerMessageId: "SM123",
+    });
+
+    const updated = await messageStore.updateMessageStatus(TENANT.id, "msg-out-1", "delivered");
+    expect(updated?.deliveryStatus).toBe("delivered");
+
+    const [reread] = await messageStore.getMessagesForLead(TENANT.id, LEAD.id);
+    expect(reread.deliveryStatus).toBe("delivered");
+    expect(reread.providerMessageId).toBe("SM123");
+
+    const missing = await messageStore.updateMessageStatus(TENANT.id, "no-such-message", "delivered");
+    expect(missing).toBeUndefined();
   });
 });

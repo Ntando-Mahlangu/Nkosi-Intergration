@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { determineContactReason } from "../src/reason.js";
 import { composeInitialMessage } from "../src/messaging.js";
-import type { Lead } from "../src/types.js";
+import type { Lead, Tenant } from "../src/types.js";
 
 function makeLead(overrides: Partial<Lead>): Lead {
   return {
@@ -11,6 +11,18 @@ function makeLead(overrides: Partial<Lead>): Lead {
     source: "crm",
     createdAt: new Date().toISOString(),
     status: "new",
+    ...overrides,
+  };
+}
+
+function makeTenant(overrides: Partial<Tenant> = {}): Tenant {
+  return {
+    id: "test-tenant",
+    name: "Acme Co",
+    apiKey: "test-key",
+    timezone: "UTC",
+    channels: {},
+    createdAt: new Date().toISOString(),
     ...overrides,
   };
 }
@@ -46,7 +58,7 @@ describe("composeInitialMessage", () => {
   it("uses the grounded reason and includes an opt-out", () => {
     const lead = makeLead({ previousQuote: "R5,000" });
     const reason = determineContactReason(lead);
-    const message = composeInitialMessage(lead, reason, "sms", { businessName: "Acme Co" });
+    const message = composeInitialMessage(lead, reason, "sms", makeTenant());
     expect(message.body).toContain("Jordan");
     expect(message.body).toContain("Acme Co");
     expect(message.body).toMatch(/quote/i);
@@ -57,7 +69,7 @@ describe("composeInitialMessage", () => {
     const lead = makeLead({ requestedService: "landscaping" });
     const reason = determineContactReason(lead); // grounded via requestedService
     const ungrounded = { grounded: false } as const;
-    const message = composeInitialMessage(lead, ungrounded, "email", { businessName: "Acme Co" });
+    const message = composeInitialMessage(lead, ungrounded, "email", makeTenant());
     expect(message.body).not.toMatch(/we noticed we missed your call/i);
     expect(message.body).toMatch(/check back in/i);
     expect(message.body).toMatch(/landscaping/i);
@@ -67,7 +79,17 @@ describe("composeInitialMessage", () => {
   it("never claims a specific event for a fully unknown lead", () => {
     const lead = makeLead({});
     const reason = determineContactReason(lead);
-    const message = composeInitialMessage(lead, reason, "email", { businessName: "Acme Co" });
+    const message = composeInitialMessage(lead, reason, "email", makeTenant());
     expect(message.body).not.toMatch(/quote|missed your call|previously spoke/i);
+  });
+
+  it("uses a tenant's custom template override when set", () => {
+    const lead = makeLead({ previousQuote: "R5,000" });
+    const reason = determineContactReason(lead);
+    const tenant = makeTenant({
+      templates: { initialGrounded: "Yo {name}! {businessName} here, re: {reason}. Text STOP to bail." },
+    });
+    const message = composeInitialMessage(lead, reason, "sms", tenant);
+    expect(message.body).toBe("Yo Jordan! Acme Co here, re: you previously requested a quote. Text STOP to bail.");
   });
 });

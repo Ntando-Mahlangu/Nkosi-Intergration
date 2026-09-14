@@ -13,7 +13,7 @@ export const emailAdapter: ChannelAdapter = {
     return Boolean(lead.email) && (Boolean(tenant.channels.email) || Boolean(tenant.devMode));
   },
 
-  async send(tenant: Tenant, lead: Lead, message): Promise<SendResult> {
+  async send(tenant: Tenant, lead: Lead, message, messageId: string): Promise<SendResult> {
     if (!lead.email) {
       return { ok: false, channel: "email", detail: "no email address on file" };
     }
@@ -26,6 +26,9 @@ export const emailAdapter: ChannelAdapter = {
         from: creds.fromName ? { email: creds.fromEmail, name: creds.fromName } : creds.fromEmail,
         subject: `${tenant.name}`,
         text: message.body,
+        // Echoed back on every Event Webhook event for this send, so the
+        // delivery-status webhook can correlate it to our Message record.
+        customArgs: { leadrecovery_message_id: messageId },
       });
       return { ok: true, channel: "email", detail: `status ${response.statusCode}` };
     }

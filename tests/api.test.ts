@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import express from "express";
 import { InMemoryLeadStore, InMemoryMessageStore, InMemoryTenantStore } from "../src/store/memory.js";
@@ -182,5 +182,206 @@ describe("webhook: SendGrid inbound parse", () => {
       .field("text", "hello");
 
     expect(res.status).toBe(403);
+  });
+});
+
+describe("webhook: SendGrid delivery events", () => {
+  it("updates message delivery status by the correlated message id", async () => {
+    const stores = buildStores();
+    await stores.messageStore.logMessage({
+      id: "msg-1",
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      channel: "email",
+      direction: "outbound",
+      body: "hi",
+      at: new Date().toISOString(),
+    });
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${TENANT.id}/sendgrid/events?token=${TENANT.apiKey}`)
+      .send([{ event: "delivered", leadrecovery_message_id: "msg-1" }, { event: "open", leadrecovery_message_id: "msg-1" }]);
+
+    expect(res.status).toBe(204);
+    const [message] = await stores.messageStore.getMessagesForLead(TENANT.id, LEAD.id);
+    expect(message.deliveryStatus).toBe("open"); // last event in the batch wins
+  });
+
+  it("rejects a missing/wrong token", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app).post(`/webhooks/${TENANT.id}/sendgrid/events?token=wrong`).send([]);
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("webhook: generic lead intake source validation", () => {
+  it("normalizes an unrecognized source to 'other' instead of trusting client input", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post("/webhooks/lead")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ phone: "+27821110000", source: "some-made-up-source" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.source).toBe("other");
+  });
+});
+
+describe("notify on interested reply", () => {
+  it("POSTs to the tenant's notifyWebhookUrl when a reply classifies as interested", async () => {
+    const tenantWithHook: Tenant = { ...TENANT, notifyWebhookUrl: "https://hooks.example.com/notify" };
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenantWithHook]),
+      messageStore: new InMemoryMessageStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+
+    const res = await request(app)
+      .post(`/webhooks/${TENANT.id}/sendgrid/email?token=${TENANT.apiKey}`)
+      .field("from", "Jordan <jordan@example.com>")
+      .field("text", "yes please, sounds good");
+
+    expect(res.status).toBe(204);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://hooks.example.com/notify",
+      expect.objectContaining({ method: "POST" })
+    );
+    const body = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    expect(body.event).toBe("lead_interested");
+    expect(body.lead.id).toBe(LEAD.id);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("never fails the webhook if the notification target is unreachable", async () => {
+    const tenantWithHook: Tenant = { ...TENANT, notifyWebhookUrl: "https://hooks.example.com/notify" };
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenantWithHook]),
+      messageStore: new InMemoryMessageStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
+
+    const res = await request(app)
+      .post(`/webhooks/${TENANT.id}/sendgrid/email?token=${TENANT.apiKey}`)
+      .field("from", "Jordan <jordan@example.com>")
+      .field("text", "yes please");
+
+    expect(res.status).toBe(204);
+    const lead = await stores.leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(lead?.status).toBe("responded");
+
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("tenant self-service settings", () => {
+  it("lets a tenant update its own timezone/quietHours/notifyWebhookUrl", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores.tenantStore));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ timezone: "America/New_York", quietHours: { startHour: 21, endHour: 7 }, notifyWebhookUrl: "https://x.example.com/hook" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.timezone).toBe("America/New_York");
+    expect(res.body.quietHours).toEqual({ startHour: 21, endHour: 7 });
+  });
+
+  it("rejects an invalid timezone", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores.tenantStore));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ timezone: "Not/A_Real_Zone" });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects out-of-range quiet hours", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores.tenantStore));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ quietHours: { startHour: 25, endHour: 8 } });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an invalid notifyWebhookUrl", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores.tenantStore));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ notifyWebhookUrl: "not-a-url" });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("admin tenant creation validation", () => {
+  it("rejects an invalid timezone", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores.tenantStore));
+
+    const res = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Bad TZ Co", timezone: "Not/A_Zone" });
+
+    expect(res.status).toBe(400);
+    delete process.env.ADMIN_API_KEY;
+  });
+});
+
+describe("rate limiting", () => {
+  it("returns 429 once the admin limiter's threshold is exceeded", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores.tenantStore));
+
+    let lastStatus = 200;
+    for (let i = 0; i < 31; i++) {
+      const res = await request(app).get("/admin/tenants").set("Authorization", "Bearer admin-secret");
+      lastStatus = res.status;
+    }
+    expect(lastStatus).toBe(429);
+    delete process.env.ADMIN_API_KEY;
   });
 });

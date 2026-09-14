@@ -7,6 +7,7 @@ import { composeInitialMessage } from "./messaging.js";
 import { getAdapter, selectChannel, type SendResult } from "./channels/index.js";
 import { isWithinQuietHours } from "./quietHours.js";
 import { composeFollowUpMessage, followUpReason, getLeadsDueForFollowUp } from "./followup.js";
+import { generateId } from "./idgen.js";
 
 /**
  * Builds initial-outreach recovery plans (SYSTEM_PROMPT.md STEP 1-4) for
@@ -37,7 +38,7 @@ export function buildRecoveryPlans(tenant: Tenant, leads: Lead[], now: Date = ne
       continue;
     }
     const reason = determineContactReason(lead);
-    const message = composeInitialMessage(lead, reason, channel, { businessName: tenant.name });
+    const message = composeInitialMessage(lead, reason, channel, tenant);
     plans.push({ lead, priority, priorityReasons, reason, message });
   }
 
@@ -95,19 +96,21 @@ async function sendPlans(
   }
 
   for (const plan of plans) {
+    const messageId = generateId("msg");
     const adapter = getAdapter(plan.message.channel);
-    const result = await adapter.send(tenant, plan.lead, plan.message);
+    const result = await adapter.send(tenant, plan.lead, plan.message, messageId);
     sent.push({ plan, result, isFollowUp });
 
     if (result.ok) {
       await messages?.logMessage({
-        id: `${plan.lead.id}-out-${now.getTime()}-${sent.length}`,
+        id: messageId,
         tenantId: tenant.id,
         leadId: plan.lead.id,
         channel: plan.message.channel,
         direction: "outbound",
         body: plan.message.body,
         at: now.toISOString(),
+        providerMessageId: result.providerMessageId,
       });
 
       const patch: Partial<Lead> = {

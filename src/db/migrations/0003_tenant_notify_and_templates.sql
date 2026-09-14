@@ -1,0 +1,2 @@
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS notify_webhook_url TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS templates JSONB;

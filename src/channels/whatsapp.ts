@@ -1,6 +1,7 @@
 import twilio from "twilio";
 import type { Lead, Tenant } from "../types.js";
 import type { ChannelAdapter, SendResult } from "./types.js";
+import { publicBaseUrl } from "../publicUrl.js";
 
 function toWhatsAppAddress(e164: string): string {
   return e164.startsWith("whatsapp:") ? e164 : `whatsapp:${e164}`;
@@ -19,7 +20,7 @@ export const whatsappAdapter: ChannelAdapter = {
     return Boolean(lead.phone) && (Boolean(tenant.channels.whatsapp) || Boolean(tenant.devMode));
   },
 
-  async send(tenant: Tenant, lead: Lead, message): Promise<SendResult> {
+  async send(tenant: Tenant, lead: Lead, message, messageId: string): Promise<SendResult> {
     if (!lead.phone) {
       return { ok: false, channel: "whatsapp", detail: "no phone number on file" };
     }
@@ -27,12 +28,16 @@ export const whatsappAdapter: ChannelAdapter = {
     const creds = tenant.channels.whatsapp;
     if (creds) {
       const client = twilio(creds.accountSid, creds.authToken);
+      const base = publicBaseUrl();
       const result = await client.messages.create({
         to: toWhatsAppAddress(lead.phone),
         from: toWhatsAppAddress(creds.fromNumber),
         body: message.body,
+        ...(base
+          ? { statusCallback: `${base}/webhooks/${tenant.id}/twilio/status?messageId=${encodeURIComponent(messageId)}` }
+          : {}),
       });
-      return { ok: true, channel: "whatsapp", detail: result.sid };
+      return { ok: true, channel: "whatsapp", detail: result.sid, providerMessageId: result.sid };
     }
 
     if (tenant.devMode) {

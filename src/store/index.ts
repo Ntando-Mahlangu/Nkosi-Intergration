@@ -34,10 +34,18 @@ function loadSampleLeads(): Lead[] {
  */
 export function createStores(): Stores {
   if (process.env.DATABASE_URL) {
+    const encryptionKey = process.env.LEADRECOVERY_ENCRYPTION_KEY;
+    if (!encryptionKey) {
+      throw new Error(
+        "LEADRECOVERY_ENCRYPTION_KEY is required when DATABASE_URL is set — tenant provider " +
+          "credentials (Twilio/SendGrid) are encrypted at rest with it. Generate one with " +
+          "`node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"`."
+      );
+    }
     const pool = getPool();
     return {
       leadStore: new PostgresLeadStore(pool),
-      tenantStore: new PostgresTenantStore(pool),
+      tenantStore: new PostgresTenantStore(pool, encryptionKey),
       messageStore: new PostgresMessageStore(pool),
     };
   }

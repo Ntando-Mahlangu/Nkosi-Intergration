@@ -1,6 +1,7 @@
 import twilio from "twilio";
 import type { Lead, Tenant } from "../types.js";
 import type { ChannelAdapter, SendResult } from "./types.js";
+import { publicBaseUrl } from "../publicUrl.js";
 
 /**
  * SMS adapter. With real Twilio credentials configured on the tenant, sends
@@ -14,7 +15,7 @@ export const smsAdapter: ChannelAdapter = {
     return Boolean(lead.phone) && (Boolean(tenant.channels.sms) || Boolean(tenant.devMode));
   },
 
-  async send(tenant: Tenant, lead: Lead, message): Promise<SendResult> {
+  async send(tenant: Tenant, lead: Lead, message, messageId: string): Promise<SendResult> {
     if (!lead.phone) {
       return { ok: false, channel: "sms", detail: "no phone number on file" };
     }
@@ -22,12 +23,16 @@ export const smsAdapter: ChannelAdapter = {
     const creds = tenant.channels.sms;
     if (creds) {
       const client = twilio(creds.accountSid, creds.authToken);
+      const base = publicBaseUrl();
       const result = await client.messages.create({
         to: lead.phone,
         from: creds.fromNumber,
         body: message.body,
+        ...(base
+          ? { statusCallback: `${base}/webhooks/${tenant.id}/twilio/status?messageId=${encodeURIComponent(messageId)}` }
+          : {}),
       });
-      return { ok: true, channel: "sms", detail: result.sid };
+      return { ok: true, channel: "sms", detail: result.sid, providerMessageId: result.sid };
     }
 
     if (tenant.devMode) {
