@@ -175,6 +175,27 @@ which depends on how the app sees its own address. See "SendGrid Event
 Webhook signing" in `README.md`/`ONBOARDING.md` for how to obtain and set
 that key per tenant.
 
+## Load testing
+
+```bash
+npm run loadtest -- --url http://localhost:3000 --concurrency 10 --duration 10
+```
+
+A baseline tool, not a full performance-testing suite: fires concurrent GET
+requests at `/health`, `/leads`, and `/leads/plan` for a fixed duration and
+reports throughput and p50/p95/p99 latency. Deliberately read-only — it
+never touches `POST /workflow/run`, since a load test that actually sends
+real messages to a real tenant's leads is not a load test, it's an
+incident. Point `--url`/`--key` at a real deployment only with a tenant
+you're deliberately spending traffic budget against; the default (`--key
+demo-key` against a local `npm run dev`) is always safe.
+
+At any reasonable concurrency you will see `429`s well before you learn
+anything about the server's actual capacity — that's the tenant rate
+limiter (60 req/min per key by default) doing its job, not a fault. The
+script says so; use a low concurrency/duration to stay under it, or read
+this as confirmation the limiter works rather than a performance number.
+
 ## Verifying provider credentials
 
 Before a tenant's first real send, run:
@@ -242,9 +263,26 @@ The server and worker log structured JSON lines (one object per line —
 tick results, and send/notification/chatbot failures. Pipe stdout/stderr
 into whatever log aggregator you use (CloudWatch Logs, Loki, Datadog,
 Google Cloud Logging, ...) — no special configuration needed, it's already
-one JSON object per line. There's no metrics/APM or error-tracking (e.g.
-Sentry) integration built in; add one at the platform level if you need
-alerting beyond "grep the logs."
+one JSON object per line.
+
+Both processes also install a last-resort handler
+(`src/fatalErrorHandlers.ts`) for anything that slips past every specific
+try/catch already in place — an uncaught exception or unhandled promise
+rejection. It logs the error the same way (an `uncaught_exception` /
+`unhandled_rejection` line) and then exits deliberately (Node's own
+guidance: don't keep running with possibly-corrupted state), so your
+process manager (systemd, Docker's restart policy, an orchestrator) should
+restart it — make sure whatever runs this expects that and restarts on
+exit.
+
+There's no metrics/APM or error-tracking (e.g. Sentry) integration built
+in. If you want one, the two hook points are exactly the log call sites in
+`src/fatalErrorHandlers.ts` (for anything fatal) and `src/logger.ts`'s
+`error()` function (for everything logged as an error short of fatal,
+which is most of what you'd want alerted on) — add the SDK's capture call
+alongside the existing `logger.error(...)` calls, or have your aggregator
+alert directly on `"level":"error"` lines instead of adding a second
+vendor SDK.
 
 A notification (an `interested` reply, or a chatbot escalation) that fails
 to reach a tenant's `notifyWebhookUrl` is retried, then persisted rather

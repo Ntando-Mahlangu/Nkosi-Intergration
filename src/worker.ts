@@ -6,6 +6,12 @@ import { logger } from "./logger.js";
 import { deliverNotification, NOTIFICATION_MAX_ATTEMPTS } from "./notify.js";
 import { cleanupExpiredRateLimitCounters } from "./middleware/pgRateLimitStore.js";
 import { getPool } from "./db/pool.js";
+import { installFatalErrorHandlers } from "./fatalErrorHandlers.js";
+
+// This file is always run directly (nothing else imports it), so this is
+// always the actual process entrypoint — safe to install unconditionally,
+// unlike server.ts which also gets imported by tests.
+installFatalErrorHandlers("worker");
 
 // Bounds how many tenants this worker processes in parallel per tick. Only
 // meaningful within a single worker process/replica — run exactly one
@@ -45,7 +51,11 @@ async function redeliverFailedNotifications(stores: Stores): Promise<void> {
       // One notification's bookkeeping failure (e.g. a transient DB error
       // in markDelivered/markAttemptFailed) must never stop the rest of
       // the backlog from being retried this tick.
-      logger.error("notification_redelivery_error", { tenantId: n.tenantId, leadId: n.leadId, error: (err as Error).message });
+      logger.error("notification_redelivery_error", {
+        tenantId: n.tenantId,
+        leadId: n.leadId,
+        error: (err as Error).message,
+      });
     }
   });
 }

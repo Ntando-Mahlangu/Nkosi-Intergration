@@ -41,6 +41,8 @@ and (optionally) Twilio/SendGrid credentials. It prints:
 
 Prefer automation? `POST /admin/tenants` (with `Authorization: Bearer
 <ADMIN_API_KEY>`) does the same thing programmatically — see `README.md`.
+`public/admin.html` wraps this in a clickable form (and shows the API key
+in a copyable "shown once" panel) if you'd rather not run a CLI or curl.
 
 If the client doesn't have Twilio/SendGrid accounts yet, create the tenant
 anyway with those fields blank; it can run in `devMode` (console-only sends)
@@ -167,6 +169,11 @@ reply — see step 8 below for setting that up.
   agent's "recent" aren't the same.
 
 ## 10. Pausing or offboarding a client
+
+All of the below can be done via curl against the admin API, or from
+`public/admin.html` — connect with `ADMIN_API_KEY` (not a tenant key) for
+a clickable view of every tenant plus the failed-notifications queue and
+audit log, if you'd rather not hand-write requests.
 
 - **Pause without losing data** (e.g. a billing issue, or the client wants a
   temporary hold): `PATCH /admin/tenants/<id>` with `{"status":

@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LeadRecovery Admin</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #262b36;
+    --text: #e6e8ec;
+    --muted: #8a92a3;
+    --accent: #5b8cff;
+    --ok: #2fbf71;
+    --fail: #e5484d;
+    --warn: #f5a623;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px; }
+  .auth-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    max-width: 480px;
+    margin: 60px auto;
+  }
+  .auth-panel h2 { margin-top: 0; font-size: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input, select {
+    width: 100%;
+    padding: 9px 10px;
+    background: #0c0e12;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 14px;
+  }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+  button.danger { background: var(--fail); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+  .stat { font-size: 13px; color: var(--muted); }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .name { font-weight: 600; }
+  .meta { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .badge.active { background: rgba(47,191,113,0.15); color: var(--ok); }
+  .badge.suspended { background: rgba(245,166,35,0.15); color: var(--warn); }
+  .badge.pending { background: rgba(245,166,35,0.15); color: var(--warn); }
+  .badge.dead { background: rgba(229,72,77,0.15); color: var(--fail); }
+  .empty { color: var(--muted); padding: 32px; text-align: center; }
+  .error { color: var(--fail); font-size: 13px; margin-top: 8px; }
+  .reveal {
+    background: #0c0e12;
+    border: 1px solid var(--ok);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  .reveal .key { font-family: ui-monospace, monospace; word-break: break-all; user-select: all; }
+  .reveal .warn { color: var(--warn); font-size: 12px; margin-top: 6px; }
+  section h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 28px 0 10px; }
+  .create-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; }
+  .create-form label { margin: 0 0 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  td.mono { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="auth" class="auth-panel">
+  <h2>LeadRecovery Admin</h2>
+  <label for="base-url">API base URL</label>
+  <input id="base-url" placeholder="http://localhost:3000" />
+  <label for="admin-key">Admin API key</label>
+  <input id="admin-key" type="password" placeholder="ADMIN_API_KEY" />
+  <div style="margin-top:16px;">
+    <button id="connect-btn">Connect</button>
+  </div>
+  <div id="auth-error" class="error"></div>
+</div>
+
+<div id="app" style="display:none;">
+  <header>
+    <div>
+      <h1>LeadRecovery Admin</h1>
+      <div class="sub" id="host-sub"></div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="secondary" id="refresh-btn">Refresh</button>
+      <button class="secondary" id="logout-btn">Disconnect</button>
+    </div>
+  </header>
+  <main>
+    <div id="reveal-panel"></div>
+
+    <section>
+      <h3>Create tenant</h3>
+      <div class="card">
+        <div class="create-form">
+          <div>
+            <label for="new-name">Name</label>
+            <input id="new-name" placeholder="Acme Co" />
+          </div>
+          <div>
+            <label for="new-timezone">Timezone (IANA)</label>
+            <input id="new-timezone" placeholder="Africa/Johannesburg" />
+          </div>
+          <button id="create-btn">Create</button>
+        </div>
+        <div id="create-error" class="error"></div>
+      </div>
+    </section>
+
+    <section>
+      <h3>Tenants</h3>
+      <div class="toolbar">
+        <span class="stat" id="tenants-summary"></span>
+      </div>
+      <div id="tenants"></div>
+    </section>
+
+    <section>
+      <h3>Failed notifications</h3>
+      <p class="meta">Notifications ("interested" replies / chatbot escalations) that failed to reach a
+        tenant's notifyWebhookUrl. "pending" ones are still being retried by the worker each tick;
+        "dead" ones gave up and need attention (usually a broken notifyWebhookUrl).</p>
+      <div id="notifications"></div>
+    </section>
+
+    <section>
+      <h3>Audit log</h3>
+      <div id="audit-log"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  const authPanel = document.getElementById("auth");
+  const app = document.getElementById("app");
+  const authError = document.getElementById("auth-error");
+
+  function getSession() {
+    try {
+      return JSON.parse(localStorage.getItem("leadrecovery.admin.session") || "null");
+    } catch {
+      return null;
+    }
+  }
+
+  function setSession(session) {
+    try {
+      localStorage.setItem("leadrecovery.admin.session", JSON.stringify(session));
+    } catch {
+      // localStorage unavailable — session just won't persist across reloads
+    }
+  }
+
+  async function api(session, path, options) {
+    const res = await fetch(session.baseUrl + path, {
+      ...options,
+      headers: {
+        ...(options && options.headers),
+        Authorization: "Bearer " + session.adminKey,
+      },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || (res.status + " " + res.statusText));
+    }
+    return res.status === 204 ? undefined : res.json();
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function showReveal(title, key) {
+    document.getElementById("reveal-panel").innerHTML = `
+      <div class="reveal">
+        <strong>${escapeHtml(title)}</strong><br />
+        <span class="key">${escapeHtml(key)}</span>
+        <div class="warn">Shown once — copy it now. It cannot be retrieved again.</div>
+      </div>`;
+  }
+
+  function clearReveal() {
+    document.getElementById("reveal-panel").innerHTML = "";
+  }
+
+  function renderTenants(tenants) {
+    const el = document.getElementById("tenants");
+    document.getElementById("tenants-summary").textContent = tenants.length + " tenant(s)";
+    if (tenants.length === 0) {
+      el.innerHTML = '<div class="empty">No tenants yet.</div>';
+      return;
+    }
+    el.innerHTML = tenants
+      .map(
+        (t) => `
+      <div class="card" data-id="${escapeHtml(t.id)}">
+        <div class="card-head">
+          <span class="name">${escapeHtml(t.name)}</span>
+          <span class="badge ${t.status || "active"}">${escapeHtml(t.status || "active")}</span>
+        </div>
+        <div class="meta">${escapeHtml(t.id)} &middot; ${escapeHtml(t.timezone)} &middot; created ${escapeHtml(new Date(t.createdAt).toLocaleString())}</div>
+        <div class="actions">
+          ${
+            t.status === "suspended"
+              ? `<button class="secondary" data-action="reactivate">Reactivate</button>`
+              : `<button class="secondary" data-action="suspend">Suspend</button>`
+          }
+          <button class="secondary" data-action="rotate-key">Rotate key</button>
+          <button class="danger" data-action="delete">Delete</button>
+        </div>
+      </div>`
+      )
+      .join("");
+  }
+
+  function renderNotifications(items) {
+    const el = document.getElementById("notifications");
+    if (items.length === 0) {
+      el.innerHTML = '<div class="empty">None — everything delivered.</div>';
+      return;
+    }
+    el.innerHTML = `
+      <table>
+        <thead><tr><th>Status</th><th>Tenant</th><th>Reason</th><th>Attempts</th><th>Last error</th><th>Last attempt</th></tr></thead>
+        <tbody>
+          ${items
+            .map(
+              (n) => `
+            <tr>
+              <td><span class="badge ${n.status}">${escapeHtml(n.status)}</span></td>
+              <td class="mono">${escapeHtml(n.tenantId)}</td>
+              <td>${escapeHtml(n.reason)}</td>
+              <td>${n.attempts}</td>
+              <td>${escapeHtml(n.lastError || "")}</td>
+              <td>${escapeHtml(new Date(n.lastAttemptAt).toLocaleString())}</td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>`;
+  }
+
+  function renderAuditLog(entries) {
+    const el = document.getElementById("audit-log");
+    if (entries.length === 0) {
+      el.innerHTML = '<div class="empty">No admin actions recorded yet.</div>';
+      return;
+    }
+    el.innerHTML = `
+      <table>
+        <thead><tr><th>When</th><th>Action</th><th>Tenant</th><th>Details</th></tr></thead>
+        <tbody>
+          ${entries
+            .map(
+              (e) => `
+            <tr>
+              <td>${escapeHtml(new Date(e.createdAt).toLocaleString())}</td>
+              <td>${escapeHtml(e.action)}</td>
+              <td class="mono">${escapeHtml(e.tenantId || "")}</td>
+              <td class="mono">${e.details ? escapeHtml(JSON.stringify(e.details)) : ""}</td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>`;
+  }
+
+  async function loadAll(session) {
+    const [tenants, notifications, auditLog] = await Promise.all([
+      api(session, "/admin/tenants"),
+      api(session, "/admin/notifications/failed"),
+      api(session, "/admin/audit-log?limit=50"),
+    ]);
+    renderTenants(tenants);
+    renderNotifications(notifications);
+    renderAuditLog(auditLog);
+  }
+
+  document.getElementById("connect-btn").addEventListener("click", async () => {
+    authError.textContent = "";
+    const baseUrl = document.getElementById("base-url").value.trim().replace(/\/$/, "") || window.location.origin;
+    const adminKey = document.getElementById("admin-key").value.trim();
+    if (!adminKey) {
+      authError.textContent = "Admin API key is required.";
+      return;
+    }
+    const session = { baseUrl, adminKey };
+    try {
+      await loadAll(session);
+      setSession(session);
+      document.getElementById("host-sub").textContent = baseUrl;
+      authPanel.style.display = "none";
+      app.style.display = "block";
+    } catch (err) {
+      authError.textContent = "Could not connect: " + err.message;
+    }
+  });
+
+  document.getElementById("logout-btn").addEventListener("click", () => {
+    setSession(null);
+    app.style.display = "none";
+    authPanel.style.display = "block";
+  });
+
+  document.getElementById("refresh-btn").addEventListener("click", () => {
+    const session = getSession();
+    if (session) loadAll(session).catch((err) => alert(err.message));
+  });
+
+  document.getElementById("create-btn").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session) return;
+    const createError = document.getElementById("create-error");
+    createError.textContent = "";
+    const name = document.getElementById("new-name").value.trim();
+    const timezone = document.getElementById("new-timezone").value.trim();
+    if (!name || !timezone) {
+      createError.textContent = "Name and timezone are required.";
+      return;
+    }
+    try {
+      const created = await api(session, "/admin/tenants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, timezone }),
+      });
+      document.getElementById("new-name").value = "";
+      document.getElementById("new-timezone").value = "";
+      showReveal(`API key for "${created.name}"`, created.apiKey);
+      await loadAll(session);
+    } catch (err) {
+      createError.textContent = err.message;
+    }
+  });
+
+  document.getElementById("tenants").addEventListener("click", async (e) => {
+    const button = e.target.closest("button[data-action]");
+    if (!button) return;
+    const card = button.closest(".card");
+    const tenantId = card.dataset.id;
+    const session = getSession();
+    if (!session) return;
+
+    const action = button.dataset.action;
+    try {
+      if (action === "suspend" || action === "reactivate") {
+        await api(session, `/admin/tenants/${tenantId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: action === "suspend" ? "suspended" : "active" }),
+        });
+        clearReveal();
+      } else if (action === "rotate-key") {
+        if (!confirm("Rotate this tenant's API key? The old key stops working immediately.")) return;
+        const updated = await api(session, `/admin/tenants/${tenantId}/rotate-key`, { method: "POST" });
+        showReveal(`New API key for "${updated.name}"`, updated.apiKey);
+      } else if (action === "delete") {
+        if (!confirm("Permanently delete this tenant? This cascades to its leads/messages and cannot be undone.")) return;
+        await api(session, `/admin/tenants/${tenantId}`, { method: "DELETE" });
+        clearReveal();
+      }
+      await loadAll(session);
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  const existing = getSession();
+  if (existing) {
+    loadAll(existing)
+      .then(() => {
+        document.getElementById("host-sub").textContent = existing.baseUrl;
+        authPanel.style.display = "none";
+        app.style.display = "block";
+      })
+      .catch(() => {
+        setSession(null);
+      });
+  }
+})();
+</script>
+</body>
+</html>

@@ -24,7 +24,12 @@ const DEFAULT_UNGROUNDED_TEMPLATE =
  * Uses the tenant's own template override (tenant.templates.initialGrounded /
  * initialUngrounded) when set, otherwise the built-in default wording.
  */
-export function composeInitialMessage(lead: Lead, reason: ContactReason, channel: Channel, tenant: Tenant): ComposedMessage {
+export function composeInitialMessage(
+  lead: Lead,
+  reason: ContactReason,
+  channel: Channel,
+  tenant: Tenant
+): ComposedMessage {
   const name = firstName(lead);
   const vars = {
     name,
@@ -36,8 +41,8 @@ export function composeInitialMessage(lead: Lead, reason: ContactReason, channel
 
   const template =
     reason.grounded && reason.text
-      ? tenant.templates?.initialGrounded ?? DEFAULT_GROUNDED_TEMPLATE
-      : tenant.templates?.initialUngrounded ?? DEFAULT_UNGROUNDED_TEMPLATE;
+      ? (tenant.templates?.initialGrounded ?? DEFAULT_GROUNDED_TEMPLATE)
+      : (tenant.templates?.initialUngrounded ?? DEFAULT_UNGROUNDED_TEMPLATE);
 
   return { channel, body: substituteTemplate(template, vars) };
 }

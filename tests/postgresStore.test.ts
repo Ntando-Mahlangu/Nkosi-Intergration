@@ -306,8 +306,18 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
 
   it("records and lists audit log entries, newest first, with pagination", async () => {
     const auditLogStore = new PostgresAuditLogStore(pool);
-    await auditLogStore.record({ tenantId: TENANT.id, action: "tenant.create", actor: "admin", details: { name: "Acme Co" } });
-    await auditLogStore.record({ tenantId: TENANT.id, action: "tenant.admin_update", actor: "admin", details: { fieldsChanged: ["status"] } });
+    await auditLogStore.record({
+      tenantId: TENANT.id,
+      action: "tenant.create",
+      actor: "admin",
+      details: { name: "Acme Co" },
+    });
+    await auditLogStore.record({
+      tenantId: TENANT.id,
+      action: "tenant.admin_update",
+      actor: "admin",
+      details: { fieldsChanged: ["status"] },
+    });
     await auditLogStore.record({ tenantId: TENANT.id, action: "tenant.delete", actor: "admin" });
 
     expect(await auditLogStore.count()).toBe(3);

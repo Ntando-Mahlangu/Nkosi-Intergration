@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { createStores } from "./store/index.js";
@@ -11,13 +12,26 @@ import { buildFollowUpPlans, buildRecoveryPlans, runRecoveryWorkflow } from "./w
 import { parsePageParams, paginate } from "./pagination.js";
 import { createCorsMiddleware } from "./middleware/cors.js";
 import { logger } from "./logger.js";
+import { installFatalErrorHandlers } from "./fatalErrorHandlers.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageVersion = (
+  JSON.parse(readFileSync(path.join(__dirname, "..", "package.json"), "utf-8")) as { version: string }
+).version;
 
 export function createApp() {
   const stores = createStores();
   const app = express();
   app.use(createCorsMiddleware());
+
+  // See "API versioning" in README.md: there's no /v1 path prefix (this API
+  // has no external consumers yet to protect with one), but every response
+  // names the exact version it came from, so a client can at least detect
+  // what it's talking to.
+  app.use((_req: Request, res: Response, next) => {
+    res.setHeader("X-API-Version", packageVersion);
+    next();
+  });
 
   // Structured request log, aggregator-friendly. Skips /health and /ready —
   // those get polled constantly by orchestrators/load balancers and would
@@ -107,6 +121,7 @@ export function createApp() {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
+  installFatalErrorHandlers("server");
   const port = Number(process.env.PORT ?? 3000);
   const app = createApp();
   app.listen(port, () => {

@@ -109,7 +109,9 @@ async function main() {
   }
 
   if (needsAnthropic && !process.env.ANTHROPIC_API_KEY) {
-    console.log("✗ Anthropic: chatbot/LLM classification is enabled but ANTHROPIC_API_KEY is not set in this environment.");
+    console.log(
+      "✗ Anthropic: chatbot/LLM classification is enabled but ANTHROPIC_API_KEY is not set in this environment."
+    );
   }
 
   if (results.some((r) => !r.ok)) {

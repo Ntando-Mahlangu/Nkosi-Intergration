@@ -61,10 +61,7 @@ describe("scoreLead", () => {
 
   it("sorts HIGH before MEDIUM before LOW", () => {
     const high = scoreLead(makeLead({ hadMissedCall: true }), NOW);
-    const medium = scoreLead(
-      makeLead({ status: "contacted_no_response", requestedService: "paint" }),
-      NOW
-    );
+    const medium = scoreLead(makeLead({ status: "contacted_no_response", requestedService: "paint" }), NOW);
     const low = scoreLead(makeLead({ createdAt: new Date("2025-01-01").toISOString() }), NOW);
 
     const sorted = sortByPriority([low, high, medium]);

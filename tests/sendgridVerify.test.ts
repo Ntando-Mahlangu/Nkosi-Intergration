@@ -8,7 +8,11 @@ function generateKeyPair() {
   return { publicKeyBase64, privateKey };
 }
 
-function sign(privateKey: ReturnType<typeof generateKeyPairSync>["privateKey"], timestamp: string, payload: string): string {
+function sign(
+  privateKey: ReturnType<typeof generateKeyPairSync>["privateKey"],
+  timestamp: string,
+  payload: string
+): string {
   const signer = createSign("sha256");
   signer.update(timestamp + payload);
   signer.end();

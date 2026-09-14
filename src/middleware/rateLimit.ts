@@ -16,11 +16,18 @@ function distributedStoreIfConfigured(keyPrefix: string) {
   return process.env.DATABASE_URL ? new PgRateLimitStore(getPool(), keyPrefix) : undefined;
 }
 
-/** Guards tenant onboarding/management — low volume by nature, so a tight limit doesn't hurt legitimate use. */
+/**
+ * Guards tenant onboarding/management — low volume by nature, so a tight
+ * limit doesn't hurt legitimate use. Configurable because a UI driving many
+ * admin actions in a short span (e.g. the admin.html e2e tests clicking
+ * through create/suspend/rotate/delete repeatedly) can legitimately need a
+ * higher ceiling than a human operator would in the same 15 minutes — see
+ * playwright.config.ts, which raises this for the e2e test run only.
+ */
 export function createAdminLimiter() {
   return rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 30,
+    limit: Number(process.env.LEADRECOVERY_ADMIN_RATE_LIMIT ?? 30),
     standardHeaders: true,
     legacyHeaders: false,
     store: distributedStoreIfConfigured("admin"),

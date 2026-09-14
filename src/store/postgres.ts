@@ -56,17 +56,14 @@ export class PostgresLeadStore implements LeadStore {
   }
 
   async getLeadById(tenantId: string, id: string): Promise<Lead | undefined> {
-    const { rows } = await this.pool.query(
-      `SELECT ${LEAD_COLUMNS} FROM leads WHERE tenant_id = $1 AND id = $2`,
-      [tenantId, id]
-    );
+    const { rows } = await this.pool.query(`SELECT ${LEAD_COLUMNS} FROM leads WHERE tenant_id = $1 AND id = $2`, [
+      tenantId,
+      id,
+    ]);
     return rows[0] ? leadFromRow(rows[0]) : undefined;
   }
 
-  async findLeadByContact(
-    tenantId: string,
-    contact: { phone?: string; email?: string }
-  ): Promise<Lead | undefined> {
+  async findLeadByContact(tenantId: string, contact: { phone?: string; email?: string }): Promise<Lead | undefined> {
     if (!contact.phone && !contact.email) return undefined;
     const { rows } = await this.pool.query(
       `SELECT ${LEAD_COLUMNS} FROM leads
@@ -162,7 +159,10 @@ const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_ho
  * instead of the plaintext credentials object.
  */
 export class PostgresTenantStore implements TenantStore {
-  constructor(private pool: Pool, private encryptionKey?: string) {}
+  constructor(
+    private pool: Pool,
+    private encryptionKey?: string
+  ) {}
 
   private encodeChannels(channels: ChannelCredentials): string {
     if (!this.encryptionKey) return JSON.stringify(channels);
@@ -372,7 +372,15 @@ export class PostgresNotificationStore implements NotificationStore {
       `INSERT INTO failed_notifications (id, tenant_id, lead_id, reason, webhook_url, payload, attempts, last_error, status)
        VALUES ($1,$2,$3,$4,$5,$6,1,$7,'pending')
        RETURNING ${FAILED_NOTIFICATION_COLUMNS}`,
-      [generateId("failnotif"), input.tenantId, input.leadId ?? null, input.reason, input.webhookUrl, input.payload, input.error]
+      [
+        generateId("failnotif"),
+        input.tenantId,
+        input.leadId ?? null,
+        input.reason,
+        input.webhookUrl,
+        input.payload,
+        input.error,
+      ]
     );
     return failedNotificationFromRow(rows[0]);
   }

@@ -158,111 +158,104 @@ async function recordInboundAndClassify(
  */
 export function createWebhookRoutes(stores: Stores): Router {
   const router = Router();
-  router.use(createWebhookLimiter());
+  // Scoped to /webhooks/* specifically — this router is mounted at the app
+  // root with no path prefix (see server.ts), so an unscoped `router.use(...)`
+  // here would run for every request the whole app receives (health checks,
+  // the dashboards, /admin/*, /leads, ...), not just webhook traffic,
+  // sharing one 120/min-per-IP budget across everything.
+  router.use("/webhooks", createWebhookLimiter());
 
   // --- Twilio inbound SMS/WhatsApp replies ---
-  router.post(
-    "/webhooks/:tenantId/twilio/sms",
-    express.urlencoded({ extended: false }),
-    async (req, res) => {
-      const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
-      const authToken = tenant?.channels.sms?.authToken ?? tenant?.channels.whatsapp?.authToken;
-      if (!tenant || !authToken) {
-        res.status(404).send();
-        return;
-      }
-
-      const signature = req.header("x-twilio-signature") ?? "";
-      const valid = twilio.validateRequest(authToken, signature, requestUrl(req), req.body);
-      if (!valid) {
-        res.status(403).send("invalid Twilio signature");
-        return;
-      }
-
-      const from = req.body.From as string | undefined;
-      const body = (req.body.Body as string | undefined) ?? "";
-      const lead = from ? await stores.leadStore.findLeadByContact(tenant.id, { phone: from }) : undefined;
-
-      if (lead) {
-        const channel = from?.startsWith("whatsapp:") ? "whatsapp" : "sms";
-        await recordInboundAndClassify(stores, tenant, lead, channel, body);
-      }
-
-      res.type("text/xml").send("<Response></Response>");
+  router.post("/webhooks/:tenantId/twilio/sms", express.urlencoded({ extended: false }), async (req, res) => {
+    const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
+    const authToken = tenant?.channels.sms?.authToken ?? tenant?.channels.whatsapp?.authToken;
+    if (!tenant || !authToken) {
+      res.status(404).send();
+      return;
     }
-  );
+
+    const signature = req.header("x-twilio-signature") ?? "";
+    const valid = twilio.validateRequest(authToken, signature, requestUrl(req), req.body);
+    if (!valid) {
+      res.status(403).send("invalid Twilio signature");
+      return;
+    }
+
+    const from = req.body.From as string | undefined;
+    const body = (req.body.Body as string | undefined) ?? "";
+    const lead = from ? await stores.leadStore.findLeadByContact(tenant.id, { phone: from }) : undefined;
+
+    if (lead) {
+      const channel = from?.startsWith("whatsapp:") ? "whatsapp" : "sms";
+      await recordInboundAndClassify(stores, tenant, lead, channel, body);
+    }
+
+    res.type("text/xml").send("<Response></Response>");
+  });
 
   // --- Twilio voice status callback: detects missed calls ---
-  router.post(
-    "/webhooks/:tenantId/twilio/voice-status",
-    express.urlencoded({ extended: false }),
-    async (req, res) => {
-      const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
-      if (!tenant?.channels.sms) {
-        res.status(404).send();
-        return;
-      }
-
-      const signature = req.header("x-twilio-signature") ?? "";
-      const valid = twilio.validateRequest(tenant.channels.sms.authToken, signature, requestUrl(req), req.body);
-      if (!valid) {
-        res.status(403).send("invalid Twilio signature");
-        return;
-      }
-
-      const from = req.body.From as string | undefined;
-      const callStatus = req.body.CallStatus as string | undefined;
-      const missed = callStatus === "no-answer" || callStatus === "busy" || callStatus === "failed";
-
-      if (from && missed) {
-        const lead = await stores.leadStore.findLeadByContact(tenant.id, { phone: from });
-        if (lead) {
-          await stores.leadStore.updateLead(tenant.id, lead.id, { hadMissedCall: true });
-        } else {
-          await stores.leadStore.createLead({
-            id: generateId("lead"),
-            tenantId: tenant.id,
-            phone: from,
-            source: "missed_call",
-            createdAt: new Date().toISOString(),
-            status: "new",
-            hadMissedCall: true,
-          });
-        }
-      }
-
-      res.status(204).send();
+  router.post("/webhooks/:tenantId/twilio/voice-status", express.urlencoded({ extended: false }), async (req, res) => {
+    const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
+    if (!tenant?.channels.sms) {
+      res.status(404).send();
+      return;
     }
-  );
+
+    const signature = req.header("x-twilio-signature") ?? "";
+    const valid = twilio.validateRequest(tenant.channels.sms.authToken, signature, requestUrl(req), req.body);
+    if (!valid) {
+      res.status(403).send("invalid Twilio signature");
+      return;
+    }
+
+    const from = req.body.From as string | undefined;
+    const callStatus = req.body.CallStatus as string | undefined;
+    const missed = callStatus === "no-answer" || callStatus === "busy" || callStatus === "failed";
+
+    if (from && missed) {
+      const lead = await stores.leadStore.findLeadByContact(tenant.id, { phone: from });
+      if (lead) {
+        await stores.leadStore.updateLead(tenant.id, lead.id, { hadMissedCall: true });
+      } else {
+        await stores.leadStore.createLead({
+          id: generateId("lead"),
+          tenantId: tenant.id,
+          phone: from,
+          source: "missed_call",
+          createdAt: new Date().toISOString(),
+          status: "new",
+          hadMissedCall: true,
+        });
+      }
+    }
+
+    res.status(204).send();
+  });
 
   // --- Twilio delivery-status callback (SMS/WhatsApp): queued/sent/delivered/failed/undelivered ---
-  router.post(
-    "/webhooks/:tenantId/twilio/status",
-    express.urlencoded({ extended: false }),
-    async (req, res) => {
-      const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
-      const authToken = tenant?.channels.sms?.authToken ?? tenant?.channels.whatsapp?.authToken;
-      if (!tenant || !authToken) {
-        res.status(404).send();
-        return;
-      }
-
-      const signature = req.header("x-twilio-signature") ?? "";
-      const valid = twilio.validateRequest(authToken, signature, requestUrl(req), req.body);
-      if (!valid) {
-        res.status(403).send("invalid Twilio signature");
-        return;
-      }
-
-      const messageId = req.query.messageId as string | undefined;
-      const status = req.body.MessageStatus as string | undefined;
-      if (messageId && status) {
-        await stores.messageStore.updateMessageStatus(tenant.id, messageId, status);
-      }
-
-      res.status(204).send();
+  router.post("/webhooks/:tenantId/twilio/status", express.urlencoded({ extended: false }), async (req, res) => {
+    const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
+    const authToken = tenant?.channels.sms?.authToken ?? tenant?.channels.whatsapp?.authToken;
+    if (!tenant || !authToken) {
+      res.status(404).send();
+      return;
     }
-  );
+
+    const signature = req.header("x-twilio-signature") ?? "";
+    const valid = twilio.validateRequest(authToken, signature, requestUrl(req), req.body);
+    if (!valid) {
+      res.status(403).send("invalid Twilio signature");
+      return;
+    }
+
+    const messageId = req.query.messageId as string | undefined;
+    const status = req.body.MessageStatus as string | undefined;
+    if (messageId && status) {
+      await stores.messageStore.updateMessageStatus(tenant.id, messageId, status);
+    }
+
+    res.status(204).send();
+  });
 
   // --- SendGrid inbound parse (email replies) ---
   // SendGrid posts multipart/form-data and (without the paid signed-webhook

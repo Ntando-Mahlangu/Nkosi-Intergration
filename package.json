@@ -16,10 +16,15 @@
     "import-leads": "tsx src/scripts/importLeads.ts",
     "migrate": "tsx src/scripts/migrate.ts",
     "check-providers": "tsx src/scripts/checkProviders.ts",
+    "loadtest": "tsx src/scripts/loadtest.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
@@ -39,10 +44,14 @@
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.11.6",
     "@types/supertest": "^6.0.2",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
     "pg-mem": "^2.8.1",
+    "prettier": "^3.9.6",
     "supertest": "^7.0.0",
     "tsx": "^4.15.4",
     "typescript": "^5.4.5",
+    "typescript-eslint": "^8.70.0",
     "vitest": "^1.6.0"
   }
 }

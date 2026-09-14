@@ -121,7 +121,9 @@ async function main() {
     imported++;
   }
 
-  console.log(`Imported ${imported} lead(s) for tenant ${tenantId}${skipped ? `, skipped ${skipped} row(s) with no phone/email` : ""}.`);
+  console.log(
+    `Imported ${imported} lead(s) for tenant ${tenantId}${skipped ? `, skipped ${skipped} row(s) with no phone/email` : ""}.`
+  );
 }
 
 main().catch((err) => {

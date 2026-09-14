@@ -504,7 +504,10 @@ describe("webhook: SendGrid delivery events", () => {
 
     const res = await request(app)
       .post(`/webhooks/${TENANT.id}/sendgrid/events?token=${TENANT.apiKey}`)
-      .send([{ event: "delivered", leadrecovery_message_id: "msg-1" }, { event: "open", leadrecovery_message_id: "msg-1" }]);
+      .send([
+        { event: "delivered", leadrecovery_message_id: "msg-1" },
+        { event: "open", leadrecovery_message_id: "msg-1" },
+      ]);
 
     expect(res.status).toBe(204);
     const [message] = await stores.messageStore.getMessagesForLead(TENANT.id, LEAD.id);
@@ -523,7 +526,10 @@ describe("webhook: SendGrid delivery events", () => {
   it("verifies a real ECDSA signature instead of the token when eventWebhookPublicKey is configured", async () => {
     const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
     const publicKeyBase64 = publicKey.export({ type: "spki", format: "der" }).toString("base64");
-    const tenant: Tenant = { ...TENANT, channels: { email: { apiKey: "sg", fromEmail: "a@b.com", eventWebhookPublicKey: publicKeyBase64 } } };
+    const tenant: Tenant = {
+      ...TENANT,
+      channels: { email: { apiKey: "sg", fromEmail: "a@b.com", eventWebhookPublicKey: publicKeyBase64 } },
+    };
 
     const stores: Stores = {
       leadStore: new InMemoryLeadStore([LEAD]),
@@ -567,7 +573,10 @@ describe("webhook: SendGrid delivery events", () => {
   it("rejects a bad signature when eventWebhookPublicKey is configured, even with no token check to fall back on", async () => {
     const { publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
     const publicKeyBase64 = publicKey.export({ type: "spki", format: "der" }).toString("base64");
-    const tenant: Tenant = { ...TENANT, channels: { email: { apiKey: "sg", fromEmail: "a@b.com", eventWebhookPublicKey: publicKeyBase64 } } };
+    const tenant: Tenant = {
+      ...TENANT,
+      channels: { email: { apiKey: "sg", fromEmail: "a@b.com", eventWebhookPublicKey: publicKeyBase64 } },
+    };
     const stores = buildStores();
     stores.tenantStore = new InMemoryTenantStore([tenant]);
     const app = express();
@@ -625,7 +634,10 @@ describe("notify on interested reply", () => {
       "https://hooks.example.com/notify",
       expect.objectContaining({ method: "POST" })
     );
-    const body = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    // The real code always passes a JSON string as the body; cast rather than
+    // String(...) it, since RequestInit["body"]'s wider type (e.g. a
+    // ReadableStream) wouldn't stringify to anything meaningful.
+    const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
     expect(body.event).toBe("lead_interested");
     expect(body.lead.id).toBe(LEAD.id);
 
@@ -669,7 +681,11 @@ describe("tenant self-service settings", () => {
     const res = await request(app)
       .patch("/tenants/me")
       .set("Authorization", `Bearer ${TENANT.apiKey}`)
-      .send({ timezone: "America/New_York", quietHours: { startHour: 21, endHour: 7 }, notifyWebhookUrl: "https://x.example.com/hook" });
+      .send({
+        timezone: "America/New_York",
+        quietHours: { startHour: 21, endHour: 7 },
+        notifyWebhookUrl: "https://x.example.com/hook",
+      });
 
     expect(res.status).toBe(200);
     expect(res.body.timezone).toBe("America/New_York");
@@ -810,6 +826,50 @@ describe("rate limiting", () => {
     expect(lastStatus).toBe(429);
     delete process.env.ADMIN_API_KEY;
   });
+
+  it("honors LEADRECOVERY_ADMIN_RATE_LIMIT to raise the admin limiter's threshold", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    process.env.LEADRECOVERY_ADMIN_RATE_LIMIT = "35";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    let lastStatus = 200;
+    for (let i = 0; i < 31; i++) {
+      const res = await request(app).get("/admin/tenants").set("Authorization", "Bearer admin-secret");
+      lastStatus = res.status;
+    }
+    expect(lastStatus).toBe(200); // still under the raised limit of 35, unlike the default-30 test above
+    delete process.env.ADMIN_API_KEY;
+    delete process.env.LEADRECOVERY_ADMIN_RATE_LIMIT;
+  });
+
+  it("scopes the webhook limiter to /webhooks/* — it never throttles unrelated routes", async () => {
+    // Regression test: createWebhookRoutes used to mount its rate limiter
+    // with `router.use(createWebhookLimiter())` (no path), and since this
+    // router is mounted at the app root with no prefix (see server.ts),
+    // that limiter ran for every request the whole app received — health
+    // checks, the dashboards, /admin/*, /leads — not just /webhooks/*,
+    // sharing one 120/min-per-IP budget across all of it.
+    const stores = buildStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+    app.get("/health", (_req, res) => res.json({ ok: true }));
+
+    for (let i = 0; i < 130; i++) {
+      const res = await request(app).get("/health");
+      expect(res.status).toBe(200);
+    }
+
+    // The webhook limiter itself is still active on its own paths.
+    let lastWebhookStatus = 200;
+    for (let i = 0; i < 121; i++) {
+      const res = await request(app).post("/webhooks/lead").set("Authorization", `Bearer ${TENANT.apiKey}`).send({});
+      lastWebhookStatus = res.status;
+    }
+    expect(lastWebhookStatus).toBe(429);
+  });
 });
 
 describe("chatbot auto-reply on inbound messages", () => {
@@ -873,8 +933,14 @@ describe("chatbot auto-reply on inbound messages", () => {
     const history = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
     expect(history.some((m) => m.direction === "outbound")).toBe(false); // no auto-reply sent
 
-    expect(fetchSpy).toHaveBeenCalledWith("https://hooks.example.com/notify", expect.objectContaining({ method: "POST" }));
-    const body = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://hooks.example.com/notify",
+      expect.objectContaining({ method: "POST" })
+    );
+    // The real code always passes a JSON string as the body; cast rather than
+    // String(...) it, since RequestInit["body"]'s wider type (e.g. a
+    // ReadableStream) wouldn't stringify to anything meaningful.
+    const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
     expect(body.event).toBe("needs_human_reply");
 
     fetchSpy.mockRestore();

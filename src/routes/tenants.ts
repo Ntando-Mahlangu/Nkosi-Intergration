@@ -15,11 +15,18 @@ import { logger } from "../logger.js";
  * the request or crash the process (Express 4 doesn't catch a rejection
  * thrown after this point on its own).
  */
-async function recordAudit(auditLogStore: AuditLogStore, entry: Omit<AuditLogEntry, "id" | "createdAt">): Promise<void> {
+async function recordAudit(
+  auditLogStore: AuditLogStore,
+  entry: Omit<AuditLogEntry, "id" | "createdAt">
+): Promise<void> {
   try {
     await auditLogStore.record(entry);
   } catch (err) {
-    logger.error("audit_log_write_failed", { action: entry.action, tenantId: entry.tenantId, error: (err as Error).message });
+    logger.error("audit_log_write_failed", {
+      action: entry.action,
+      tenantId: entry.tenantId,
+      error: (err as Error).message,
+    });
   }
 }
 
@@ -107,7 +114,10 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   return undefined;
 }
 
-function buildTenantPatch(body: Partial<TenantConfigBody>, { includeStatus }: { includeStatus: boolean }): Partial<Tenant> {
+function buildTenantPatch(
+  body: Partial<TenantConfigBody>,
+  { includeStatus }: { includeStatus: boolean }
+): Partial<Tenant> {
   const patch: Partial<Tenant> = {};
   if (body.timezone !== undefined) patch.timezone = body.timezone;
   if (body.quietHours !== undefined) patch.quietHours = body.quietHours;

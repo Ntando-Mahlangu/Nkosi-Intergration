@@ -6,6 +6,6 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["src", "tests"],
+  "include": ["src", "tests", "vitest.config.ts", "playwright.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

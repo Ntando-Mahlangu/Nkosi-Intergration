@@ -17,11 +17,11 @@ function daysSince(isoDate: string, now: Date): number {
 function hasMeaningfulHistory(lead: Lead): boolean {
   return Boolean(
     lead.requestedService ||
-      lead.previousQuote ||
-      lead.previousConversationSummary ||
-      lead.notes ||
-      lead.hadMissedCall ||
-      (lead.appointmentStatus && lead.appointmentStatus !== "none")
+    lead.previousQuote ||
+    lead.previousConversationSummary ||
+    lead.notes ||
+    lead.hadMissedCall ||
+    (lead.appointmentStatus && lead.appointmentStatus !== "none")
   );
 }
 
@@ -66,11 +66,7 @@ export function scoreLead(lead: Lead, now: Date = new Date()): ScoredLead {
   if (lead.status === "contacted_no_response") {
     bump("MEDIUM", "Contacted previously but never responded");
   }
-  if (
-    lead.requestedService &&
-    ageDays > SCORING_WINDOWS.recentDays &&
-    ageDays <= SCORING_WINDOWS.severalWeeksDays
-  ) {
+  if (lead.requestedService && ageDays > SCORING_WINDOWS.recentDays && ageDays <= SCORING_WINDOWS.severalWeeksDays) {
     bump("MEDIUM", "Requested information several weeks ago");
   }
   if (lead.previousQuote && ageDays > SCORING_WINDOWS.recentDays) {

@@ -50,7 +50,10 @@ async function main() {
     let autoReplyEnabled = false;
     if (knowledgeBasePath) {
       knowledgeBase = readFileSync(knowledgeBasePath, "utf-8");
-      const enable = await ask(rl, "Enable automated replies to customer questions using this knowledge base now? [y/N]: ");
+      const enable = await ask(
+        rl,
+        "Enable automated replies to customer questions using this knowledge base now? [y/N]: "
+      );
       autoReplyEnabled = /^y(es)?$/i.test(enable);
     }
 
@@ -94,7 +97,9 @@ async function main() {
     console.log("\nWebhook URLs to configure with providers (replace <host> with your deployed API host):");
     console.log(`  Twilio SMS inbound:      https://<host>/webhooks/${created.id}/twilio/sms`);
     console.log(`  Twilio voice status:     https://<host>/webhooks/${created.id}/twilio/voice-status`);
-    console.log(`  SendGrid inbound parse:  https://<host>/webhooks/${created.id}/sendgrid/email?token=${created.apiKey}`);
+    console.log(
+      `  SendGrid inbound parse:  https://<host>/webhooks/${created.id}/sendgrid/email?token=${created.apiKey}`
+    );
     console.log(`  Generic lead intake:     https://<host>/webhooks/lead  (Authorization: Bearer ${created.apiKey})`);
   } finally {
     rl.close();

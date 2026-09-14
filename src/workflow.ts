@@ -60,7 +60,13 @@ export function buildFollowUpPlans(tenant: Tenant, leads: Lead[], now: Date = ne
     const followUpIndex = lead.followUpCount ?? 0;
     const priority: Priority = "MEDIUM";
     const message = composeFollowUpMessage(lead, followUpIndex, channel, tenant);
-    plans.push({ lead, priority, priorityReasons: [`Follow-up #${followUpIndex + 1}`], reason: followUpReason(followUpIndex), message });
+    plans.push({
+      lead,
+      priority,
+      priorityReasons: [`Follow-up #${followUpIndex + 1}`],
+      reason: followUpReason(followUpIndex),
+      message,
+    });
   }
 
   return { plans, skipped };

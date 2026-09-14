@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { composeFollowUpMessage, FOLLOWUP_INTERVAL_DAYS, getLeadsDueForFollowUp, isDueForFollowUp } from "../src/followup.js";
+import {
+  composeFollowUpMessage,
+  FOLLOWUP_INTERVAL_DAYS,
+  getLeadsDueForFollowUp,
+  isDueForFollowUp,
+} from "../src/followup.js";
 import type { Lead, Tenant } from "../src/types.js";
 
 const NOW = new Date("2026-09-12T00:00:00.000Z");

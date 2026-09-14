@@ -17,7 +17,8 @@ function createTestPool(): Pool {
   const db = newDb({ autoCreateForeignKeyIndices: true });
   db.public.registerFunction({ name: "now", implementation: () => new Date() });
   const { Pool: MemPool } = db.adapters.createPg();
-  return new MemPool() as unknown as Pool;
+  const pool = new MemPool() as unknown as Pool;
+  return pool;
 }
 
 describe("PgRateLimitStore (against an in-memory pg-mem instance)", () => {

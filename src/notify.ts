@@ -18,12 +18,24 @@ const EVENT_NAMES: Record<NotifyReason, string> = {
   needs_human_reply: "needs_human_reply",
 };
 
-function buildPayload(tenant: Tenant, lead: Lead, channel: Channel, body: string, reason: NotifyReason): Record<string, unknown> {
+function buildPayload(
+  tenant: Tenant,
+  lead: Lead,
+  channel: Channel,
+  body: string,
+  reason: NotifyReason
+): Record<string, unknown> {
   return {
     text: SUMMARIES[reason](lead, channel, body),
     event: EVENT_NAMES[reason],
     tenantId: tenant.id,
-    lead: { id: lead.id, name: lead.name, phone: lead.phone, email: lead.email, requestedService: lead.requestedService },
+    lead: {
+      id: lead.id,
+      name: lead.name,
+      phone: lead.phone,
+      email: lead.email,
+      requestedService: lead.requestedService,
+    },
     channel,
     message: body,
   };
@@ -83,7 +95,12 @@ export async function notifyHumanAttention(
 
   if (result.ok) return;
 
-  logger.error("notification_delivery_failed_retrying", { tenantId: tenant.id, leadId: lead.id, reason, error: result.error });
+  logger.error("notification_delivery_failed_retrying", {
+    tenantId: tenant.id,
+    leadId: lead.id,
+    reason,
+    error: result.error,
+  });
   if (!notificationStore) return;
   try {
     await notificationStore.recordFailure({
@@ -99,6 +116,11 @@ export async function notifyHumanAttention(
     // notifyHumanAttention(...)` without awaiting, so an unhandled
     // rejection here would crash the process on an otherwise-harmless
     // failure to persist a dead-lettered notification).
-    logger.error("notification_persist_failed", { tenantId: tenant.id, leadId: lead.id, reason, error: (err as Error).message });
+    logger.error("notification_persist_failed", {
+      tenantId: tenant.id,
+      leadId: lead.id,
+      reason,
+      error: (err as Error).message,
+    });
   }
 }

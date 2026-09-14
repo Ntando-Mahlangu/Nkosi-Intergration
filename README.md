@@ -129,6 +129,12 @@ deployment serves many clients with fully isolated data.
 - **`public/dashboard.html`** — the plain-list working view (queued plan,
   drafted messages, skipped leads, a button to trigger a run) — linked from
   the Command Center for day-to-day lead-by-lead work.
+- **`public/admin.html`** — cross-tenant platform ops: connects with
+  `ADMIN_API_KEY` (not a tenant key) to list/create/suspend/reactivate/
+  delete tenants and rotate a tenant's API key, plus visibility into the
+  failed-notifications dead-letter queue and the admin audit log. Not
+  linked from the tenant-facing dashboards — it's a separate credential
+  for the platform operator, not something a tenant should see.
 
 ## Getting started (local demo, no external services)
 
@@ -193,6 +199,26 @@ credentials required.
       Event Webhook (enable signing there first). When that field is set,
       the app verifies SendGrid's ECDSA signature headers and the `?token=`
       check is bypassed entirely for that tenant.
+
+## API versioning
+
+There's no `/v1`-style path prefix — with no external consumers yet to
+protect, adding one now would be complexity spent guarding against a
+problem that doesn't exist. Every response carries an `X-API-Version`
+header (the exact `package.json` version), so a client can at least detect
+what it's talking to. The policy for when this needs to change:
+
+- Additive changes (a new optional field, a new endpoint, a new enum
+  value somewhere already documented as open-ended) ship in place, no
+  version bump required of callers.
+- A breaking change to a response shape or an existing endpoint's
+  semantics is the point to introduce `/v2` for the affected routes
+  (`/v1` implied for everything today) — old routes keep working
+  unversioned until deliberately deprecated, not ripped out on the same
+  release.
+- Track breaking changes in this README (or a `CHANGELOG.md`, once
+  there's enough history to warrant one) rather than expecting callers to
+  diff `X-API-Version` values themselves.
 
 ## API reference
 
@@ -278,7 +304,8 @@ is messaging with an automated system.
 ## CI
 
 `.github/workflows/ci.yml` runs three jobs on every push and pull request:
-`test` (`typecheck`, `test`, `build`), a separate `e2e` job that installs a
+`test` (`typecheck`, `lint`, `format:check`, `test`, `build`, and
+`openapi.yaml` schema validation), a separate `e2e` job that installs a
 Playwright browser and runs `test:e2e`, and a `docker` job that builds the
 image from `Dockerfile` — the actual, continuous check that it still builds
 (a real Docker build needs full internet access to pull the base image and
@@ -288,6 +315,8 @@ isn't something every local/sandboxed dev environment can run).
 
 ```bash
 npm run typecheck  # tsc over src/ (tsconfig.json) AND tests/ (tsconfig.test.json)
+npm run lint         # eslint . (typed-linting; see eslint.config.js)
+npm run format:check # prettier --check .
 npm test        # fast unit/integration suite (vitest)
 npm run test:e2e  # browser end-to-end tests against both dashboards (Playwright)
 ```
@@ -298,6 +327,15 @@ includes `tests/`) — so a type error in a test file (a wrong mock shape, a
 changed constructor signature the test wasn't updated for) is caught the
 same as one in `src/`, not just at test-runtime (vitest itself only
 transpiles, it doesn't type-check).
+
+`npm run lint` (`eslint.config.js`) runs typed ESLint rules over the same
+two projects. Most of typescript-eslint's `recommendedTypeChecked` "unsafe"
+rules are deliberately off — this codebase touches a lot of legitimately
+untyped external data (webhook payloads, Postgres rows, SDK responses) —
+but `no-floating-promises` and `no-misused-promises` are on: they're
+exactly the rules that would have caught a real unhandled-rejection bug
+found in this codebase's own review (see git history). `npm run lint:fix`
+and `npm run format` apply automatic fixes.
 
 `npm test` covers compliance, scoring, reason/messaging (incl. per-tenant
 template overrides), follow-up scheduling, quiet hours, reply
@@ -321,11 +359,14 @@ suspend/reactivate/delete/key-rotation, admin audit log and failed-
 notification visibility, admin listing pagination, and real SendGrid Event
 Webhook ECDSA signature verification — via `supertest`.
 
-`npm run test:e2e` drives `public/index.html` (Command Center) and
-`public/dashboard.html` in a real headless browser via
-[Playwright](https://playwright.dev): connecting with a valid/invalid API
-key, live category counts and the lead-detail panel, session persistence
-across a reload, and disconnecting. It starts its own server instance
-(`playwright.config.ts`) against the in-memory demo tenant, so it needs no
-external services either. Kept separate from `npm test` (and run as its
-own CI job) since it needs a real browser and is slower.
+`npm run test:e2e` drives `public/index.html` (Command Center),
+`public/dashboard.html`, and `public/admin.html` in a real headless browser
+via [Playwright](https://playwright.dev): connecting with a valid/invalid
+API/admin key, live category counts and the lead-detail panel, session
+persistence across a reload, disconnecting, and — for admin.html —
+creating/suspending/reactivating/rotating/deleting a tenant and seeing it
+reflected in the audit log. It starts its own server instance
+(`playwright.config.ts`, with `ADMIN_API_KEY` set for the admin tests)
+against the in-memory demo tenant, so it needs no external services
+either. Kept separate from `npm test` (and run as its own CI job) since it
+needs a real browser and is slower.

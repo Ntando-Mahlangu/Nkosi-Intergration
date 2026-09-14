@@ -26,10 +26,7 @@ export class InMemoryLeadStore implements LeadStore {
     return lead && lead.tenantId === tenantId ? lead : undefined;
   }
 
-  async findLeadByContact(
-    tenantId: string,
-    contact: { phone?: string; email?: string }
-  ): Promise<Lead | undefined> {
+  async findLeadByContact(tenantId: string, contact: { phone?: string; email?: string }): Promise<Lead | undefined> {
     return Array.from(this.leads.values()).find(
       (lead) =>
         lead.tenantId === tenantId &&

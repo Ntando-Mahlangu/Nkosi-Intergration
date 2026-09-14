@@ -1,0 +1,156 @@
+import { test, expect } from "@playwright/test";
+
+// public/admin.html manages tenants across the whole platform — connects
+// with ADMIN_API_KEY (fixed to "e2e-test-admin-key" for this run, see
+// playwright.config.ts), not a tenant API key. Every test here creates and
+// deletes its own uniquely-named tenant and runs serially: these mutate
+// shared server-side state (the tenant list, the audit log), unlike the
+// read-only dashboard specs, so parallel workers would race on tenant counts.
+
+const ADMIN_KEY = "e2e-test-admin-key";
+
+function uniqueName(label: string): string {
+  return `${label} ${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
+}
+
+async function connect(page: import("@playwright/test").Page) {
+  await page.goto("/admin.html");
+  await page.fill("#admin-key", ADMIN_KEY);
+  await page.click("#connect-btn");
+  await expect(page.locator("#app")).toBeVisible();
+}
+
+test.describe("Admin UI (public/admin.html)", () => {
+  test.describe.configure({ mode: "serial" });
+
+  test("connects with a valid admin key and lists the demo tenant", async ({ page }) => {
+    await page.goto("/admin.html");
+    await expect(page.locator("#auth")).toBeVisible();
+    await connect(page);
+    await expect(page.locator("#tenants")).toContainText("Nkosi Integrations (Demo)");
+  });
+
+  test("shows an error and stays on the gate for a bad admin key", async ({ page }) => {
+    await page.goto("/admin.html");
+    await page.fill("#admin-key", "not-the-real-key");
+    await page.click("#connect-btn");
+
+    await expect(page.locator("#auth")).toBeVisible();
+    await expect(page.locator("#auth-error")).toContainText("Could not connect");
+  });
+
+  test("creates a tenant, reveals its API key once, then it appears in the tenant list", async ({ page }) => {
+    await connect(page);
+    const name = uniqueName("E2E Create");
+
+    await page.fill("#new-name", name);
+    await page.fill("#new-timezone", "Africa/Johannesburg");
+    await page.click("#create-btn");
+
+    await expect(page.locator(".reveal .key")).toContainText("lr_");
+    await expect(page.locator("#tenants")).toContainText(name);
+
+    // Clean up so this doesn't leak into other tests/spec files sharing the demo server.
+    const card = page.locator(`.card:has-text("${name}")`);
+    page.once("dialog", (d) => d.accept());
+    await card.getByRole("button", { name: "Delete" }).click();
+    await expect(page.locator("#tenants")).not.toContainText(name);
+  });
+
+  test("rejects creating a tenant with no name/timezone", async ({ page }) => {
+    await connect(page);
+    await page.fill("#new-name", "");
+    await page.fill("#new-timezone", "");
+    await page.click("#create-btn");
+    await expect(page.locator("#create-error")).toContainText("required");
+  });
+
+  test("suspend/reactivate toggles the tenant's status badge and blocks/restores its API key", async ({ page }) => {
+    await connect(page);
+    const name = uniqueName("E2E Suspend");
+    await page.fill("#new-name", name);
+    await page.fill("#new-timezone", "UTC");
+    await page.click("#create-btn");
+    await expect(page.locator(".reveal .key")).toContainText("lr_");
+
+    const card = page.locator(`.card:has-text("${name}")`);
+    await expect(card.locator(".badge")).toHaveText("active");
+
+    await card.getByRole("button", { name: "Suspend" }).click();
+    await expect(card.locator(".badge")).toHaveText("suspended");
+
+    await card.getByRole("button", { name: "Reactivate" }).click();
+    await expect(card.locator(".badge")).toHaveText("active");
+
+    page.once("dialog", (d) => d.accept());
+    await card.getByRole("button", { name: "Delete" }).click();
+    await expect(page.locator("#tenants")).not.toContainText(name);
+  });
+
+  test("rotate-key reveals a new key and records an audit-log entry", async ({ page }) => {
+    await connect(page);
+    const name = uniqueName("E2E Rotate");
+    await page.fill("#new-name", name);
+    await page.fill("#new-timezone", "UTC");
+    await page.click("#create-btn");
+
+    const card = page.locator(`.card:has-text("${name}")`);
+    page.once("dialog", (d) => d.accept());
+    await card.getByRole("button", { name: "Rotate key" }).click();
+    await expect(page.locator(".reveal .key")).toContainText("lr_");
+    await expect(page.locator("#audit-log")).toContainText("tenant.key_rotate");
+
+    page.once("dialog", (d) => d.accept());
+    await card.getByRole("button", { name: "Delete" }).click();
+    await expect(page.locator("#tenants")).not.toContainText(name);
+  });
+
+  test("delete asks for confirmation and removes the tenant on accept", async ({ page }) => {
+    await connect(page);
+    const name = uniqueName("E2E Delete");
+    await page.fill("#new-name", name);
+    await page.fill("#new-timezone", "UTC");
+    await page.click("#create-btn");
+    await expect(page.locator("#tenants")).toContainText(name);
+
+    const card = page.locator(`.card:has-text("${name}")`);
+    page.once("dialog", (d) => d.dismiss());
+    await card.getByRole("button", { name: "Delete" }).click();
+    await expect(page.locator("#tenants")).toContainText(name); // dismissed — still there
+
+    page.once("dialog", (d) => d.accept());
+    await card.getByRole("button", { name: "Delete" }).click();
+    await expect(page.locator("#tenants")).not.toContainText(name);
+  });
+
+  test("records tenant creation and deletion in the audit log", async ({ page }) => {
+    await connect(page);
+    const name = uniqueName("E2E Audit");
+    await page.fill("#new-name", name);
+    await page.fill("#new-timezone", "UTC");
+    await page.click("#create-btn");
+    await expect(page.locator("#audit-log")).toContainText("tenant.create");
+
+    const card = page.locator(`.card:has-text("${name}")`);
+    page.once("dialog", (d) => d.accept());
+    await card.getByRole("button", { name: "Delete" }).click();
+    await expect(page.locator("#audit-log")).toContainText("tenant.delete");
+  });
+
+  test("reconnects automatically on reload using the persisted session", async ({ page }) => {
+    await connect(page);
+    await page.reload();
+    await expect(page.locator("#app")).toBeVisible();
+    await expect(page.locator("#auth")).toBeHidden();
+  });
+
+  test("disconnect returns to the auth panel and clears the session", async ({ page }) => {
+    await connect(page);
+    await page.click("#logout-btn");
+    await expect(page.locator("#app")).toBeHidden();
+    await expect(page.locator("#auth")).toBeVisible();
+
+    await page.reload();
+    await expect(page.locator("#auth")).toBeVisible();
+  });
+});

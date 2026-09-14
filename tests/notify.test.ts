@@ -146,7 +146,7 @@ describe("InMemoryNotificationStore redelivery bookkeeping", () => {
     for (let i = recorded.attempts; i < NOTIFICATION_MAX_ATTEMPTS - 1; i++) {
       await store.markAttemptFailed(recorded.id, "still failing", NOTIFICATION_MAX_ATTEMPTS);
     }
-    expect((await store.listPending())).toHaveLength(1);
+    expect(await store.listPending()).toHaveLength(1);
 
     await store.markAttemptFailed(recorded.id, "final failure", NOTIFICATION_MAX_ATTEMPTS);
     expect(await store.listPending()).toHaveLength(0);
