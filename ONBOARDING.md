@@ -96,22 +96,54 @@ Flip a small batch live first:
 - Confirm STOP handling actually works by texting/emailing "STOP" from a
   test number/address and checking the lead flips to `opted_out`.
 
-## 7. Go live
+## 7. Optional: turn on the auto-reply chatbot
+
+If the client wants routine customer questions (hours, pricing, policies)
+answered automatically instead of always waiting on a human:
+
+1. Write the knowledge base with the client — plain text is fine (services
+   offered, pricing, hours, policies, whatever they'd want a front-desk
+   person to know). Keep it factual and specific; the bot only answers from
+   what's here and is instructed to escalate anything it isn't confident is
+   covered.
+2. Set it and turn the feature on:
+   ```bash
+   curl -X PATCH https://<host>/tenants/me \
+     -H "Authorization: Bearer <tenant api key>" -H "Content-Type: application/json" \
+     -d '{"knowledgeBase": "<the text above>", "autoReplyEnabled": true}'
+   ```
+   (`npm run onboard` can also prompt for a knowledge-base file and enable
+   this at initial setup time.)
+3. Test it directly — text/email the tenant's number/address a few sample
+   questions (something clearly covered, something ambiguous, something
+   that should escalate like a price negotiation or a complaint) and check
+   the replies via `GET /leads/:id/messages` before trusting it with real
+   customers.
+4. Read "Bot disclosure" in `COMPLIANCE.md` — some jurisdictions require
+   proactively disclosing that a customer is messaging with an automated
+   system; this is a decision for the client and their counsel, not
+   something the code assumes for them.
+
+Anything the bot escalates (price negotiation, complaints, complex
+requests, an explicit ask for a person, or a question outside the
+knowledge base) routes to `notifyWebhookUrl` just like an `interested`
+reply — see step 8 below for setting that up.
+
+## 8. Go live
 
 - Start the worker (`npm run worker`, or point your infrastructure's
   scheduler at `LEADRECOVERY_RUN_ONCE=true npm run worker` on the cadence
   you want).
 - Make sure someone on the client's side is watching for `interested`
-  replies. Set `notifyWebhookUrl` on the tenant (via `PATCH /tenants/me` or
-  the admin API) to a Slack incoming webhook URL (or any endpoint that
-  accepts a JSON POST) and LeadRecovery notifies it automatically the
-  moment a reply classifies as interested — no need to poll
-  `GET /leads/:id/messages`.
+  replies and anything the chatbot escalates. Set `notifyWebhookUrl` on the
+  tenant (via `PATCH /tenants/me` or the admin API) to a Slack incoming
+  webhook URL (or any endpoint that accepts a JSON POST) and LeadRecovery
+  notifies it automatically — no need to poll `GET /leads/:id/messages`.
 - Agree on a reporting cadence (conversations recovered, appointments
   booked, revenue attributed) — this is the number that justifies the
   service to the client.
 
-## 8. Ongoing
+## 9. Ongoing
 
 - Review the `skipped`/`deferred` lists periodically — a growing "no usable
   contact channel" count usually means a data-quality problem upstream.

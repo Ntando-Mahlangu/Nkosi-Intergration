@@ -142,6 +142,8 @@ export interface MessageTemplates {
   initialUngrounded?: string;
   /** Indexed by follow-up attempt (0 = first follow-up, 1 = second, ...). */
   followUps?: string[];
+  /** Sent when a reply classifies as not_interested — a fixed, no-LLM-needed polite close-out. */
+  notInterestedCloser?: string;
 }
 
 export interface Tenant {
@@ -160,9 +162,22 @@ export interface Tenant {
    */
   devMode?: boolean;
   channels: ChannelCredentials;
-  /** Where to POST a notification when a reply classifies as "interested" (e.g. a Slack incoming webhook URL). */
+  /** Where to POST a notification when a reply classifies as "interested" or needs a human (e.g. a Slack incoming webhook URL). */
   notifyWebhookUrl?: string;
   templates?: MessageTemplates;
+  /**
+   * Plain-text/FAQ knowledge the auto-reply chatbot may draw on (services,
+   * pricing, hours, policies, ...). The bot answers ONLY from this text and
+   * escalates to a human for anything it doesn't clearly cover — see
+   * src/chatbot.ts. Unset means no chatbot knowledge is configured.
+   */
+  knowledgeBase?: string;
+  /**
+   * Opt-in: when true (and knowledgeBase is set), inbound questions get an
+   * automated grounded reply instead of always waiting for a human. Off by
+   * default — a business must deliberately turn this on.
+   */
+  autoReplyEnabled?: boolean;
   createdAt: string;
 }
 
@@ -200,4 +215,11 @@ export interface Message {
   providerMessageId?: string;
   /** Latest delivery status reported by the provider (e.g. "delivered", "failed", "bounce"). */
   deliveryStatus?: string;
+  /**
+   * What produced an outbound message: unset/"campaign" = the scheduled
+   * recovery workflow (initial outreach or a follow-up nudge), "auto_reply"
+   * = the knowledge-base-grounded chatbot, "closer" = the fixed
+   * not-interested acknowledgment. Inbound messages leave this unset.
+   */
+  kind?: "campaign" | "auto_reply" | "closer";
 }

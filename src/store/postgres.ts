@@ -143,7 +143,7 @@ export class PostgresLeadStore implements LeadStore {
 }
 
 const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at,
-  notify_webhook_url, templates`;
+  notify_webhook_url, templates, knowledge_base, auto_reply_enabled`;
 
 /**
  * Tenant provider credentials (Twilio auth tokens, SendGrid API keys) are
@@ -188,6 +188,8 @@ export class PostgresTenantStore implements TenantStore {
       channels: this.decodeChannels(row.channels),
       notifyWebhookUrl: (row.notify_webhook_url as string | null) ?? undefined,
       templates: (row.templates as Tenant["templates"] | null) ?? undefined,
+      knowledgeBase: (row.knowledge_base as string | null) ?? undefined,
+      autoReplyEnabled: Boolean(row.auto_reply_enabled),
       createdAt: new Date(row.created_at as string).toISOString(),
     };
   }
@@ -209,8 +211,8 @@ export class PostgresTenantStore implements TenantStore {
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         tenant.id,
         tenant.name,
@@ -223,6 +225,8 @@ export class PostgresTenantStore implements TenantStore {
         tenant.createdAt,
         tenant.notifyWebhookUrl ?? null,
         tenant.templates ? JSON.stringify(tenant.templates) : null,
+        tenant.knowledgeBase ?? null,
+        tenant.autoReplyEnabled ?? false,
       ]
     );
     return tenant;
@@ -235,7 +239,8 @@ export class PostgresTenantStore implements TenantStore {
 
     await this.pool.query(
       `UPDATE tenants SET name = $2, api_key = $3, timezone = $4, quiet_hours_start = $5,
-        quiet_hours_end = $6, dev_mode = $7, channels = $8, notify_webhook_url = $9, templates = $10
+        quiet_hours_end = $6, dev_mode = $7, channels = $8, notify_webhook_url = $9, templates = $10,
+        knowledge_base = $11, auto_reply_enabled = $12
       WHERE id = $1`,
       [
         id,
@@ -248,6 +253,8 @@ export class PostgresTenantStore implements TenantStore {
         this.encodeChannels(merged.channels),
         merged.notifyWebhookUrl ?? null,
         merged.templates ? JSON.stringify(merged.templates) : null,
+        merged.knowledgeBase ?? null,
+        merged.autoReplyEnabled ?? false,
       ]
     );
     return merged;
@@ -266,18 +273,19 @@ function messageFromRow(row: Record<string, unknown>): Message {
     classification: (row.classification as Message["classification"]) ?? undefined,
     providerMessageId: (row.provider_message_id as string | null) ?? undefined,
     deliveryStatus: (row.delivery_status as string | null) ?? undefined,
+    kind: (row.kind as Message["kind"]) ?? undefined,
   };
 }
 
-const MESSAGE_COLUMNS = `id, tenant_id, lead_id, channel, direction, body, at, classification, provider_message_id, delivery_status`;
+const MESSAGE_COLUMNS = `id, tenant_id, lead_id, channel, direction, body, at, classification, provider_message_id, delivery_status, kind`;
 
 export class PostgresMessageStore implements MessageStore {
   constructor(private pool: Pool) {}
 
   async logMessage(message: Message): Promise<Message> {
     await this.pool.query(
-      `INSERT INTO messages (id, tenant_id, lead_id, channel, direction, body, at, classification, provider_message_id, delivery_status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      `INSERT INTO messages (id, tenant_id, lead_id, channel, direction, body, at, classification, provider_message_id, delivery_status, kind)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         message.id,
         message.tenantId,
@@ -289,6 +297,7 @@ export class PostgresMessageStore implements MessageStore {
         message.classification ?? null,
         message.providerMessageId ?? null,
         message.deliveryStatus ?? null,
+        message.kind ?? null,
       ]
     );
     return message;

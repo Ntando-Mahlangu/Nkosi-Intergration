@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import { readFileSync } from "node:fs";
 import { createStores } from "../store/index.js";
 import { generateApiKey, generateId } from "../idgen.js";
 import type { Tenant } from "../types.js";
@@ -41,6 +42,18 @@ async function main() {
       email = { apiKey: sendgridKey, fromEmail, fromName: fromName || undefined };
     }
 
+    const knowledgeBasePath = await ask(
+      rl,
+      "Path to a knowledge-base text file for the FAQ auto-reply chatbot (blank to skip / set up later): "
+    );
+    let knowledgeBase: string | undefined;
+    let autoReplyEnabled = false;
+    if (knowledgeBasePath) {
+      knowledgeBase = readFileSync(knowledgeBasePath, "utf-8");
+      const enable = await ask(rl, "Enable automated replies to customer questions using this knowledge base now? [y/N]: ");
+      autoReplyEnabled = /^y(es)?$/i.test(enable);
+    }
+
     const tenant: Tenant = {
       id: generateId("tenant"),
       name,
@@ -49,6 +62,8 @@ async function main() {
       quietHours: { startHour: Number(quietStartRaw), endHour: Number(quietEndRaw) },
       devMode: false,
       channels: { sms, whatsapp, email },
+      knowledgeBase,
+      autoReplyEnabled,
       createdAt: new Date().toISOString(),
     };
 
@@ -71,6 +86,9 @@ async function main() {
       `  channels: sms=${Boolean(created.channels.sms)} whatsapp=${Boolean(
         created.channels.whatsapp
       )} email=${Boolean(created.channels.email)}`
+    );
+    console.log(
+      `  auto-reply: ${created.autoReplyEnabled ? "ON" : "off"}${created.knowledgeBase ? " (knowledge base set)" : ""}`
     );
 
     console.log("\nWebhook URLs to configure with providers (replace <host> with your deployed API host):");

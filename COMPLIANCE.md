@@ -53,6 +53,34 @@ document is not a substitute for that review.
   (ECDSA signature over the request) for stronger assurance the request
   actually came from SendGrid.
 
+## Bot disclosure (auto-reply chatbot)
+
+If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
+— see README "Auto-reply chatbot"):
+
+- Several jurisdictions require **proactively** disclosing that a customer
+  is interacting with an automated system in a commercial messaging
+  context — for example California's B.O.T. Act (Bus. & Prof. Code
+  §17941) for online commercial communications, and similar rules are
+  emerging elsewhere. LeadRecovery's chatbot is instructed to answer
+  *honestly* if asked whether it's a bot/AI, but it does **not**
+  proactively announce this in every message by default — that's a
+  product/legal decision for the business, not something the code decides
+  for them. Confirm with the client's counsel whether their jurisdiction
+  requires proactive disclosure and, if so, add it — e.g. via a
+  `knowledgeBase` instruction, or by having the first auto-reply in a
+  conversation include a brief disclosure through a custom
+  `tenant.templates` prefix.
+- The knowledge base itself is the compliance boundary: the model is
+  instructed to answer only from what the business wrote there and to
+  escalate anything else, but it's still an LLM — review real
+  conversation transcripts (`GET /leads/:id/messages`) periodically,
+  especially early on, to confirm it's staying on script and escalating
+  appropriately rather than trusting the instruction blindly.
+- Auto-replies still go out through the same SMS/WhatsApp/Email channels
+  as everything else in this system, so every item above (10DLC,
+  WhatsApp template approval, CAN-SPAM, STOP handling) applies to them too.
+
 ## Data handling
 
 - Tenant channel credentials (Twilio auth tokens, SendGrid API keys) are

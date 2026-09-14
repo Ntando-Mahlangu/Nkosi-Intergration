@@ -3,13 +3,16 @@ import twilio from "twilio";
 import multer from "multer";
 import type { Stores } from "../store/index.js";
 import { classifyReply } from "../reply/classify.js";
+import { generateAutoReply } from "../chatbot.js";
+import { getAdapter } from "../channels/index.js";
 import { requireTenantAuth } from "../middleware/auth.js";
 import { createWebhookLimiter } from "../middleware/rateLimit.js";
 import { generateId } from "../idgen.js";
 import { publicBaseUrl } from "../publicUrl.js";
 import { safeCompare } from "../security.js";
-import { notifyInterestedLead } from "../notify.js";
-import type { Lead, LeadSource, Message } from "../types.js";
+import { substituteTemplate } from "../templateSubstitute.js";
+import { notifyHumanAttention } from "../notify.js";
+import type { ComposedMessage, Lead, LeadSource, Message, Tenant } from "../types.js";
 
 const upload = multer();
 
@@ -44,18 +47,70 @@ function requestUrl(req: Request): string {
   return `${req.protocol}://${req.get("host")}${req.originalUrl}`;
 }
 
+const DEFAULT_NOT_INTERESTED_CLOSER =
+  "No problem, {name} — thanks for letting us know! Feel free to reach out anytime if that changes.";
+
+function firstName(lead: Lead): string {
+  if (!lead.name) return "there";
+  return lead.name.trim().split(/\s+/)[0];
+}
+
+function composeCloserBody(lead: Lead, tenant: Tenant): string {
+  const template = tenant.templates?.notInterestedCloser ?? DEFAULT_NOT_INTERESTED_CLOSER;
+  return substituteTemplate(template, { name: firstName(lead), businessName: tenant.name });
+}
+
+/** Sends a reply through the same channel the lead wrote in and logs it, tagged with what produced it. */
+async function sendAndLog(
+  stores: Stores,
+  tenant: Tenant,
+  lead: Lead,
+  message: ComposedMessage,
+  kind: NonNullable<Message["kind"]>
+): Promise<void> {
+  const messageId = generateId("msg");
+  const result = await getAdapter(message.channel).send(tenant, lead, message, messageId);
+  if (!result.ok) {
+    console.error(`sendAndLog: failed to send a "${kind}" reply to lead ${lead.id} via ${message.channel}: ${result.detail}`);
+    return;
+  }
+  await stores.messageStore.logMessage({
+    id: messageId,
+    tenantId: tenant.id,
+    leadId: lead.id,
+    channel: message.channel,
+    direction: "outbound",
+    body: message.body,
+    at: new Date().toISOString(),
+    providerMessageId: result.providerMessageId,
+    kind,
+  });
+}
+
+/**
+ * Records an inbound reply, classifies it, and decides what happens next:
+ * - stop -> opt out, nothing else.
+ * - interested -> notify the tenant's team; a human takes it from here.
+ * - not_interested -> a fixed, no-LLM-needed polite close-out reply.
+ * - question / unknown -> attempt a knowledge-base-grounded auto-reply
+ *   (src/chatbot.ts); if it's disabled, not configured, or the model itself
+ *   determines this needs a human (price negotiation, complaint, complex
+ *   request, explicit ask for a person, or anything outside the knowledge
+ *   base), notify the tenant's team instead of guessing.
+ */
 async function recordInboundAndClassify(
   stores: Stores,
-  tenantId: string,
+  tenant: Tenant,
   lead: Lead,
   channel: Message["channel"],
   body: string
 ): Promise<{ classification: Awaited<ReturnType<typeof classifyReply>> }> {
+  const history = await stores.messageStore.getMessagesForLead(tenant.id, lead.id);
   const classification = await classifyReply(body);
 
   await stores.messageStore.logMessage({
     id: generateId("msg"),
-    tenantId,
+    tenantId: tenant.id,
     leadId: lead.id,
     channel,
     direction: "inbound",
@@ -65,13 +120,28 @@ async function recordInboundAndClassify(
   });
 
   if (classification === "stop") {
-    await stores.leadStore.updateLead(tenantId, lead.id, { status: "opted_out" });
+    await stores.leadStore.updateLead(tenant.id, lead.id, { status: "opted_out" });
+    return { classification };
+  }
+
+  await stores.leadStore.updateLead(tenant.id, lead.id, { status: "responded" });
+
+  if (classification === "interested") {
+    void notifyHumanAttention(tenant, lead, channel, body, "interested");
+    return { classification };
+  }
+
+  if (classification === "not_interested") {
+    await sendAndLog(stores, tenant, lead, { channel, body: composeCloserBody(lead, tenant) }, "closer");
+    return { classification };
+  }
+
+  // "question" or "unknown"
+  const auto = await generateAutoReply(tenant, lead, history, body);
+  if (auto.action === "reply" && auto.replyBody) {
+    await sendAndLog(stores, tenant, lead, { channel, body: auto.replyBody }, "auto_reply");
   } else {
-    await stores.leadStore.updateLead(tenantId, lead.id, { status: "responded" });
-    if (classification === "interested") {
-      const tenant = await stores.tenantStore.getTenant(tenantId);
-      if (tenant) void notifyInterestedLead(tenant, lead, channel, body);
-    }
+    void notifyHumanAttention(tenant, lead, channel, body, "needs_human_reply");
   }
 
   return { classification };
@@ -113,7 +183,7 @@ export function createWebhookRoutes(stores: Stores): Router {
 
       if (lead) {
         const channel = from?.startsWith("whatsapp:") ? "whatsapp" : "sms";
-        await recordInboundAndClassify(stores, tenant.id, lead, channel, body);
+        await recordInboundAndClassify(stores, tenant, lead, channel, body);
       }
 
       res.type("text/xml").send("<Response></Response>");
@@ -216,7 +286,7 @@ export function createWebhookRoutes(stores: Stores): Router {
 
     const lead = fromEmail ? await stores.leadStore.findLeadByContact(tenant.id, { email: fromEmail }) : undefined;
     if (lead) {
-      await recordInboundAndClassify(stores, tenant.id, lead, "email", text);
+      await recordInboundAndClassify(stores, tenant, lead, "email", text);
     }
 
     res.status(204).send();

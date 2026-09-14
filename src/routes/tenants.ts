@@ -5,6 +5,8 @@ import { requireAdminAuth, requireTenantAuth } from "../middleware/auth.js";
 import { createAdminLimiter, createTenantLimiter } from "../middleware/rateLimit.js";
 import { generateApiKey, generateId } from "../idgen.js";
 
+const MAX_KNOWLEDGE_BASE_LENGTH = 20_000;
+
 interface CreateTenantBody {
   name: string;
   timezone: string;
@@ -13,6 +15,8 @@ interface CreateTenantBody {
   channels?: Tenant["channels"];
   notifyWebhookUrl?: string;
   templates?: Tenant["templates"];
+  knowledgeBase?: string;
+  autoReplyEnabled?: boolean;
 }
 
 /** True if `timezone` is a real IANA zone Intl can resolve — an invalid one throws at quiet-hours-check time otherwise. */
@@ -42,6 +46,11 @@ function isValidWebhookUrl(url: unknown): boolean {
   } catch {
     return false;
   }
+}
+
+function isValidKnowledgeBase(knowledgeBase: unknown): boolean {
+  if (knowledgeBase === undefined) return true;
+  return typeof knowledgeBase === "string" && knowledgeBase.length <= MAX_KNOWLEDGE_BASE_LENGTH;
 }
 
 /**
@@ -78,6 +87,17 @@ export function createTenantRoutes(tenantStore: TenantStore): Router {
       res.status(400).json({ error: "notifyWebhookUrl must be a valid http(s) URL" });
       return;
     }
+    if (!isValidKnowledgeBase(body.knowledgeBase)) {
+      res.status(400).json({ error: `knowledgeBase must be a string up to ${MAX_KNOWLEDGE_BASE_LENGTH} characters` });
+      return;
+    }
+
+    const mergedKnowledgeBase = body.knowledgeBase !== undefined ? body.knowledgeBase : tenant.knowledgeBase;
+    const mergedAutoReplyEnabled = body.autoReplyEnabled !== undefined ? body.autoReplyEnabled : tenant.autoReplyEnabled;
+    if (mergedAutoReplyEnabled && !mergedKnowledgeBase?.trim()) {
+      res.status(400).json({ error: "autoReplyEnabled requires a non-empty knowledgeBase" });
+      return;
+    }
 
     const patch: Partial<Tenant> = {};
     if (body.timezone !== undefined) patch.timezone = body.timezone;
@@ -86,6 +106,8 @@ export function createTenantRoutes(tenantStore: TenantStore): Router {
     if (body.channels !== undefined) patch.channels = body.channels;
     if (body.notifyWebhookUrl !== undefined) patch.notifyWebhookUrl = body.notifyWebhookUrl;
     if (body.templates !== undefined) patch.templates = body.templates;
+    if (body.knowledgeBase !== undefined) patch.knowledgeBase = body.knowledgeBase;
+    if (body.autoReplyEnabled !== undefined) patch.autoReplyEnabled = body.autoReplyEnabled;
 
     const updated = await tenantStore.updateTenant(tenant.id, patch);
     res.json(toPublicTenant(updated!));
@@ -114,6 +136,14 @@ export function createTenantRoutes(tenantStore: TenantStore): Router {
       res.status(400).json({ error: "notifyWebhookUrl must be a valid http(s) URL" });
       return;
     }
+    if (!isValidKnowledgeBase(body.knowledgeBase)) {
+      res.status(400).json({ error: `knowledgeBase must be a string up to ${MAX_KNOWLEDGE_BASE_LENGTH} characters` });
+      return;
+    }
+    if (body.autoReplyEnabled && !body.knowledgeBase?.trim()) {
+      res.status(400).json({ error: "autoReplyEnabled requires a non-empty knowledgeBase" });
+      return;
+    }
 
     const tenant: Tenant = {
       id: generateId("tenant"),
@@ -125,6 +155,8 @@ export function createTenantRoutes(tenantStore: TenantStore): Router {
       channels: body.channels ?? {},
       notifyWebhookUrl: body.notifyWebhookUrl,
       templates: body.templates,
+      knowledgeBase: body.knowledgeBase,
+      autoReplyEnabled: body.autoReplyEnabled ?? false,
       createdAt: new Date().toISOString(),
     };
 

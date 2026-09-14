@@ -35,6 +35,7 @@ const TENANT: Tenant = {
   quietHours: { startHour: 20, endHour: 8 },
   devMode: false,
   channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+15550000" } },
+  autoReplyEnabled: false, // the DB column is NOT NULL DEFAULT FALSE, so a round-trip always returns a real boolean here
   createdAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
 };
 
@@ -70,6 +71,23 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
 
     const missing = await tenantStore.getTenantByApiKey("nope");
     expect(missing).toBeUndefined();
+  });
+
+  it("round-trips knowledgeBase and autoReplyEnabled", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant({
+      ...TENANT,
+      knowledgeBase: "We open at 8am and close at 5pm, Monday to Friday.",
+      autoReplyEnabled: true,
+    });
+
+    const reread = await tenantStore.getTenant(TENANT.id);
+    expect(reread?.knowledgeBase).toBe("We open at 8am and close at 5pm, Monday to Friday.");
+    expect(reread?.autoReplyEnabled).toBe(true);
+
+    const updated = await tenantStore.updateTenant(TENANT.id, { autoReplyEnabled: false });
+    expect(updated?.autoReplyEnabled).toBe(false);
+    expect(updated?.knowledgeBase).toBe("We open at 8am and close at 5pm, Monday to Friday."); // untouched fields survive a partial update
   });
 
   it("never stores channel credentials in cleartext in the database", async () => {
@@ -181,6 +199,7 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
       body: "Hi Jordan...",
       at: new Date("2026-09-01T00:00:00.000Z").toISOString(),
       providerMessageId: "SM123",
+      kind: "auto_reply",
     });
 
     const updated = await messageStore.updateMessageStatus(TENANT.id, "msg-out-1", "delivered");
@@ -189,6 +208,7 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     const [reread] = await messageStore.getMessagesForLead(TENANT.id, LEAD.id);
     expect(reread.deliveryStatus).toBe("delivered");
     expect(reread.providerMessageId).toBe("SM123");
+    expect(reread.kind).toBe("auto_reply");
 
     const missing = await messageStore.updateMessageStatus(TENANT.id, "no-such-message", "delivered");
     expect(missing).toBeUndefined();
