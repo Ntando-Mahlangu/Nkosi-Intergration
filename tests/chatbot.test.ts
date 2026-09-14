@@ -158,4 +158,63 @@ describe("generateAutoReply", () => {
     const args = createMock.mock.calls[0][0];
     expect(args.messages).toEqual([{ role: "user", content: "hi, do you do gutter cleaning?" }]);
   });
+
+  it("caps how much history is sent to the model, still starting on a user turn", async () => {
+    mockTextResponse("Got it!");
+    // 20 alternating turns — far more than MAX_HISTORY_MESSAGES (16).
+    const history: Message[] = [];
+    for (let i = 0; i < 10; i++) {
+      history.push(inbound(`inbound #${i}`));
+      history.push(outbound(`outbound #${i}`));
+    }
+    await generateAutoReply(makeTenant(), makeLead(), history, "one more question");
+
+    const call = createMock.mock.calls[0][0];
+    expect(call.messages.length).toBeLessThanOrEqual(17); // <=16 history turns + the incoming message
+    expect(call.messages[0].role).toBe("user");
+    // Only the most recent history should appear — the earliest turns are dropped.
+    expect(JSON.stringify(call.messages)).not.toContain("inbound #0");
+    expect(JSON.stringify(call.messages)).toContain("inbound #9");
+  });
+
+  it("escalates without calling the model once the per-lead reply rate limit is hit", async () => {
+    const now = new Date("2026-01-01T12:00:00.000Z");
+    const recentAutoReply = (minutesAgo: number): Message => ({
+      id: `ar-${minutesAgo}`,
+      tenantId: "tenant-1",
+      leadId: "lead-1",
+      channel: "sms",
+      direction: "outbound",
+      body: "an earlier auto-reply",
+      at: new Date(now.getTime() - minutesAgo * 60_000).toISOString(),
+      kind: "auto_reply",
+    });
+    // 5 auto-replies already within the last hour — at the limit.
+    const history = [10, 20, 30, 40, 50].map(recentAutoReply);
+
+    const result = await generateAutoReply(makeTenant(), makeLead(), history, "another question", now);
+    expect(result.action).toBe("escalate");
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("does not count auto-replies from outside the rate-limit window", async () => {
+    mockTextResponse("Sure!");
+    const now = new Date("2026-01-01T12:00:00.000Z");
+    const oldAutoReply = (hoursAgo: number): Message => ({
+      id: `ar-old-${hoursAgo}`,
+      tenantId: "tenant-1",
+      leadId: "lead-1",
+      channel: "sms",
+      direction: "outbound",
+      body: "an old auto-reply",
+      at: new Date(now.getTime() - hoursAgo * 60 * 60_000).toISOString(),
+      kind: "auto_reply",
+    });
+    // 5 auto-replies, but all well outside the 1-hour window — shouldn't count against the limit.
+    const history = [2, 3, 4, 5, 6].map(oldAutoReply);
+
+    const result = await generateAutoReply(makeTenant(), makeLead(), history, "another question", now);
+    expect(result.action).toBe("reply");
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
 });

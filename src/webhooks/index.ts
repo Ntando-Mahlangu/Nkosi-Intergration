@@ -12,6 +12,7 @@ import { publicBaseUrl } from "../publicUrl.js";
 import { safeCompare } from "../security.js";
 import { substituteTemplate } from "../templateSubstitute.js";
 import { notifyHumanAttention } from "../notify.js";
+import { verifySendGridEventSignature } from "../sendgridVerify.js";
 import type { ComposedMessage, Lead, LeadSource, Message, Tenant } from "../types.js";
 
 const upload = multer();
@@ -293,31 +294,61 @@ export function createWebhookRoutes(stores: Stores): Router {
   });
 
   // --- SendGrid Event Webhook (delivery/bounce/etc.) ---
-  // Same pragmatic ?token= guard as the inbound parse endpoint above — swap
-  // for SendGrid's Event Webhook signature verification before real traffic.
-  router.post("/webhooks/:tenantId/sendgrid/events", express.json(), async (req, res) => {
-    const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
-    if (!tenant) {
-      res.status(404).send();
-      return;
-    }
-    const token = req.query.token;
-    if (typeof token !== "string" || !safeCompare(token, tenant.apiKey)) {
-      res.status(403).send("invalid token");
-      return;
-    }
-
-    const events = Array.isArray(req.body) ? req.body : [];
-    for (const event of events) {
-      const messageId = event?.leadrecovery_message_id;
-      const status = event?.event;
-      if (typeof messageId === "string" && typeof status === "string") {
-        await stores.messageStore.updateMessageStatus(tenant.id, messageId, status);
+  // Real ECDSA signature verification when the tenant has configured
+  // channels.email.eventWebhookPublicKey (SendGrid's "Signed Event Webhook"
+  // setting); otherwise falls back to the same pragmatic ?token= guard used
+  // by inbound parse below. Needs the exact raw request bytes to verify, so
+  // this captures them via express.json's `verify` hook rather than
+  // re-serializing the parsed body (which could differ byte-for-byte from
+  // what SendGrid actually signed).
+  router.post(
+    "/webhooks/:tenantId/sendgrid/events",
+    express.json({
+      verify: (req, _res, buf) => {
+        (req as Request & { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+    async (req, res) => {
+      const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
+      if (!tenant) {
+        res.status(404).send();
+        return;
       }
-    }
 
-    res.status(204).send();
-  });
+      const publicKey = tenant.channels.email?.eventWebhookPublicKey;
+      if (publicKey) {
+        const signature = req.header("x-twilio-email-event-webhook-signature");
+        const timestamp = req.header("x-twilio-email-event-webhook-timestamp");
+        const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+        if (
+          !signature ||
+          !timestamp ||
+          !rawBody ||
+          !verifySendGridEventSignature(publicKey, rawBody.toString("utf8"), signature, timestamp)
+        ) {
+          res.status(403).send("invalid signature");
+          return;
+        }
+      } else {
+        const token = req.query.token;
+        if (typeof token !== "string" || !safeCompare(token, tenant.apiKey)) {
+          res.status(403).send("invalid token");
+          return;
+        }
+      }
+
+      const events = Array.isArray(req.body) ? req.body : [];
+      for (const event of events) {
+        const messageId = event?.leadrecovery_message_id;
+        const status = event?.event;
+        if (typeof messageId === "string" && typeof status === "string") {
+          await stores.messageStore.updateMessageStatus(tenant.id, messageId, status);
+        }
+      }
+
+      res.status(204).send();
+    }
+  );
 
   // --- Generic lead intake (CRM outgoing webhook / Zapier / Make / n8n) ---
   router.post("/webhooks/lead", express.json(), requireTenantAuth(stores.tenantStore), async (req, res) => {

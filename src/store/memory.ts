@@ -73,6 +73,13 @@ export class InMemoryTenantStore implements TenantStore {
     this.tenants.set(id, updated);
     return updated;
   }
+
+  async deleteTenant(id: string): Promise<boolean> {
+    // Demo/test store only: unlike PostgresTenantStore, this doesn't cascade
+    // to leads/messages in the separate InMemoryLeadStore/InMemoryMessageStore
+    // instances — acceptable here since nothing persists across process restarts anyway.
+    return this.tenants.delete(id);
+  }
 }
 
 export class InMemoryMessageStore implements MessageStore {

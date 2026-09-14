@@ -32,6 +32,10 @@ export function requireTenantAuth(tenantStore: TenantStore): RequestHandler {
       res.status(401).json({ error: "invalid API key" });
       return;
     }
+    if (tenant.status === "suspended") {
+      res.status(403).json({ error: "this tenant has been suspended" });
+      return;
+    }
     req.tenant = tenant;
     next();
   };

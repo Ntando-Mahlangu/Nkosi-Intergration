@@ -21,7 +21,9 @@ guessing. See "Auto-reply chatbot" below.
 The full behavioral spec lives in [`SYSTEM_PROMPT.md`](./SYSTEM_PROMPT.md).
 For the process of bringing on a real client, see
 [`ONBOARDING.md`](./ONBOARDING.md); for what's manual/legal rather than code,
-see [`COMPLIANCE.md`](./COMPLIANCE.md).
+see [`COMPLIANCE.md`](./COMPLIANCE.md); for running this in production
+(Docker/Compose, systemd, required env vars, the single-worker-replica
+constraint), see [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
 ## Architecture
 
@@ -91,10 +93,14 @@ deployment serves many clients with fully isolated data.
 - **`src/workflow.ts`** — orchestrates the whole pipeline per tenant, and
   generates each message's id up front so Twilio/SendGrid delivery-status
   callbacks can correlate back to it.
-- **`src/worker.ts`** — cron loop that runs the workflow for every tenant.
+- **`src/worker.ts`** — cron loop that runs the workflow for every tenant,
+  skipping suspended ones, with bounded per-tick concurrency across tenants
+  (`src/concurrency.ts`, `LEADRECOVERY_WORKER_CONCURRENCY`). Run exactly one
+  worker replica — see `DEPLOYMENT.md`.
 - **`src/middleware/auth.ts`**, **`src/routes/tenants.ts`** — tenant API-key
-  auth, tenant self-service (`PATCH /tenants/me`), and admin tenant
-  management (admin-key protected).
+  auth (rejecting a suspended tenant), tenant self-service (`PATCH
+  /tenants/me`), and admin tenant management (admin-key protected),
+  including suspending/reactivating and permanently deleting a tenant.
 - **`src/security.ts`**, **`src/crypto.ts`** — constant-time secret
   comparison and AES-256-GCM encryption for tenant provider credentials at
   rest (required in Postgres mode — see Environment variables below).
@@ -162,7 +168,13 @@ credentials required.
       `PUBLIC_BASE_URL` is configured (no manual Twilio console setup needed)
     - SendGrid inbound parse → `/webhooks/<tenantId>/sendgrid/email?token=<apiKey>`
     - SendGrid Event Webhook (delivery/bounce tracking) →
-      `/webhooks/<tenantId>/sendgrid/events?token=<apiKey>`
+      `/webhooks/<tenantId>/sendgrid/events?token=<apiKey>` — or, for real
+      cryptographic verification instead of the shared `?token=` secret, set
+      the tenant's `channels.email.eventWebhookPublicKey` to the base64
+      public key SendGrid shows under Settings → Mail Settings → Signed
+      Event Webhook (enable signing there first). When that field is set,
+      the app verifies SendGrid's ECDSA signature headers and the `?token=`
+      check is bypassed entirely for that tenant.
 
 ## API reference
 
@@ -179,6 +191,8 @@ All routes except `/health` and the webhooks require `Authorization: Bearer
 | PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled |
 | GET | `/admin/tenants` | List tenants (admin) |
 | POST | `/admin/tenants` | Create a tenant (admin); returns the API key once |
+| PATCH | `/admin/tenants/:id` | Admin update: any self-service field, plus `status` (`"active"` \| `"suspended"`) — the only way to suspend/reactivate a tenant |
+| DELETE | `/admin/tenants/:id` | Permanently delete a tenant (admin) — cascades to its leads/messages in Postgres; no undo |
 | GET | `/leads` | List the tenant's leads. Optional `?limit=&offset=`; always sets `X-Total-Count` |
 | GET | `/leads/plan` | Dry run: scored + composed plans, nothing sent. Same optional pagination |
 | GET | `/leads/:id/messages` | Conversation history for one lead (includes delivery status) |
@@ -203,6 +217,7 @@ See [`.env.example`](./.env.example) for the copyable version with full comments
 | `PORT` | API server port (default 3000) |
 | `LEADRECOVERY_CRON_SCHEDULE` | Worker cron expression (default hourly) |
 | `LEADRECOVERY_RUN_ONCE` | `true` runs the worker once and exits, instead of scheduling |
+| `LEADRECOVERY_WORKER_CONCURRENCY` | How many tenants the worker processes in parallel per tick (default 4) — tunes concurrency *within* the one worker process only; see `DEPLOYMENT.md` for why exactly one worker replica must run |
 | `LEADRECOVERY_USE_LLM_CLASSIFICATION` | `true` enables the optional Claude-based reply classification enhancement |
 | `ANTHROPIC_API_KEY` | Required if the above is enabled, **or** if any tenant has `autoReplyEnabled: true` (the chatbot) |
 
@@ -234,24 +249,39 @@ is messaging with an automated system.
 
 ## CI
 
-`.github/workflows/ci.yml` runs `typecheck`, `test`, and `build` on every
-push and pull request.
+`.github/workflows/ci.yml` runs two jobs on every push and pull request:
+`test` (`typecheck`, `test`, `build`) and a separate `e2e` job that installs
+a Playwright browser and runs `test:e2e`.
 
 ## Testing
 
 ```bash
-npm test
+npm test        # fast unit/integration suite (vitest)
+npm run test:e2e  # browser end-to-end tests against both dashboards (Playwright)
 ```
 
-Covers compliance, scoring, reason/messaging (incl. per-tenant template
-overrides), follow-up scheduling, quiet hours, reply classification
-(keyword path fully offline; the optional Claude-based enhancement covered
-with `@anthropic-ai/sdk` mocked — no live API key needed), the chatbot
-(reply/escalate/disabled outcomes, conversation-history formatting, and
-that it never calls the network when disabled), encryption/constant-time-
-compare (`src/crypto.ts`/`src/security.ts`), the end-to-end workflow, the
-Postgres store implementations (run against an in-memory Postgres emulator
-via `pg-mem`, so the actual SQL is exercised without a live database,
-including credential encryption at rest and delivery-status updates), and
-the HTTP auth/webhook/rate-limiting routes — including the full
-question→auto-reply and question→escalate flows — via `supertest`.
+`npm test` covers compliance, scoring, reason/messaging (incl. per-tenant
+template overrides), follow-up scheduling, quiet hours, reply
+classification (keyword path fully offline; the optional Claude-based
+enhancement covered with `@anthropic-ai/sdk` mocked — no live API key
+needed), the chatbot (reply/escalate/disabled outcomes, conversation-
+history capping, the per-lead auto-reply rate limit, and that it never
+calls the network when disabled), encryption/constant-time-compare
+(`src/crypto.ts`/`src/security.ts`), bounded-concurrency tenant processing
+(`src/concurrency.ts`), the end-to-end workflow, the Postgres store
+implementations (run against an in-memory Postgres emulator via `pg-mem`,
+so the actual SQL is exercised without a live database, including
+credential encryption at rest, delivery-status updates, tenant status, and
+`deleteTenant`'s cascade to a tenant's leads/messages), and the HTTP auth/
+webhook/rate-limiting routes — including the full question→auto-reply and
+question→escalate flows, tenant suspend/reactivate/delete, and real
+SendGrid Event Webhook ECDSA signature verification — via `supertest`.
+
+`npm run test:e2e` drives `public/index.html` (Command Center) and
+`public/dashboard.html` in a real headless browser via
+[Playwright](https://playwright.dev): connecting with a valid/invalid API
+key, live category counts and the lead-detail panel, session persistence
+across a reload, and disconnecting. It starts its own server instance
+(`playwright.config.ts`) against the in-memory demo tenant, so it needs no
+external services either. Kept separate from `npm test` (and run as its
+own CI job) since it needs a real browser and is slower.

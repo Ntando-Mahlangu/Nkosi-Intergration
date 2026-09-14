@@ -133,7 +133,8 @@ reply — see step 8 below for setting that up.
 
 - Start the worker (`npm run worker`, or point your infrastructure's
   scheduler at `LEADRECOVERY_RUN_ONCE=true npm run worker` on the cadence
-  you want).
+  you want) — for a real deployment (Docker/Compose or systemd), see
+  `DEPLOYMENT.md`, including the hard "exactly one worker replica" rule.
 - Make sure someone on the client's side is watching for `interested`
   replies and anything the chatbot escalates. Set `notifyWebhookUrl` on the
   tenant (via `PATCH /tenants/me` or the admin API) to a Slack incoming
@@ -151,3 +152,18 @@ reply — see step 8 below for setting that up.
 - Revisit quiet hours / scoring thresholds (`src/scoring.ts`
   `SCORING_WINDOWS`) per vertical — a plumber's "recent" and a real estate
   agent's "recent" aren't the same.
+
+## 10. Pausing or offboarding a client
+
+- **Pause without losing data** (e.g. a billing issue, or the client wants a
+  temporary hold): `PATCH /admin/tenants/<id>` with `{"status":
+  "suspended"}`. This immediately blocks all of that tenant's API/webhook
+  auth — including inbound replies and the worker skipping them entirely —
+  without deleting anything. Reactivate the same way with `{"status":
+  "active"}`. A tenant cannot suspend or reactivate itself; this is
+  admin-only by design.
+- **Offboard permanently**: `DELETE /admin/tenants/<id>`. This is
+  irreversible — in Postgres it cascades to every lead and message that
+  tenant ever had. Confirm with the client (and check any contractual data-
+  retention obligations) before doing this; suspending is almost always the
+  safer first move.

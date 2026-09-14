@@ -9,6 +9,13 @@ export interface ChatbotResult {
 /** The model is instructed to reply with exactly this word (optionally with trailing punctuation) to hand off to a human. */
 const ESCALATE_PATTERN = /^escalate[.!]?$/i;
 
+/** Caps how much prior conversation gets sent to Claude on each call, bounding token cost/context growth for a long-running lead relationship. */
+const MAX_HISTORY_MESSAGES = 16;
+
+/** Per-lead throttle: beyond this many auto-replies within RATE_WINDOW_MS, escalate instead of calling the model again — guards against runaway cost/abuse from one chatty (or malicious) conversation. */
+const MAX_AUTO_REPLIES_PER_WINDOW = 5;
+const RATE_WINDOW_MS = 60 * 60 * 1000;
+
 function buildSystemPrompt(tenant: Tenant, lead: Lead): string {
   return [
     `You are answering customer messages on behalf of ${tenant.name}.`,
@@ -30,10 +37,18 @@ function buildSystemPrompt(tenant: Tenant, lead: Lead): string {
     .join("\n");
 }
 
-/** Maps prior Message history to Anthropic's turn format, starting from the first inbound (user) message — a leading run of outbound-only history (e.g. the initial campaign message) would violate the "first message must be user" rule otherwise. */
+/**
+ * Maps prior Message history to Anthropic's turn format: keeps only the most
+ * recent MAX_HISTORY_MESSAGES (bounding context size/cost for a long-running
+ * lead relationship), then starts from the first inbound (user) message
+ * within that window — a leading run of outbound-only history (e.g. the
+ * initial campaign message) would violate the "first message must be user"
+ * rule otherwise.
+ */
 function toClaudeMessages(history: Message[], incomingBody: string): Anthropic.MessageParam[] {
-  const firstInboundIndex = history.findIndex((m) => m.direction === "inbound");
-  const trimmed = firstInboundIndex === -1 ? [] : history.slice(firstInboundIndex);
+  const recent = history.slice(-MAX_HISTORY_MESSAGES);
+  const firstInboundIndex = recent.findIndex((m) => m.direction === "inbound");
+  const trimmed = firstInboundIndex === -1 ? [] : recent.slice(firstInboundIndex);
   const messages: Anthropic.MessageParam[] = trimmed.map((m) => ({
     role: m.direction === "inbound" ? "user" : "assistant",
     content: m.body,
@@ -42,22 +57,35 @@ function toClaudeMessages(history: Message[], incomingBody: string): Anthropic.M
   return messages;
 }
 
+/** How many auto_reply-kind outbound messages this lead has already received within the rate-limit window. */
+function recentAutoReplyCount(history: Message[], now: Date): number {
+  const cutoff = now.getTime() - RATE_WINDOW_MS;
+  return history.filter((m) => m.kind === "auto_reply" && new Date(m.at).getTime() >= cutoff).length;
+}
+
 /**
  * Generates a knowledge-base-grounded auto-reply for an inbound question,
  * or signals that this should be escalated to a human instead. Opt-in per
  * tenant (autoReplyEnabled + knowledgeBase both required) and fails safe:
- * any API error, missing config, or a model response that isn't a clean
- * answer results in "escalate" — this never fabricates an answer it isn't
- * confident is grounded in the tenant's own knowledge base.
+ * any API error, missing config, a model response that isn't a clean
+ * answer, or exceeding the per-lead rate limit all result in "escalate" —
+ * this never fabricates an answer it isn't confident is grounded in the
+ * tenant's own knowledge base, and never lets one conversation run away
+ * unbounded cost.
  */
 export async function generateAutoReply(
   tenant: Tenant,
   lead: Lead,
   history: Message[],
-  incomingBody: string
+  incomingBody: string,
+  now: Date = new Date()
 ): Promise<ChatbotResult> {
   if (!tenant.autoReplyEnabled || !tenant.knowledgeBase?.trim()) {
     return { action: "disabled" };
+  }
+
+  if (recentAutoReplyCount(history, now) >= MAX_AUTO_REPLIES_PER_WINDOW) {
+    return { action: "escalate" };
   }
 
   try {

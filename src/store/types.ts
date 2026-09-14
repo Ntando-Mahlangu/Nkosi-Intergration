@@ -20,6 +20,8 @@ export interface TenantStore {
   listTenants(): Promise<Tenant[]>;
   createTenant(tenant: Tenant): Promise<Tenant>;
   updateTenant(id: string, patch: Partial<Tenant>): Promise<Tenant | undefined>;
+  /** Permanently removes a tenant. Postgres cascades to its leads/messages; returns false if no such tenant. */
+  deleteTenant(id: string): Promise<boolean>;
 }
 
 export interface MessageStore {

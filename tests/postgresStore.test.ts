@@ -36,6 +36,7 @@ const TENANT: Tenant = {
   devMode: false,
   channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+15550000" } },
   autoReplyEnabled: false, // the DB column is NOT NULL DEFAULT FALSE, so a round-trip always returns a real boolean here
+  status: "active", // ditto — NOT NULL DEFAULT 'active'
   createdAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
 };
 
@@ -212,5 +213,51 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
 
     const missing = await messageStore.updateMessageStatus(TENANT.id, "no-such-message", "delivered");
     expect(missing).toBeUndefined();
+  });
+
+  it("round-trips tenant status and defaults new tenants to active", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant(TENANT);
+
+    const suspended = await tenantStore.updateTenant(TENANT.id, { status: "suspended" });
+    expect(suspended?.status).toBe("suspended");
+
+    const reread = await tenantStore.getTenant(TENANT.id);
+    expect(reread?.status).toBe("suspended");
+
+    const reactivated = await tenantStore.updateTenant(TENANT.id, { status: "active" });
+    expect(reactivated?.status).toBe("active");
+  });
+
+  it("deleteTenant removes the tenant and, via ON DELETE CASCADE, its leads and messages", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    const leadStore = new PostgresLeadStore(pool);
+    const messageStore = new PostgresMessageStore(pool);
+    await tenantStore.createTenant(TENANT);
+    await leadStore.createLead(LEAD);
+    await messageStore.logMessage({
+      id: "msg-1",
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      channel: "sms",
+      direction: "outbound",
+      body: "Hi Jordan...",
+      at: new Date("2026-09-01T00:00:00.000Z").toISOString(),
+    });
+
+    const deleted = await tenantStore.deleteTenant(TENANT.id);
+    expect(deleted).toBe(true);
+
+    expect(await tenantStore.getTenant(TENANT.id)).toBeUndefined();
+
+    const { rows: leadRows } = await pool.query("SELECT id FROM leads WHERE tenant_id = $1", [TENANT.id]);
+    expect(leadRows).toHaveLength(0);
+    const { rows: messageRows } = await pool.query("SELECT id FROM messages WHERE tenant_id = $1", [TENANT.id]);
+    expect(messageRows).toHaveLength(0);
+  });
+
+  it("deleteTenant returns false for an unknown tenant id", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    expect(await tenantStore.deleteTenant("no-such-tenant")).toBe(false);
   });
 });

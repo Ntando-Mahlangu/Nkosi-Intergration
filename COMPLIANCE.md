@@ -47,11 +47,14 @@ document is not a substitute for that review.
   confirm this satisfies the client's jurisdiction's specific requirements
   (e.g. a physical mailing address in the footer for CAN-SPAM).
 - **SendGrid Inbound Parse / Event Webhook signing**: `src/webhooks/index.ts`'s
-  email and delivery-events webhooks use a constant-time-compared `?token=`
-  shared secret as an MVP guard (see `src/security.ts`). Before handling
-  real client traffic, switch to SendGrid's signed webhook verification
-  (ECDSA signature over the request) for stronger assurance the request
-  actually came from SendGrid.
+  inbound-parse webhook uses a constant-time-compared `?token=` shared
+  secret (see `src/security.ts`). The Event Webhook (delivery/bounce
+  tracking) supports real cryptographic verification instead: enable
+  "Signed Event Webhook" in SendGrid's console and set the tenant's
+  `channels.email.eventWebhookPublicKey` to the public key it shows — see
+  README "Provider webhooks" — for stronger assurance the request actually
+  came from SendGrid than the shared-secret fallback gives. Do this before
+  handling real client traffic.
 
 ## Bot disclosure (auto-reply chatbot)
 
@@ -99,6 +102,13 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
   comparison (`src/security.ts`) to avoid leaking timing information; all
   admin/webhook/tenant-authed routes are also rate limited
   (`src/middleware/rateLimit.ts`) against brute-force/flooding.
+- A client's right-to-erasure request, or a decision to fully offboard
+  them, is handled by `DELETE /admin/tenants/<id>` (see `ONBOARDING.md`
+  step 10) — in Postgres this cascades to every lead and message that
+  tenant ever had and cannot be undone. For a temporary hold instead of
+  deletion, suspend the tenant (`PATCH /admin/tenants/<id>` with
+  `{"status": "suspended"}`), which blocks all access without touching
+  stored data.
 
 ## Ongoing
 

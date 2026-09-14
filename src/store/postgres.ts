@@ -143,7 +143,7 @@ export class PostgresLeadStore implements LeadStore {
 }
 
 const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at,
-  notify_webhook_url, templates, knowledge_base, auto_reply_enabled`;
+  notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status`;
 
 /**
  * Tenant provider credentials (Twilio auth tokens, SendGrid API keys) are
@@ -190,6 +190,7 @@ export class PostgresTenantStore implements TenantStore {
       templates: (row.templates as Tenant["templates"] | null) ?? undefined,
       knowledgeBase: (row.knowledge_base as string | null) ?? undefined,
       autoReplyEnabled: Boolean(row.auto_reply_enabled),
+      status: (row.status as Tenant["status"]) ?? "active",
       createdAt: new Date(row.created_at as string).toISOString(),
     };
   }
@@ -211,8 +212,8 @@ export class PostgresTenantStore implements TenantStore {
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
         tenant.id,
         tenant.name,
@@ -227,6 +228,7 @@ export class PostgresTenantStore implements TenantStore {
         tenant.templates ? JSON.stringify(tenant.templates) : null,
         tenant.knowledgeBase ?? null,
         tenant.autoReplyEnabled ?? false,
+        tenant.status ?? "active",
       ]
     );
     return tenant;
@@ -240,7 +242,7 @@ export class PostgresTenantStore implements TenantStore {
     await this.pool.query(
       `UPDATE tenants SET name = $2, api_key = $3, timezone = $4, quiet_hours_start = $5,
         quiet_hours_end = $6, dev_mode = $7, channels = $8, notify_webhook_url = $9, templates = $10,
-        knowledge_base = $11, auto_reply_enabled = $12
+        knowledge_base = $11, auto_reply_enabled = $12, status = $13
       WHERE id = $1`,
       [
         id,
@@ -255,9 +257,17 @@ export class PostgresTenantStore implements TenantStore {
         merged.templates ? JSON.stringify(merged.templates) : null,
         merged.knowledgeBase ?? null,
         merged.autoReplyEnabled ?? false,
+        merged.status ?? "active",
       ]
     );
     return merged;
+  }
+
+  async deleteTenant(id: string): Promise<boolean> {
+    // ON DELETE CASCADE on leads.tenant_id and messages.tenant_id (0001_init.sql)
+    // means this also removes every lead and message belonging to the tenant.
+    const result = await this.pool.query(`DELETE FROM tenants WHERE id = $1`, [id]);
+    return (result.rowCount ?? 0) > 0;
   }
 }
 

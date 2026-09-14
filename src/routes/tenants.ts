@@ -7,9 +7,9 @@ import { generateApiKey, generateId } from "../idgen.js";
 
 const MAX_KNOWLEDGE_BASE_LENGTH = 20_000;
 
-interface CreateTenantBody {
-  name: string;
-  timezone: string;
+interface TenantConfigBody {
+  name?: string;
+  timezone?: string;
   quietHours?: Tenant["quietHours"];
   devMode?: boolean;
   channels?: Tenant["channels"];
@@ -17,6 +17,7 @@ interface CreateTenantBody {
   templates?: Tenant["templates"];
   knowledgeBase?: string;
   autoReplyEnabled?: boolean;
+  status?: Tenant["status"];
 }
 
 /** True if `timezone` is a real IANA zone Intl can resolve — an invalid one throws at quiet-hours-check time otherwise. */
@@ -53,6 +54,55 @@ function isValidKnowledgeBase(knowledgeBase: unknown): boolean {
   return typeof knowledgeBase === "string" && knowledgeBase.length <= MAX_KNOWLEDGE_BASE_LENGTH;
 }
 
+function isValidStatus(status: unknown): boolean {
+  return status === undefined || status === "active" || status === "suspended";
+}
+
+/**
+ * Validates a tenant config patch/create body against the current (pre-merge)
+ * tenant state, if any — so e.g. enabling autoReplyEnabled without touching
+ * knowledgeBase in this request still checks against the tenant's existing
+ * knowledgeBase. Returns an error message, or undefined if valid.
+ */
+function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant): string | undefined {
+  if (body.timezone !== undefined && !isValidTimezone(body.timezone)) {
+    return `invalid timezone: ${body.timezone}`;
+  }
+  if (!isValidQuietHours(body.quietHours)) {
+    return "quietHours must be { startHour: 0-23, endHour: 0-23 }";
+  }
+  if (!isValidWebhookUrl(body.notifyWebhookUrl)) {
+    return "notifyWebhookUrl must be a valid http(s) URL";
+  }
+  if (!isValidKnowledgeBase(body.knowledgeBase)) {
+    return `knowledgeBase must be a string up to ${MAX_KNOWLEDGE_BASE_LENGTH} characters`;
+  }
+  if (!isValidStatus(body.status)) {
+    return 'status must be "active" or "suspended"';
+  }
+  const mergedKnowledgeBase = body.knowledgeBase !== undefined ? body.knowledgeBase : existing?.knowledgeBase;
+  const mergedAutoReplyEnabled =
+    body.autoReplyEnabled !== undefined ? body.autoReplyEnabled : existing?.autoReplyEnabled;
+  if (mergedAutoReplyEnabled && !mergedKnowledgeBase?.trim()) {
+    return "autoReplyEnabled requires a non-empty knowledgeBase";
+  }
+  return undefined;
+}
+
+function buildTenantPatch(body: Partial<TenantConfigBody>, { includeStatus }: { includeStatus: boolean }): Partial<Tenant> {
+  const patch: Partial<Tenant> = {};
+  if (body.timezone !== undefined) patch.timezone = body.timezone;
+  if (body.quietHours !== undefined) patch.quietHours = body.quietHours;
+  if (body.devMode !== undefined) patch.devMode = body.devMode;
+  if (body.channels !== undefined) patch.channels = body.channels;
+  if (body.notifyWebhookUrl !== undefined) patch.notifyWebhookUrl = body.notifyWebhookUrl;
+  if (body.templates !== undefined) patch.templates = body.templates;
+  if (body.knowledgeBase !== undefined) patch.knowledgeBase = body.knowledgeBase;
+  if (body.autoReplyEnabled !== undefined) patch.autoReplyEnabled = body.autoReplyEnabled;
+  if (includeStatus && body.status !== undefined) patch.status = body.status;
+  return patch;
+}
+
 /**
  * Tenant self-service (`/tenants/me`, `PATCH /tenants/me`) and admin tenant
  * management (`/admin/tenants`, gated by ADMIN_API_KEY). The admin routes
@@ -62,6 +112,7 @@ function isValidKnowledgeBase(knowledgeBase: unknown): boolean {
 export function createTenantRoutes(tenantStore: TenantStore): Router {
   const router = Router();
   const tenantAuth = requireTenantAuth(tenantStore);
+  const adminAuth = requireAdminAuth();
 
   router.get("/tenants/me", createTenantLimiter(), tenantAuth, (req, res) => {
     res.json(toPublicTenant(req.tenant!));
@@ -69,79 +120,41 @@ export function createTenantRoutes(tenantStore: TenantStore): Router {
 
   // Self-service settings: a tenant can update its own operational config
   // (timezone/quiet hours/devMode/channel credentials/notification hook/
-  // message templates) using its own API key. id/apiKey/createdAt are
-  // immutable here — rotate the API key via the admin API if ever needed.
+  // message templates/chatbot) using its own API key. id/apiKey/createdAt/
+  // status are immutable here — a tenant can't un-suspend itself, and API
+  // key rotation goes through the admin API.
   router.patch("/tenants/me", createTenantLimiter(), tenantAuth, async (req, res) => {
     const tenant = req.tenant!;
-    const body = req.body as Partial<CreateTenantBody>;
+    const body = req.body as Partial<TenantConfigBody>;
 
-    if (body.timezone !== undefined && !isValidTimezone(body.timezone)) {
-      res.status(400).json({ error: `invalid timezone: ${body.timezone}` });
+    if (body.status !== undefined) {
+      res.status(400).json({ error: "status can only be changed via the admin API" });
       return;
     }
-    if (!isValidQuietHours(body.quietHours)) {
-      res.status(400).json({ error: "quietHours must be { startHour: 0-23, endHour: 0-23 }" });
-      return;
-    }
-    if (!isValidWebhookUrl(body.notifyWebhookUrl)) {
-      res.status(400).json({ error: "notifyWebhookUrl must be a valid http(s) URL" });
-      return;
-    }
-    if (!isValidKnowledgeBase(body.knowledgeBase)) {
-      res.status(400).json({ error: `knowledgeBase must be a string up to ${MAX_KNOWLEDGE_BASE_LENGTH} characters` });
+    const error = validateTenantConfig(body, tenant);
+    if (error) {
+      res.status(400).json({ error });
       return;
     }
 
-    const mergedKnowledgeBase = body.knowledgeBase !== undefined ? body.knowledgeBase : tenant.knowledgeBase;
-    const mergedAutoReplyEnabled = body.autoReplyEnabled !== undefined ? body.autoReplyEnabled : tenant.autoReplyEnabled;
-    if (mergedAutoReplyEnabled && !mergedKnowledgeBase?.trim()) {
-      res.status(400).json({ error: "autoReplyEnabled requires a non-empty knowledgeBase" });
-      return;
-    }
-
-    const patch: Partial<Tenant> = {};
-    if (body.timezone !== undefined) patch.timezone = body.timezone;
-    if (body.quietHours !== undefined) patch.quietHours = body.quietHours;
-    if (body.devMode !== undefined) patch.devMode = body.devMode;
-    if (body.channels !== undefined) patch.channels = body.channels;
-    if (body.notifyWebhookUrl !== undefined) patch.notifyWebhookUrl = body.notifyWebhookUrl;
-    if (body.templates !== undefined) patch.templates = body.templates;
-    if (body.knowledgeBase !== undefined) patch.knowledgeBase = body.knowledgeBase;
-    if (body.autoReplyEnabled !== undefined) patch.autoReplyEnabled = body.autoReplyEnabled;
-
-    const updated = await tenantStore.updateTenant(tenant.id, patch);
+    const updated = await tenantStore.updateTenant(tenant.id, buildTenantPatch(body, { includeStatus: false }));
     res.json(toPublicTenant(updated!));
   });
 
-  router.get("/admin/tenants", createAdminLimiter(), requireAdminAuth(), async (_req, res) => {
+  router.get("/admin/tenants", createAdminLimiter(), adminAuth, async (_req, res) => {
     const tenants = await tenantStore.listTenants();
     res.json(tenants.map(toPublicTenant));
   });
 
-  router.post("/admin/tenants", createAdminLimiter(), requireAdminAuth(), async (req, res) => {
-    const body = req.body as Partial<CreateTenantBody>;
+  router.post("/admin/tenants", createAdminLimiter(), adminAuth, async (req, res) => {
+    const body = req.body as Partial<TenantConfigBody>;
     if (!body.name || !body.timezone) {
       res.status(400).json({ error: "name and timezone are required" });
       return;
     }
-    if (!isValidTimezone(body.timezone)) {
-      res.status(400).json({ error: `invalid timezone: ${body.timezone}` });
-      return;
-    }
-    if (!isValidQuietHours(body.quietHours)) {
-      res.status(400).json({ error: "quietHours must be { startHour: 0-23, endHour: 0-23 }" });
-      return;
-    }
-    if (!isValidWebhookUrl(body.notifyWebhookUrl)) {
-      res.status(400).json({ error: "notifyWebhookUrl must be a valid http(s) URL" });
-      return;
-    }
-    if (!isValidKnowledgeBase(body.knowledgeBase)) {
-      res.status(400).json({ error: `knowledgeBase must be a string up to ${MAX_KNOWLEDGE_BASE_LENGTH} characters` });
-      return;
-    }
-    if (body.autoReplyEnabled && !body.knowledgeBase?.trim()) {
-      res.status(400).json({ error: "autoReplyEnabled requires a non-empty knowledgeBase" });
+    const error = validateTenantConfig(body);
+    if (error) {
+      res.status(400).json({ error });
       return;
     }
 
@@ -157,12 +170,44 @@ export function createTenantRoutes(tenantStore: TenantStore): Router {
       templates: body.templates,
       knowledgeBase: body.knowledgeBase,
       autoReplyEnabled: body.autoReplyEnabled ?? false,
+      status: "active",
       createdAt: new Date().toISOString(),
     };
 
     const created = await tenantStore.createTenant(tenant);
     // Only place the raw API key is ever returned — the client must save it now.
     res.status(201).json({ ...toPublicTenant(created), apiKey: created.apiKey });
+  });
+
+  // Admin update — the only way to change a tenant's status (e.g. suspend for
+  // non-payment or while an issue is investigated) or edit config on a
+  // client's behalf without needing their API key.
+  router.patch("/admin/tenants/:id", createAdminLimiter(), adminAuth, async (req, res) => {
+    const existing = await tenantStore.getTenant(req.params.id);
+    if (!existing) {
+      res.status(404).json({ error: "no such tenant" });
+      return;
+    }
+    const body = req.body as Partial<TenantConfigBody>;
+    const error = validateTenantConfig(body, existing);
+    if (error) {
+      res.status(400).json({ error });
+      return;
+    }
+
+    const updated = await tenantStore.updateTenant(req.params.id, buildTenantPatch(body, { includeStatus: true }));
+    res.json(toPublicTenant(updated!));
+  });
+
+  // Permanently removes a tenant. In Postgres this cascades to the tenant's
+  // leads and messages (ON DELETE CASCADE) — there is no undo.
+  router.delete("/admin/tenants/:id", createAdminLimiter(), adminAuth, async (req, res) => {
+    const deleted = await tenantStore.deleteTenant(req.params.id);
+    if (!deleted) {
+      res.status(404).json({ error: "no such tenant" });
+      return;
+    }
+    res.status(204).send();
   });
 
   return router;

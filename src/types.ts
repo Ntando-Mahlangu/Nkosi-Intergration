@@ -116,6 +116,14 @@ export interface SendGridCredentials {
   apiKey: string;
   fromEmail: string;
   fromName?: string;
+  /**
+   * Base64 DER (SPKI) ECDSA public key from SendGrid's Signed Event Webhook
+   * setting. When set, /webhooks/:tenantId/sendgrid/events verifies the
+   * request signature instead of relying on the shared ?token= guard.
+   * SendGrid has no equivalent signing option for Inbound Parse — that
+   * route always uses the token guard (see COMPLIANCE.md).
+   */
+  eventWebhookPublicKey?: string;
 }
 
 export interface ChannelCredentials {
@@ -178,6 +186,12 @@ export interface Tenant {
    * default — a business must deliberately turn this on.
    */
   autoReplyEnabled?: boolean;
+  /**
+   * "active" (default) or "suspended". A suspended tenant's API key is
+   * rejected by requireTenantAuth — used to pause a client (e.g. non-
+   * payment, an issue under investigation) without deleting their data.
+   */
+  status?: "active" | "suspended";
   createdAt: string;
 }
 

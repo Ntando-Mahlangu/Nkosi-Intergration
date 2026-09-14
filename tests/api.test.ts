@@ -1,3 +1,4 @@
+import { createSign, generateKeyPairSync } from "node:crypto";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import express from "express";
@@ -125,6 +126,88 @@ describe("tenant management routes", () => {
   });
 });
 
+describe("tenant lifecycle: suspend and delete", () => {
+  beforeEach(() => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+  });
+  afterEach(() => {
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  function buildApp(stores: Stores) {
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores.tenantStore));
+    const auth = requireTenantAuth(stores.tenantStore);
+    app.get("/whoami", auth, (req, res) => res.json({ tenantId: req.tenant!.id }));
+    return app;
+  }
+
+  it("blocks tenant-authed requests once suspended by the admin API, and restores access on reactivation", async () => {
+    const stores = buildStores();
+    const app = buildApp(stores);
+
+    const before = await request(app).get("/whoami").set("Authorization", `Bearer ${TENANT.apiKey}`);
+    expect(before.status).toBe(200);
+
+    const suspend = await request(app)
+      .patch(`/admin/tenants/${TENANT.id}`)
+      .set("Authorization", "Bearer admin-secret")
+      .send({ status: "suspended" });
+    expect(suspend.status).toBe(200);
+    expect(suspend.body.status).toBe("suspended");
+
+    const whileSuspended = await request(app).get("/whoami").set("Authorization", `Bearer ${TENANT.apiKey}`);
+    expect(whileSuspended.status).toBe(403);
+    expect(whileSuspended.body.error).toMatch(/suspended/);
+
+    const reactivate = await request(app)
+      .patch(`/admin/tenants/${TENANT.id}`)
+      .set("Authorization", "Bearer admin-secret")
+      .send({ status: "active" });
+    expect(reactivate.status).toBe(200);
+
+    const after = await request(app).get("/whoami").set("Authorization", `Bearer ${TENANT.apiKey}`);
+    expect(after.status).toBe(200);
+  });
+
+  it("404s an admin status change for an unknown tenant id", async () => {
+    const stores = buildStores();
+    const app = buildApp(stores);
+
+    const res = await request(app)
+      .patch("/admin/tenants/no-such-tenant")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ status: "suspended" });
+    expect(res.status).toBe(404);
+  });
+
+  it("permanently deletes a tenant, after which its API key no longer authenticates", async () => {
+    const stores = buildStores();
+    const app = buildApp(stores);
+
+    const del = await request(app).delete(`/admin/tenants/${TENANT.id}`).set("Authorization", "Bearer admin-secret");
+    expect(del.status).toBe(204);
+
+    const whoami = await request(app).get("/whoami").set("Authorization", `Bearer ${TENANT.apiKey}`);
+    expect(whoami.status).toBe(401);
+
+    const list = await request(app).get("/admin/tenants").set("Authorization", "Bearer admin-secret");
+    expect(list.body.find((t: { id: string }) => t.id === TENANT.id)).toBeUndefined();
+  });
+
+  it("404s deleting a tenant that doesn't exist (including a second delete of the same tenant)", async () => {
+    const stores = buildStores();
+    const app = buildApp(stores);
+
+    const first = await request(app).delete(`/admin/tenants/${TENANT.id}`).set("Authorization", "Bearer admin-secret");
+    expect(first.status).toBe(204);
+
+    const second = await request(app).delete(`/admin/tenants/${TENANT.id}`).set("Authorization", "Bearer admin-secret");
+    expect(second.status).toBe(404);
+  });
+});
+
 describe("webhook: generic lead intake", () => {
   it("requires tenant auth and creates a lead scoped to that tenant", async () => {
     const stores = buildStores();
@@ -225,6 +308,67 @@ describe("webhook: SendGrid delivery events", () => {
     app.use(createWebhookRoutes(stores));
 
     const res = await request(app).post(`/webhooks/${TENANT.id}/sendgrid/events?token=wrong`).send([]);
+    expect(res.status).toBe(403);
+  });
+
+  it("verifies a real ECDSA signature instead of the token when eventWebhookPublicKey is configured", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    const publicKeyBase64 = publicKey.export({ type: "spki", format: "der" }).toString("base64");
+    const tenant: Tenant = { ...TENANT, channels: { email: { apiKey: "sg", fromEmail: "a@b.com", eventWebhookPublicKey: publicKeyBase64 } } };
+
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+    };
+    await stores.messageStore.logMessage({
+      id: "msg-1",
+      tenantId: tenant.id,
+      leadId: LEAD.id,
+      channel: "email",
+      direction: "outbound",
+      body: "hi",
+      at: new Date().toISOString(),
+    });
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const payload = JSON.stringify([{ event: "delivered", leadrecovery_message_id: "msg-1" }]);
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signer = createSign("sha256");
+    signer.update(timestamp + payload);
+    signer.end();
+    const signature = signer.sign(privateKey).toString("base64");
+
+    // No ?token= at all — signature verification is what must let this through.
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/sendgrid/events`)
+      .set("Content-Type", "application/json")
+      .set("X-Twilio-Email-Event-Webhook-Signature", signature)
+      .set("X-Twilio-Email-Event-Webhook-Timestamp", timestamp)
+      .send(payload);
+
+    expect(res.status).toBe(204);
+    const [message] = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
+    expect(message.deliveryStatus).toBe("delivered");
+  });
+
+  it("rejects a bad signature when eventWebhookPublicKey is configured, even with no token check to fall back on", async () => {
+    const { publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    const publicKeyBase64 = publicKey.export({ type: "spki", format: "der" }).toString("base64");
+    const tenant: Tenant = { ...TENANT, channels: { email: { apiKey: "sg", fromEmail: "a@b.com", eventWebhookPublicKey: publicKeyBase64 } } };
+    const stores = buildStores();
+    stores.tenantStore = new InMemoryTenantStore([tenant]);
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/sendgrid/events?token=${tenant.apiKey}`) // even a correct token must not matter here
+      .set("Content-Type", "application/json")
+      .set("X-Twilio-Email-Event-Webhook-Signature", "bm90LWEtcmVhbC1zaWduYXR1cmU=")
+      .set("X-Twilio-Email-Event-Webhook-Timestamp", String(Math.floor(Date.now() / 1000)))
+      .send(JSON.stringify([{ event: "delivered", leadrecovery_message_id: "msg-1" }]));
+
     expect(res.status).toBe(403);
   });
 });
@@ -399,6 +543,21 @@ describe("tenant self-service settings", () => {
       .send({ knowledgeBase: "x".repeat(20_001) });
 
     expect(res.status).toBe(400);
+  });
+
+  it("refuses to let a tenant change its own status — a tenant can't un-suspend itself", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores.tenantStore));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ status: "suspended" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/admin API/);
   });
 });
 
