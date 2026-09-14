@@ -1,10 +1,27 @@
 import { Router } from "express";
 import type { Stores } from "../store/index.js";
+import type { AuditLogEntry, AuditLogStore } from "../store/types.js";
 import { toPublicTenant, type Tenant } from "../types.js";
 import { requireAdminAuth, requireTenantAuth } from "../middleware/auth.js";
 import { createAdminLimiter, createTenantLimiter } from "../middleware/rateLimit.js";
 import { generateApiKey, generateId } from "../idgen.js";
 import { parsePageParams, paginate } from "../pagination.js";
+import { logger } from "../logger.js";
+
+/**
+ * Records an audit-log entry without ever throwing. The tenant mutation
+ * this accompanies has already succeeded and its response is about to be
+ * sent — a transient failure to persist the audit trail must never hang
+ * the request or crash the process (Express 4 doesn't catch a rejection
+ * thrown after this point on its own).
+ */
+async function recordAudit(auditLogStore: AuditLogStore, entry: Omit<AuditLogEntry, "id" | "createdAt">): Promise<void> {
+  try {
+    await auditLogStore.record(entry);
+  } catch (err) {
+    logger.error("audit_log_write_failed", { action: entry.action, tenantId: entry.tenantId, error: (err as Error).message });
+  }
+}
 
 const MAX_KNOWLEDGE_BASE_LENGTH = 20_000;
 
@@ -178,7 +195,7 @@ export function createTenantRoutes({ tenantStore, notificationStore, auditLogSto
     };
 
     const created = await tenantStore.createTenant(tenant);
-    await auditLogStore.record({
+    await recordAudit(auditLogStore, {
       tenantId: created.id,
       action: "tenant.create",
       actor: "admin",
@@ -205,7 +222,7 @@ export function createTenantRoutes({ tenantStore, notificationStore, auditLogSto
     }
 
     const updated = await tenantStore.updateTenant(req.params.id, buildTenantPatch(body, { includeStatus: true }));
-    await auditLogStore.record({
+    await recordAudit(auditLogStore, {
       tenantId: req.params.id,
       action: "tenant.admin_update",
       actor: "admin",
@@ -226,7 +243,7 @@ export function createTenantRoutes({ tenantStore, notificationStore, auditLogSto
       return;
     }
     const updated = await tenantStore.updateTenant(req.params.id, { apiKey: generateApiKey() });
-    await auditLogStore.record({ tenantId: req.params.id, action: "tenant.key_rotate", actor: "admin" });
+    await recordAudit(auditLogStore, { tenantId: req.params.id, action: "tenant.key_rotate", actor: "admin" });
     // Only place the new raw API key is ever returned — the client must save it now.
     res.json({ ...toPublicTenant(updated!), apiKey: updated!.apiKey });
   });
@@ -239,7 +256,7 @@ export function createTenantRoutes({ tenantStore, notificationStore, auditLogSto
       res.status(404).json({ error: "no such tenant" });
       return;
     }
-    await auditLogStore.record({ tenantId: req.params.id, action: "tenant.delete", actor: "admin" });
+    await recordAudit(auditLogStore, { tenantId: req.params.id, action: "tenant.delete", actor: "admin" });
     res.status(204).send();
   });
 

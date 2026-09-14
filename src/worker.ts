@@ -16,27 +16,38 @@ const CONCURRENCY = Number(process.env.LEADRECOVERY_WORKER_CONCURRENCY ?? 4);
 
 /**
  * Retries every not-yet-dead failed notification (see notify.ts) once per
- * tick. A worker tick is naturally spaced out (hourly by default), which is
- * a reasonable backoff for a webhook target that's down — no need for the
- * inline exponential backoff notify.ts itself avoids for latency reasons.
+ * tick, with the same bounded concurrency as the tenant loop below (a long
+ * backlog — e.g. after an extended notifyWebhookUrl outage — would
+ * otherwise serialize one HTTP round-trip at a time and stretch a single
+ * tick well past its cron interval). A worker tick is naturally spaced out
+ * (hourly by default), which is a reasonable backoff for a webhook target
+ * that's down — no need for the inline exponential backoff notify.ts
+ * itself avoids for latency reasons.
  */
 async function redeliverFailedNotifications(stores: Stores): Promise<void> {
   const pending = await stores.notificationStore.listPending();
-  for (const n of pending) {
-    const result = await deliverNotification(n.webhookUrl, n.payload);
-    if (result.ok) {
-      await stores.notificationStore.markDelivered(n.id);
-      logger.info("notification_redelivered", { tenantId: n.tenantId, leadId: n.leadId, reason: n.reason });
-    } else {
-      await stores.notificationStore.markAttemptFailed(n.id, result.error, NOTIFICATION_MAX_ATTEMPTS);
-      logger.warn("notification_redelivery_failed", {
-        tenantId: n.tenantId,
-        leadId: n.leadId,
-        attempts: n.attempts + 1,
-        error: result.error,
-      });
+  await mapWithConcurrency(pending, CONCURRENCY, async (n) => {
+    try {
+      const result = await deliverNotification(n.webhookUrl, n.payload);
+      if (result.ok) {
+        await stores.notificationStore.markDelivered(n.id);
+        logger.info("notification_redelivered", { tenantId: n.tenantId, leadId: n.leadId, reason: n.reason });
+      } else {
+        await stores.notificationStore.markAttemptFailed(n.id, result.error, NOTIFICATION_MAX_ATTEMPTS);
+        logger.warn("notification_redelivery_failed", {
+          tenantId: n.tenantId,
+          leadId: n.leadId,
+          attempts: n.attempts + 1,
+          error: result.error,
+        });
+      }
+    } catch (err) {
+      // One notification's bookkeeping failure (e.g. a transient DB error
+      // in markDelivered/markAttemptFailed) must never stop the rest of
+      // the backlog from being retried this tick.
+      logger.error("notification_redelivery_error", { tenantId: n.tenantId, leadId: n.leadId, error: (err as Error).message });
     }
-  }
+  });
 }
 
 async function runOnce(): Promise<void> {

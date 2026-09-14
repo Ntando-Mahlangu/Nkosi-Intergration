@@ -7,10 +7,13 @@ import { PgRateLimitStore } from "./pgRateLimitStore.js";
  * hold across every app replica sharing that database), otherwise
  * express-rate-limit's own in-memory default — correct for the
  * single-process demo/test setup and avoids requiring a database just to
- * run the unit suite.
+ * run the unit suite. `keyPrefix` must be distinct per limiter — see
+ * PgRateLimitStore's own doc comment for why (two limiters sharing a
+ * windowMs would otherwise collide on the same Postgres row for the same
+ * client IP).
  */
-function distributedStoreIfConfigured() {
-  return process.env.DATABASE_URL ? new PgRateLimitStore(getPool()) : undefined;
+function distributedStoreIfConfigured(keyPrefix: string) {
+  return process.env.DATABASE_URL ? new PgRateLimitStore(getPool(), keyPrefix) : undefined;
 }
 
 /** Guards tenant onboarding/management — low volume by nature, so a tight limit doesn't hurt legitimate use. */
@@ -20,7 +23,7 @@ export function createAdminLimiter() {
     limit: 30,
     standardHeaders: true,
     legacyHeaders: false,
-    store: distributedStoreIfConfigured(),
+    store: distributedStoreIfConfigured("admin"),
   });
 }
 
@@ -31,7 +34,7 @@ export function createWebhookLimiter() {
     limit: 120,
     standardHeaders: true,
     legacyHeaders: false,
-    store: distributedStoreIfConfigured(),
+    store: distributedStoreIfConfigured("webhook"),
   });
 }
 
@@ -42,6 +45,6 @@ export function createTenantLimiter() {
     limit: 60,
     standardHeaders: true,
     legacyHeaders: false,
-    store: distributedStoreIfConfigured(),
+    store: distributedStoreIfConfigured("tenant"),
   });
 }

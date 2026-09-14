@@ -27,7 +27,7 @@ describe("PgRateLimitStore (against an in-memory pg-mem instance)", () => {
   beforeEach(async () => {
     pool = createTestPool();
     for (const sql of MIGRATION_SQLS) await pool.query(sql);
-    store = new PgRateLimitStore(pool);
+    store = new PgRateLimitStore(pool, "test");
     store.init({ windowMs: 60_000 } as never);
   });
 
@@ -71,6 +71,25 @@ describe("PgRateLimitStore (against an in-memory pg-mem instance)", () => {
     await store.resetKey("ip:1.2.3.4");
     const result = await store.increment("ip:1.2.3.4");
     expect(result.totalHits).toBe(1);
+  });
+
+  it("isolates counts between two limiters that share a key and windowMs but have different prefixes", async () => {
+    // Regression test: express-rate-limit's default keyGenerator is just the
+    // client IP, so two limiters with the same windowMs (e.g. the webhook
+    // and tenant limiters, both 60s) would otherwise increment the exact
+    // same Postgres row for the same IP without a distinct prefix per
+    // limiter — one limiter's traffic would inflate the other's count.
+    const webhookLimiter = new PgRateLimitStore(pool, "webhook");
+    webhookLimiter.init({ windowMs: 60_000 } as never);
+    const tenantLimiter = new PgRateLimitStore(pool, "tenant");
+    tenantLimiter.init({ windowMs: 60_000 } as never);
+
+    await webhookLimiter.increment("1.2.3.4");
+    await webhookLimiter.increment("1.2.3.4");
+    await webhookLimiter.increment("1.2.3.4");
+
+    const tenantResult = await tenantLimiter.increment("1.2.3.4");
+    expect(tenantResult.totalHits).toBe(1); // unaffected by the webhook limiter's 3 hits for the same IP
   });
 
   it("starts a new window's count fresh once windowMs has elapsed", async () => {

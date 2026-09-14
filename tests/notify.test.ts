@@ -24,7 +24,9 @@ const LEAD: Lead = {
 };
 
 describe("deliverNotification", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it("returns ok on a 2xx response", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
@@ -46,7 +48,9 @@ describe("deliverNotification", () => {
 });
 
 describe("notifyHumanAttention", () => {
-  beforeEach(() => vi.useFakeTimers());
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -103,6 +107,26 @@ describe("notifyHumanAttention", () => {
     const done = notifyHumanAttention(undefined, TENANT, LEAD, "email", "please help", "needs_human_reply");
     await vi.runAllTimersAsync();
     await expect(done).resolves.toBeUndefined();
+  });
+
+  it("never throws even if notificationStore.recordFailure itself rejects", async () => {
+    // Regression test: both call sites in webhooks/index.ts invoke this as
+    // `void notifyHumanAttention(...)` without awaiting or catching, so any
+    // rejection here would be an unhandled promise rejection — which
+    // crashes the whole process on Node 15+ by default.
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("still down"));
+    const failingStore = {
+      recordFailure: vi.fn().mockRejectedValue(new Error("DB write failed")),
+      listPending: vi.fn(),
+      listAll: vi.fn(),
+      markDelivered: vi.fn(),
+      markAttemptFailed: vi.fn(),
+    };
+
+    const done = notifyHumanAttention(failingStore, TENANT, LEAD, "email", "please help", "needs_human_reply");
+    await vi.runAllTimersAsync();
+    await expect(done).resolves.toBeUndefined();
+    expect(failingStore.recordFailure).toHaveBeenCalledTimes(1);
   });
 });
 

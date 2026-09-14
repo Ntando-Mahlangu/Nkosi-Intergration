@@ -287,9 +287,17 @@ isn't something every local/sandboxed dev environment can run).
 ## Testing
 
 ```bash
+npm run typecheck  # tsc over src/ (tsconfig.json) AND tests/ (tsconfig.test.json)
 npm test        # fast unit/integration suite (vitest)
 npm run test:e2e  # browser end-to-end tests against both dashboards (Playwright)
 ```
+
+`npm run typecheck` runs two passes — `tsconfig.json` (the build config,
+`src/` only) and `tsconfig.test.json` (a `noEmit` config that also
+includes `tests/`) — so a type error in a test file (a wrong mock shape, a
+changed constructor signature the test wasn't updated for) is caught the
+same as one in `src/`, not just at test-runtime (vitest itself only
+transpiles, it doesn't type-check).
 
 `npm test` covers compliance, scoring, reason/messaging (incl. per-tenant
 template overrides), follow-up scheduling, quiet hours, reply

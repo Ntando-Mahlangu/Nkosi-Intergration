@@ -260,6 +260,28 @@ describe("admin audit log", () => {
     expect(updateEntry.details).toEqual({ fieldsChanged: ["status"] });
   });
 
+  it("still completes the tenant mutation and responds, even if the audit write itself fails", async () => {
+    // Regression test: a raw `await auditLogStore.record(...)` with no
+    // try/catch in the route handler would leave the request hanging
+    // forever on failure (the tenant was already created/mutated, but
+    // Express 4 doesn't catch a rejection thrown after that point, and
+    // nothing else would ever send a response).
+    const stores = buildStores();
+    stores.auditLogStore.record = async () => {
+      throw new Error("audit DB unreachable");
+    };
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "New Biz", timezone: "Africa/Johannesburg" });
+    expect(created.status).toBe(201);
+    expect(created.body.apiKey).toBeTruthy();
+  });
+
   it("requires admin auth", async () => {
     const stores = buildStores();
     const app = express();

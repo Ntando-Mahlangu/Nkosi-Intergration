@@ -85,12 +85,20 @@ export async function notifyHumanAttention(
 
   logger.error("notification_delivery_failed_retrying", { tenantId: tenant.id, leadId: lead.id, reason, error: result.error });
   if (!notificationStore) return;
-  await notificationStore.recordFailure({
-    tenantId: tenant.id,
-    leadId: lead.id,
-    reason,
-    webhookUrl,
-    payload,
-    error: result.error,
-  });
+  try {
+    await notificationStore.recordFailure({
+      tenantId: tenant.id,
+      leadId: lead.id,
+      reason,
+      webhookUrl,
+      payload,
+      error: result.error,
+    });
+  } catch (err) {
+    // Belt-and-braces: this function must never throw (callers use `void
+    // notifyHumanAttention(...)` without awaiting, so an unhandled
+    // rejection here would crash the process on an otherwise-harmless
+    // failure to persist a dead-lettered notification).
+    logger.error("notification_persist_failed", { tenantId: tenant.id, leadId: lead.id, reason, error: (err as Error).message });
+  }
 }
