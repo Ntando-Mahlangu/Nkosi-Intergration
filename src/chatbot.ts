@@ -45,16 +45,32 @@ function buildSystemPrompt(tenant: Tenant, lead: Lead): string {
  * within that window — a leading run of outbound-only history (e.g. the
  * initial campaign message) would violate the "first message must be user"
  * rule otherwise.
+ *
+ * Also merges consecutive same-role turns instead of emitting them back to
+ * back: the Messages API requires strictly alternating user/assistant turns,
+ * but this app's own message log doesn't guarantee that alternation — an
+ * escalated inbound message never gets an outbound reply logged for it (see
+ * notifyHumanAttention in src/webhooks/index.ts), so a lead sending a second
+ * message before anyone replies would otherwise produce two consecutive
+ * "user" turns and make every later call for that lead fail (and silently
+ * auto-escalate) forever.
  */
 function toClaudeMessages(history: Message[], incomingBody: string): Anthropic.MessageParam[] {
   const recent = history.slice(-MAX_HISTORY_MESSAGES);
   const firstInboundIndex = recent.findIndex((m) => m.direction === "inbound");
   const trimmed = firstInboundIndex === -1 ? [] : recent.slice(firstInboundIndex);
-  const messages: Anthropic.MessageParam[] = trimmed.map((m) => ({
-    role: m.direction === "inbound" ? "user" : "assistant",
-    content: m.body,
-  }));
-  messages.push({ role: "user", content: incomingBody });
+
+  const messages: Anthropic.MessageParam[] = [];
+  const pushTurn = (role: "user" | "assistant", content: string) => {
+    const last = messages[messages.length - 1];
+    if (last && last.role === role) {
+      last.content = `${last.content as string}\n${content}`;
+    } else {
+      messages.push({ role, content });
+    }
+  };
+  for (const m of trimmed) pushTurn(m.direction === "inbound" ? "user" : "assistant", m.body);
+  pushTurn("user", incomingBody);
   return messages;
 }
 

@@ -151,6 +151,36 @@ describe("generateAutoReply", () => {
     expect(call.messages.at(-1).content).toBe("ok and how long does a job take?");
   });
 
+  it("merges consecutive inbound messages into one turn instead of sending back-to-back user turns", async () => {
+    // Regression test: an escalated message never gets an outbound reply
+    // logged (notifyHumanAttention, not sendAndLog), so a lead sending a
+    // second message before anyone replied used to produce two consecutive
+    // "user" turns — which the Anthropic Messages API rejects (roles must
+    // strictly alternate) — permanently breaking auto-reply for that lead.
+    mockTextResponse("Sure, here you go!");
+    const history = [inbound("when are you open?")]; // no outbound reply logged in between
+    await generateAutoReply(makeTenant(), makeLead(), history, "also, do you have parking?");
+
+    const call = createMock.mock.calls[0][0];
+    const roles = call.messages.map((m: { role: string }) => m.role);
+    for (let i = 1; i < roles.length; i++) {
+      expect(roles[i]).not.toBe(roles[i - 1]);
+    }
+    expect(roles).toEqual(["user"]);
+    expect(call.messages[0].content).toBe("when are you open?\nalso, do you have parking?");
+  });
+
+  it("merges a run of 3+ consecutive inbound messages into a single turn", async () => {
+    mockTextResponse("Got it!");
+    const history = [inbound("hi"), inbound("are you open today?"), inbound("also what's the price?")];
+    await generateAutoReply(makeTenant(), makeLead(), history, "one more thing");
+
+    const call = createMock.mock.calls[0][0];
+    expect(call.messages).toEqual([
+      { role: "user", content: "hi\nare you open today?\nalso what's the price?\none more thing" },
+    ]);
+  });
+
   it("handles empty history (the lead's very first message) as a single user turn", async () => {
     mockTextResponse("Happy to help!");
     const call = await generateAutoReply(makeTenant(), makeLead(), [], "hi, do you do gutter cleaning?");

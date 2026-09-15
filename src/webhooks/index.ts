@@ -126,15 +126,21 @@ async function recordInboundAndClassify(
     return { classification };
   }
 
+  // SYSTEM_PROMPT.md STEP 4: "mark the lead as opted out / do-not-contact"
+  // on any negative signal, not just an explicit STOP — do_not_contact is
+  // one of compliance.ts's SUPPRESSED_STATUSES, so this actually stops the
+  // lead from being recontacted; "responded" (used below for every other
+  // classification) is not suppressed and would leave them contactable.
+  if (classification === "not_interested") {
+    await stores.leadStore.updateLead(tenant.id, lead.id, { status: "do_not_contact" });
+    await sendAndLog(stores, tenant, lead, { channel, body: composeCloserBody(lead, tenant) }, "closer");
+    return { classification };
+  }
+
   await stores.leadStore.updateLead(tenant.id, lead.id, { status: "responded" });
 
   if (classification === "interested") {
     void notifyHumanAttention(stores.notificationStore, tenant, lead, channel, body, "interested");
-    return { classification };
-  }
-
-  if (classification === "not_interested") {
-    await sendAndLog(stores, tenant, lead, { channel, body: composeCloserBody(lead, tenant) }, "closer");
     return { classification };
   }
 
@@ -183,10 +189,16 @@ export function createWebhookRoutes(stores: Stores): Router {
 
     const from = req.body.From as string | undefined;
     const body = (req.body.Body as string | undefined) ?? "";
-    const lead = from ? await stores.leadStore.findLeadByContact(tenant.id, { phone: from }) : undefined;
+    // Twilio's WhatsApp `From` is "whatsapp:+2782..." — stored lead phone
+    // numbers are always bare E.164 (the "whatsapp:" prefix is only ever
+    // added when *sending*, see src/channels/whatsapp.ts's toWhatsAppAddress),
+    // so this must be stripped before the lookup or a genuine WhatsApp reply
+    // never matches its lead at all.
+    const channel = from?.startsWith("whatsapp:") ? "whatsapp" : "sms";
+    const phone = from?.replace(/^whatsapp:/, "");
+    const lead = phone ? await stores.leadStore.findLeadByContact(tenant.id, { phone }) : undefined;
 
     if (lead) {
-      const channel = from?.startsWith("whatsapp:") ? "whatsapp" : "sms";
       await recordInboundAndClassify(stores, tenant, lead, channel, body);
     }
 

@@ -19,8 +19,12 @@ function normalize(body: string): string {
 export function classifyReplyByKeyword(body: string): ReplyClassification {
   const text = normalize(body);
   if (STOP_KEYWORDS.some((kw) => text.includes(kw))) return "stop";
-  if (text.includes("?")) return "question";
+  // Negative keywords take priority over the bare "?" catch-all below: a
+  // reply like "not interested, but is there a cheaper option?" must stop
+  // follow-ups (see SYSTEM_PROMPT.md's "stop on any negative signal" rule),
+  // not get treated as a "question" just because it also contains one.
   if (NEGATIVE_KEYWORDS.some((kw) => text.includes(kw))) return "not_interested";
+  if (text.includes("?")) return "question";
   if (POSITIVE_KEYWORDS.some((kw) => text.includes(kw))) return "interested";
   return "unknown";
 }

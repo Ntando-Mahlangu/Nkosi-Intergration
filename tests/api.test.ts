@@ -2,6 +2,7 @@ import { createSign, generateKeyPairSync } from "node:crypto";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import express from "express";
+import twilio from "twilio";
 import {
   InMemoryAuditLogStore,
   InMemoryLeadStore,
@@ -609,6 +610,78 @@ describe("webhook: generic lead intake source validation", () => {
   });
 });
 
+describe("Twilio SMS/WhatsApp inbound webhook", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // Signature verification (twilio.validateRequest) is a separate concern
+  // from the routing/lookup logic under test here, and generating a real
+  // signature would require predicting supertest's ephemeral host — stub it
+  // out rather than fighting that.
+  function stubValidSignature() {
+    vi.spyOn(twilio, "validateRequest").mockReturnValue(true);
+  }
+
+  it("matches a WhatsApp reply to its lead despite the whatsapp: From prefix", async () => {
+    stubValidSignature();
+    const tenant: Tenant = {
+      ...TENANT,
+      channels: { whatsapp: { accountSid: "AC1", authToken: "tok", fromNumber: "+15550000" } },
+    };
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/twilio/sms`)
+      .type("form")
+      .send({ From: `whatsapp:${LEAD.phone}`, Body: "STOP" });
+
+    expect(res.status).toBe(200);
+    // A STOP reply must actually reach the lead: opted_out only happens if
+    // findLeadByContact matched it in the first place (see recordInboundAndClassify).
+    const updated = await stores.leadStore.getLeadById(tenant.id, LEAD.id);
+    expect(updated?.status).toBe("opted_out");
+
+    const history = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ direction: "inbound", channel: "whatsapp", classification: "stop" });
+  });
+
+  it("still matches a plain SMS reply (no whatsapp: prefix)", async () => {
+    stubValidSignature();
+    const tenant: Tenant = {
+      ...TENANT,
+      channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+15550000" } },
+    };
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app).post(`/webhooks/${tenant.id}/twilio/sms`).type("form").send({
+      From: LEAD.phone,
+      Body: "STOP",
+    });
+
+    expect(res.status).toBe(200);
+    const updated = await stores.leadStore.getLeadById(tenant.id, LEAD.id);
+    expect(updated?.status).toBe("opted_out");
+  });
+});
+
 describe("notify on interested reply", () => {
   it("POSTs to the tenant's notifyWebhookUrl when a reply classifies as interested", async () => {
     const tenantWithHook: Tenant = { ...TENANT, notifyWebhookUrl: "https://hooks.example.com/notify" };
@@ -973,6 +1046,12 @@ describe("chatbot auto-reply on inbound messages", () => {
     const closer = history.find((m) => m.direction === "outbound");
     expect(closer?.kind).toBe("closer");
     expect(closer?.body).toContain("Jordan");
+
+    // SYSTEM_PROMPT.md STEP 4: a negative signal must suppress the lead
+    // (do_not_contact is in compliance.ts's SUPPRESSED_STATUSES), not just
+    // leave it at the generic "responded" every other classification gets.
+    const updated = await stores.leadStore.getLeadById(CHATBOT_TENANT.id, LEAD.id);
+    expect(updated?.status).toBe("do_not_contact");
   });
 
   it("still auto-replies with the tenant's own template when a custom notInterestedCloser is set", async () => {

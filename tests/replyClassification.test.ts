@@ -16,6 +16,13 @@ describe("classifyReplyByKeyword", () => {
     expect(classifyReplyByKeyword("no thanks, not interested")).toBe("not_interested");
   });
 
+  it("still recognizes a negative reply even when it also contains a question mark", () => {
+    // Regression test: the "?" check used to run before the negative-keyword
+    // check, so this misclassified as "question" and lost the decline signal
+    // (see SYSTEM_PROMPT.md's "stop on any negative signal" requirement).
+    expect(classifyReplyByKeyword("not interested, but is there a cheaper option?")).toBe("not_interested");
+  });
+
   it("recognizes positive replies", () => {
     expect(classifyReplyByKeyword("yes please, sounds good")).toBe("interested");
   });

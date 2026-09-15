@@ -82,7 +82,9 @@ deployment serves many clients with fully isolated data.
   ambiguous replies is gated behind `LEADRECOVERY_USE_LLM_CLASSIFICATION=true`.
   What happens next depends on the classification (`src/webhooks/index.ts`):
   `interested` notifies the tenant's team; `not_interested` gets a fixed,
-  no-LLM close-out reply; `question`/`unknown` goes to the chatbot below.
+  no-LLM close-out reply and marks the lead `do_not_contact` (suppressed,
+  same as an explicit STOP — see COMPLIANCE.md); `question`/`unknown` goes
+  to the chatbot below.
 - **`src/chatbot.ts`** — the auto-reply chatbot. Opt-in per tenant
   (`autoReplyEnabled` + `knowledgeBase` both required). Answers *only* from
   the tenant's own `knowledgeBase` text and is instructed to reply with a
