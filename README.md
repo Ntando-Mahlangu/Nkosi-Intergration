@@ -102,7 +102,10 @@ deployment serves many clients with fully isolated data.
 - **`src/worker.ts`** — cron loop that runs the workflow for every tenant,
   skipping suspended ones, with bounded per-tick concurrency across tenants
   (`src/concurrency.ts`, `LEADRECOVERY_WORKER_CONCURRENCY`). Run exactly one
-  worker replica — see `DEPLOYMENT.md`.
+  worker replica — see `DEPLOYMENT.md`. Actually enforced (not just
+  documented) when `DATABASE_URL` is set: `src/workerLock.ts` takes a
+  Postgres advisory lock on startup and exits if another worker already
+  holds it.
 - **`src/middleware/auth.ts`**, **`src/routes/tenants.ts`** — tenant API-key
   auth (rejecting a suspended tenant), tenant self-service (`PATCH
   /tenants/me`), and admin tenant management (admin-key protected),
@@ -134,7 +137,39 @@ deployment serves many clients with fully isolated data.
   delete tenants and rotate a tenant's API key, plus visibility into the
   failed-notifications dead-letter queue and the admin audit log. Not
   linked from the tenant-facing dashboards — it's a separate credential
-  for the platform operator, not something a tenant should see.
+  for the platform operator, not something a tenant should see. The tenant
+  list and audit log are paginated (20 per page, Prev/Next, backed by the
+  same `?limit=&offset=`/`X-Total-Count` the API already exposed) so a
+  platform with hundreds of tenants or a long-running audit trail doesn't
+  render everything in one unbounded page.
+
+### Accessibility
+
+All three dashboards work with a keyboard and a screen reader, not just a
+mouse:
+
+- Every form field has a real `<label for>`, every action is a real
+  `<button>` or `<a>`, and error/status text (`#gate-err`, `#auth-error`,
+  `#create-error`, the admin `#reveal-panel` one-time API key, the
+  tenant/audit-log pagination summaries) is exposed via `role="alert"` or
+  `aria-live` so assistive tech announces it without polling.
+- `public/index.html`'s Command Center renders its category graph as SVG,
+  which isn't natively keyboard-operable — each category node is a real
+  tab stop (`tabindex="0"`, `role="button"`, an `aria-label` with its live
+  count) that opens the same detail panel on Enter/Space as on click. The
+  detail panel is a proper focus-managed dialog: opening it moves focus to
+  its close button, `Escape` (or the close button) closes it and returns
+  focus to the node that opened it, and it's marked `inert` while closed
+  so a keyboard user can't tab into hidden content. Purely decorative
+  scene elements (the starfield, particle flow, wireframe core, connecting
+  lines) are `aria-hidden`; the ambient log ticker is also `aria-hidden`
+  since it's flavor text that echoes data already exposed accessibly
+  through the stats rail and the detail panel, and making it a live region
+  would announce a new line every few seconds.
+- Covered by dedicated Playwright coverage: `tests/e2e/dashboards.spec.ts`
+  drives a category node with the keyboard only (focus → Enter → Escape)
+  and asserts focus lands on the close button, then back on the
+  originating node.
 
 ## Getting started (local demo, no external services)
 
@@ -265,6 +300,7 @@ See [`.env.example`](./.env.example) for the copyable version with full comments
 | --- | --- |
 | `DATABASE_URL` | Postgres connection string; omit for the in-memory demo |
 | `LEADRECOVERY_ENCRYPTION_KEY` | **Required** when `DATABASE_URL` is set — encrypts tenant provider credentials at rest |
+| `LEADRECOVERY_ENCRYPTION_KEY_PREVIOUS` | Set only while rotating the encryption key — see `DEPLOYMENT.md` "Rotating the encryption key" |
 | `ADMIN_API_KEY` | Enables `/admin/tenants`; unset disables tenant management |
 | `LEADRECOVERY_CORS_ORIGIN` | Comma-separated allowed origins for cross-origin API calls (or `*`); unset sends no CORS headers, which is fine for the bundled same-origin dashboards |
 | `PUBLIC_BASE_URL` | This app's public HTTPS base URL — needed for correct Twilio signature verification behind a proxy, and for delivery-status callback URLs |
@@ -301,15 +337,76 @@ See "Bot disclosure" in `COMPLIANCE.md` before turning this on for a real
 client — some jurisdictions require proactively disclosing that a customer
 is messaging with an automated system.
 
+## Localization
+
+There's no separate i18n translation layer (no message catalog, no
+`Accept-Language` negotiation) — and none is fabricated here, since there's
+no real multi-language requirement driving one. Instead, every piece of
+customer-facing wording is already a per-tenant value, not a hardcoded
+string, so a client operating in a language other than English configures
+that language directly, with no code change:
+
+- **Outreach and follow-up messages** — `tenant.templates` (see
+  "Per-tenant message templates" above) fully replaces the default English
+  wording for the initial grounded/ungrounded outreach message, every
+  follow-up in the sequence, and the not-interested closer. A template is
+  plain text with `{name}`/`{businessName}`/`{reason}`/`{service}`
+  placeholders — nothing in `src/messaging.ts`/`src/followup.ts` assumes
+  English, so a tenant sets these to Portuguese, isiZulu, French, or
+  anything else and every automated send goes out in that language.
+- **The auto-reply chatbot** — answers strictly from `tenant.knowledgeBase`
+  (see "Auto-reply chatbot" above), so whatever language that text is
+  written in is the language Claude answers in; no separate translation
+  step is needed.
+- **Compliance opt-out wording** ("Reply STOP...") in the default English
+  templates is exactly that: a default. A tenant overriding `templates`
+  is responsible for including their own opt-out instruction in whatever
+  language they use — see "Bot disclosure"/opt-out language requirements
+  in `COMPLIANCE.md`.
+
+What is **not** localized, and would need real code changes if a client
+ever required it:
+
+- **Inbound reply classification** (`src/reply/classify.ts`) — the
+  deterministic keyword baseline (STOP/opt-out, "not interested",
+  "interested", etc.) matches English phrases only; it's the safety net
+  that must work without a network call, so it can't defer to the LLM.
+  The optional LLM classification pass (`LEADRECOVERY_USE_LLM_CLASSIFICATION`)
+  is inherently more multilingual (Claude understands non-English replies
+  natively) but is only ever a fallback for what the keyword pass doesn't
+  confidently place — an opt-out phrased in another language and not
+  caught by the English keyword list could go unrecognized until the LLM
+  pass (if enabled) or a human catches it.
+- **The three dashboards' own UI chrome** (`public/index.html`,
+  `dashboard.html`, `admin.html`) — labels, buttons, and status text are
+  hardcoded English. These are operator/tenant-staff tooling, not
+  end-customer-facing, so they're out of scope for a customer-language
+  requirement, but a tenant's own staff working in another language would
+  need these translated by hand.
+
 ## CI
 
-`.github/workflows/ci.yml` runs three jobs on every push and pull request:
+`.github/workflows/ci.yml` runs five jobs on every push and pull request:
 `test` (`typecheck`, `lint`, `format:check`, `test`, `build`, and
 `openapi.yaml` schema validation), a separate `e2e` job that installs a
 Playwright browser and runs `test:e2e`, and a `docker` job that builds the
 image from `Dockerfile` — the actual, continuous check that it still builds
 (a real Docker build needs full internet access to pull the base image and
 isn't something every local/sandboxed dev environment can run).
+
+A `security` job runs `npm audit --omit=dev --audit-level=high` (gating on
+production dependencies only — see the comment in `ci.yml` for why the one
+known devDependency-only vulnerability chain, esbuild/vite/vitest, is
+tracked rather than force-upgraded) and a `gitleaks` scan over the full git
+history to catch committed secrets.
+
+A `compose` job brings up the actual `docker-compose.yml` stack (Postgres +
+`app` + `worker`, all built from the real `Dockerfile`) instead of mocking
+anything: it runs the `migrate` one-off, waits for `/health` and `/ready`,
+onboards a tenant through the admin API, calls the API back with that
+tenant's own key, and checks the worker's logs for a real tick — the only
+CI job that exercises the compose file and the built image together the
+way an operator actually would.
 
 ## Testing
 
@@ -344,8 +441,10 @@ enhancement covered with `@anthropic-ai/sdk` mocked — no live API key
 needed), the chatbot (reply/escalate/disabled outcomes, conversation-
 history capping, the per-lead auto-reply rate limit, and that it never
 calls the network when disabled), encryption/constant-time-compare
-(`src/crypto.ts`/`src/security.ts`), bounded-concurrency tenant processing
-(`src/concurrency.ts`), notification retry/dead-letter behavior
+(`src/crypto.ts`/`src/security.ts`, including the encryption-key rotation
+fallback and the full old-key→new-key rotation pattern), bounded-concurrency
+tenant processing (`src/concurrency.ts`), the worker's advisory-lock logic
+(`src/workerLock.ts`), notification retry/dead-letter behavior
 (`src/notify.ts`, with fake timers so the inline retry delay costs no real
 time in the suite), CORS, the `/health`/`/ready` endpoints, the end-to-end
 workflow, the Postgres store implementations (run against an in-memory

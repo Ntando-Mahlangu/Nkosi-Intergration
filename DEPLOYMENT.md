@@ -19,8 +19,16 @@ Three long-running things, plus a one-off migration step:
   follow-ups (`node dist/worker.js`). **Run exactly one replica.** Nothing
   coordinates sends across separate worker processes — a second replica
   would pick up the same due leads on the same tick and send everything
-  twice. This is enforced by convention, not by code, so it's on you to
-  never scale this service beyond 1.
+  twice. When `DATABASE_URL` is set, this is actually enforced, not just
+  documented: on startup the worker takes a Postgres session-level
+  advisory lock (`src/workerLock.ts`) and exits immediately if it can't
+  get it, so a second replica refuses to run rather than silently
+  double-sending. (In the in-memory demo mode there's no shared database
+  to coordinate through, so this doesn't apply — but nothing coordinates
+  demo-mode replicas either, so don't run more than one there for the
+  same reason.) The lock releases automatically the instant the holding
+  process's connection closes (crash, restart, redeploy), so a replacement
+  replica can always take over — there's no stale-lock cleanup step.
 - **`migrate`** — a one-off command (`node dist/scripts/migrate.js`) that
   applies `src/db/migrations/*.sql` in order. Run it once before the first
   deploy and again after pulling any change that adds a migration file.
@@ -49,7 +57,9 @@ image after a code change: `docker compose build && docker compose up -d`
 migration).
 
 **Never** `docker compose up --scale worker=2` — see "What gets deployed"
-above.
+above. A second replica would refuse to run (it can't get the advisory
+lock the first one holds) rather than silently double-sending, but you
+still don't want a worker process stuck permanently failing to start.
 
 ## Option 2: Your own Postgres + the Dockerfile directly
 
@@ -68,6 +78,26 @@ docker run -d --env-file .env -e DATABASE_URL=... -p 3000:3000 leadrecovery
 # the worker (exactly one container, ever):
 docker run -d --env-file .env -e DATABASE_URL=... leadrecovery node dist/worker.js
 ```
+
+### Pulling the prebuilt image from GHCR instead of building it yourself
+
+`.github/workflows/publish.yml` builds this same `Dockerfile` and pushes it
+to GitHub Container Registry on every push to `main`, tagged both `latest`
+and with the full commit SHA (`sha-<full sha>`) — pin to a SHA tag for
+anything beyond quick testing, since `latest` moves. The package is public
+under the repo's GHCR namespace, so no registry login is needed to pull it:
+
+```bash
+docker pull ghcr.io/ntando-mahlangu/nkosi-intergration:latest
+
+# then run it exactly like the locally-built image above, e.g.:
+docker run -d --env-file .env -e DATABASE_URL=... -p 3000:3000 \
+  ghcr.io/ntando-mahlangu/nkosi-intergration:latest
+```
+
+To use the published image with Docker Compose instead of building locally,
+replace each service's `build: .` in `docker-compose.yml` with
+`image: ghcr.io/ntando-mahlangu/nkosi-intergration:latest`.
 
 ## Option 3: No Docker — systemd on a plain VPS
 
@@ -221,6 +251,31 @@ so re-running the full set is always safe. Run it once before the first
 deploy of a given database, and again any time you pull a commit that adds
 a new migration file — there's no separate "pending migrations" tracking,
 so just re-run it.
+
+## Rotating the encryption key
+
+`LEADRECOVERY_ENCRYPTION_KEY` can be rotated without downtime:
+
+1. Set `LEADRECOVERY_ENCRYPTION_KEY=<new key>` and
+   `LEADRECOVERY_ENCRYPTION_KEY_PREVIOUS=<old key>`, then redeploy the app
+   and worker. Nothing breaks: reads try the new key first and fall back
+   to the previous one for tenants not yet re-encrypted; every new write
+   already uses the new key.
+2. Run the batch job that re-encrypts every existing tenant's stored
+   credentials under the new key:
+   ```bash
+   npm run rotate-encryption-key -- --old-key <old key> --new-key <new key>
+   ```
+   Safe to re-run — it just re-encrypts whatever it finds under the old
+   key each time, and reports how many tenants it rotated vs. failed.
+3. Once it reports every tenant rotated, remove
+   `LEADRECOVERY_ENCRYPTION_KEY_PREVIOUS` and redeploy again. Only now is
+   the old key no longer needed anywhere.
+
+Skipping straight to step 1 and never running step 2 works too (nothing
+requires completing the rotation promptly), but leaves old-key-encrypted
+rows in the database indefinitely — finish the rotation so the old key
+can actually be discarded.
 
 ## Backups
 

@@ -157,11 +157,19 @@ const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_ho
  * key is configured — required in production (see store/index.ts). The
  * `channels` JSONB column then holds `{"_encrypted": "<ciphertext>"}`
  * instead of the plaintext credentials object.
+ *
+ * `previousEncryptionKey` supports rotating LEADRECOVERY_ENCRYPTION_KEY
+ * without downtime: decoding tries the current key first, then falls back
+ * to the previous one for rows not yet re-encrypted. All writes
+ * (encodeChannels) always use the current key — see
+ * src/scripts/rotateEncryptionKey.ts for the batch job that re-encrypts
+ * every existing row so the previous key can eventually be dropped.
  */
 export class PostgresTenantStore implements TenantStore {
   constructor(
     private pool: Pool,
-    private encryptionKey?: string
+    private encryptionKey?: string,
+    private previousEncryptionKey?: string
   ) {}
 
   private encodeChannels(channels: ChannelCredentials): string {
@@ -179,7 +187,13 @@ export class PostgresTenantStore implements TenantStore {
             "(set LEADRECOVERY_ENCRYPTION_KEY to the key used when they were saved)."
         );
       }
-      return JSON.parse(decryptSecret(parsed._encrypted, this.encryptionKey)) as ChannelCredentials;
+      try {
+        return JSON.parse(decryptSecret(parsed._encrypted, this.encryptionKey)) as ChannelCredentials;
+      } catch (err) {
+        if (!this.previousEncryptionKey) throw err;
+        // Mid-rotation: this row hasn't been re-encrypted with the new key yet.
+        return JSON.parse(decryptSecret(parsed._encrypted, this.previousEncryptionKey)) as ChannelCredentials;
+      }
     }
     return parsed as ChannelCredentials;
   }

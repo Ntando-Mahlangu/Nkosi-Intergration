@@ -116,6 +116,54 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     await expect(storeWithNoKey.getTenant(TENANT.id)).rejects.toThrow(/encryption key/i);
   });
 
+  it("falls back to a previous encryption key for rows not yet rotated", async () => {
+    const oldKey = TEST_ENCRYPTION_KEY;
+    const newKey = generateEncryptionKey();
+    const tenantStore = new PostgresTenantStore(pool, oldKey);
+    await tenantStore.createTenant(TENANT);
+
+    // Configured with the new key as primary and the old key as fallback —
+    // this row is still encrypted under the old key (not yet rotated).
+    const duringRotation = new PostgresTenantStore(pool, newKey, oldKey);
+    const reread = await duringRotation.getTenant(TENANT.id);
+    expect(reread?.channels.sms?.authToken).toBe(TENANT.channels.sms?.authToken);
+  });
+
+  it("without a previous key configured, still throws on a row encrypted under a different key", async () => {
+    const oldKey = TEST_ENCRYPTION_KEY;
+    const newKey = generateEncryptionKey();
+    const tenantStore = new PostgresTenantStore(pool, oldKey);
+    await tenantStore.createTenant(TENANT);
+
+    const storeWithOnlyNewKey = new PostgresTenantStore(pool, newKey);
+    await expect(storeWithOnlyNewKey.getTenant(TENANT.id)).rejects.toThrow();
+  });
+
+  it("supports the full rotation pattern: re-encrypting every tenant from an old key to a new one", async () => {
+    // Exercises exactly what src/scripts/rotateEncryptionKey.ts does.
+    // Regression test: updateTenant() re-reads the existing row internally
+    // before merging the patch, so the *write* store also needs the old
+    // key as a fallback — the row being overwritten isn't rotated yet at
+    // that point, even though the new key is what should be used going
+    // forward. Missing that fallback on the write side breaks the whole
+    // rotation with an opaque decrypt error.
+    const oldKey = TEST_ENCRYPTION_KEY;
+    const newKey = generateEncryptionKey();
+    const readWithOldKey = new PostgresTenantStore(pool, oldKey);
+    await readWithOldKey.createTenant(TENANT);
+
+    const writeWithNewKey = new PostgresTenantStore(pool, newKey, oldKey);
+    const fresh = await readWithOldKey.getTenant(TENANT.id);
+    await writeWithNewKey.updateTenant(TENANT.id, { channels: fresh!.channels });
+
+    const storeWithOnlyNewKey = new PostgresTenantStore(pool, newKey);
+    const rotated = await storeWithOnlyNewKey.getTenant(TENANT.id);
+    expect(rotated?.channels.sms?.authToken).toBe(TENANT.channels.sms?.authToken);
+
+    const storeWithOnlyOldKey = new PostgresTenantStore(pool, oldKey);
+    await expect(storeWithOnlyOldKey.getTenant(TENANT.id)).rejects.toThrow();
+  });
+
   it("round-trips a lead and supports lookup by phone/email and partial updates", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant(TENANT);

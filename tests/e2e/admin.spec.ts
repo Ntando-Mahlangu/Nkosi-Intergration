@@ -137,6 +137,43 @@ test.describe("Admin UI (public/admin.html)", () => {
     await expect(page.locator("#audit-log")).toContainText("tenant.delete");
   });
 
+  test("paginates the tenant list once there are more than one page's worth", async ({ page }) => {
+    // Creating 21+ tenants through the UI would be slow and isn't what's under
+    // test here — go straight through the admin API (same one the page calls)
+    // to get past the page size (20), then drive only the pagination controls.
+    const label = uniqueName("E2E Page");
+    const created: string[] = [];
+    for (let i = 0; i < 21; i++) {
+      const res = await page.request.post("/admin/tenants", {
+        headers: { Authorization: `Bearer ${ADMIN_KEY}` },
+        data: { name: `${label} ${i}`, timezone: "UTC" },
+      });
+      expect(res.ok()).toBe(true);
+      created.push(((await res.json()) as { id: string }).id);
+    }
+
+    try {
+      await connect(page);
+      await expect(page.locator("#tenants-summary")).toHaveText(/^1-20 of \d+ tenant\(s\)$/);
+      await expect(page.locator("#tenants-prev-btn")).toBeDisabled();
+      await expect(page.locator("#tenants-next-btn")).toBeEnabled();
+
+      await page.click("#tenants-next-btn");
+      await expect(page.locator("#tenants-summary")).toHaveText(/^21-\d+ of \d+ tenant\(s\)$/);
+      await expect(page.locator("#tenants-prev-btn")).toBeEnabled();
+
+      await page.click("#tenants-prev-btn");
+      await expect(page.locator("#tenants-summary")).toHaveText(/^1-20 of \d+ tenant\(s\)$/);
+      await expect(page.locator("#tenants-prev-btn")).toBeDisabled();
+    } finally {
+      for (const id of created) {
+        await page.request.delete(`/admin/tenants/${id}`, {
+          headers: { Authorization: `Bearer ${ADMIN_KEY}` },
+        });
+      }
+    }
+  });
+
   test("reconnects automatically on reload using the persisted session", async ({ page }) => {
     await connect(page);
     await page.reload();

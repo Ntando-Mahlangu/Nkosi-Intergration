@@ -53,3 +53,102 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - run: docker build -t leadrecovery:ci .
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      # Gates only on production dependencies: the one known chain in
+      # devDependencies (esbuild <- vite <- vite-node <- vitest) has no
+      # production exposure (this project never runs a vite/vitest dev
+      # server or UI outside a contributor's own machine) and its only
+      # non-breaking fix is a major vitest upgrade — tracked knowingly
+      # rather than force-upgraded. Anything in a production dependency
+      # still fails the build.
+      - run: npm audit --omit=dev --audit-level=high
+
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Brings up the actual docker-compose.yml stack (postgres + app + worker,
+  # all built from the real Dockerfile) and drives it like an operator
+  # would: migrate, wait for readiness, onboard a tenant through the admin
+  # API, call it back with the tenant's own key, and confirm the worker
+  # logged a tick. Every other job either mocks Postgres (pg-mem) or builds
+  # the image in isolation — this is the only check that the compose file,
+  # the image, and the app wired together actually come up end-to-end.
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write a CI .env
+        run: |
+          {
+            echo "LEADRECOVERY_ENCRYPTION_KEY=$(openssl rand -base64 32)"
+            echo "ADMIN_API_KEY=$(openssl rand -hex 24)"
+          } > .env
+
+      - run: docker compose up -d postgres
+
+      - run: docker compose run --rm migrate
+
+      - run: docker compose up -d app worker
+
+      - name: Wait for the app to report ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/health >/dev/null && curl -sf http://localhost:3000/ready >/dev/null; then
+              echo "app is healthy and ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "app never became ready" >&2
+          docker compose logs
+          exit 1
+
+      - name: Onboard a tenant and call the API back with its own key
+        run: |
+          set -euo pipefail
+          admin_key=$(grep '^ADMIN_API_KEY=' .env | cut -d= -f2)
+          created=$(curl -sf -X POST http://localhost:3000/admin/tenants \
+            -H "Authorization: Bearer $admin_key" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"CI Compose Tenant","timezone":"UTC"}')
+          tenant_key=$(echo "$created" | node -e "process.stdin.on('data',d=>process.stdout.write(JSON.parse(d).apiKey))")
+          test -n "$tenant_key"
+          curl -sf http://localhost:3000/tenants/me -H "Authorization: Bearer $tenant_key"
+
+      - name: Confirm the worker ran a tick against the real stack
+        run: |
+          for i in $(seq 1 15); do
+            if docker compose logs worker 2>&1 | grep -q "worker_tick\|worker_scheduled"; then
+              echo "worker ticked"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "worker never logged a tick" >&2
+          docker compose logs worker
+          exit 1
+
+      - name: Show stack logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

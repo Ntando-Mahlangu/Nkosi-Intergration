@@ -62,6 +62,40 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
     await expect(detail).not.toHaveClass(/open/);
   });
 
+  test("category nodes are keyboard-operable: Enter opens, Escape closes and returns focus", async ({ page }) => {
+    await page.goto("/");
+    await page.fill("#api-key", "demo-key");
+    await page.click("#connect-btn");
+    await expect(page.locator("#gate")).toBeHidden();
+
+    const nodes = page.locator("g.node");
+    const count = await nodes.count();
+    let targetIndex = -1;
+    for (let i = 0; i < count; i++) {
+      const text = await nodes.nth(i).locator(".node-count").textContent();
+      if (Number(text) > 0) {
+        targetIndex = i;
+        break;
+      }
+    }
+    expect(targetIndex).toBeGreaterThanOrEqual(0);
+    const target = nodes.nth(targetIndex);
+
+    // Each node is a real tab stop (tabindex="0", role="button") — focus it
+    // directly rather than tabbing through every preceding node.
+    await target.focus();
+    await expect(target).toBeFocused();
+
+    const detail = page.locator("#detail");
+    await page.keyboard.press("Enter");
+    await expect(detail).toHaveClass(/open/);
+    await expect(page.locator("#detail-close")).toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(detail).not.toHaveClass(/open/);
+    await expect(target).toBeFocused();
+  });
+
   test("shows an error and stays on the gate for a bad API key", async ({ page }) => {
     await page.goto("/");
     await page.fill("#api-key", "not-a-real-key");

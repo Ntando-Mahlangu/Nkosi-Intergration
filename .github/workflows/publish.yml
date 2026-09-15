@@ -1,0 +1,50 @@
+name: Publish
+
+# CD: builds the same Dockerfile the `docker` CI job already validates and
+# publishes it to GHCR (ghcr.io/<owner>/<repo>) using the repo's automatic
+# GITHUB_TOKEN — no external registry credentials to provision. Runs only
+# on push to `main` (nothing publishes from a feature branch) and can also
+# be triggered manually for a one-off republish.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Least privilege: read the repo, write packages (push the image), and
+# write id-token for keyless attestation-style provenance if ever added.
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

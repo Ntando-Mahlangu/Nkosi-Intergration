@@ -7,6 +7,7 @@ import { deliverNotification, NOTIFICATION_MAX_ATTEMPTS } from "./notify.js";
 import { cleanupExpiredRateLimitCounters } from "./middleware/pgRateLimitStore.js";
 import { getPool } from "./db/pool.js";
 import { installFatalErrorHandlers } from "./fatalErrorHandlers.js";
+import { acquireWorkerLockOrExit } from "./workerLock.js";
 
 // This file is always run directly (nothing else imports it), so this is
 // always the actual process entrypoint — safe to install unconditionally,
@@ -16,8 +17,9 @@ installFatalErrorHandlers("worker");
 // Bounds how many tenants this worker processes in parallel per tick. Only
 // meaningful within a single worker process/replica — run exactly one
 // worker replica (see DEPLOYMENT.md); running more than one would send
-// every due message multiple times, since nothing here coordinates across
-// separate processes.
+// every due message multiple times. When DATABASE_URL is set this is
+// actually enforced below via acquireWorkerLockOrExit(), not just
+// documented — a second replica exits immediately instead of running.
 const CONCURRENCY = Number(process.env.LEADRECOVERY_WORKER_CONCURRENCY ?? 4);
 
 /**
@@ -89,6 +91,8 @@ async function runOnce(): Promise<void> {
 }
 
 const schedule = process.env.LEADRECOVERY_CRON_SCHEDULE ?? "0 * * * *"; // default: hourly
+
+await acquireWorkerLockOrExit(); // never returns if another worker already holds the lock
 
 if (process.env.LEADRECOVERY_RUN_ONCE === "true") {
   runOnce()

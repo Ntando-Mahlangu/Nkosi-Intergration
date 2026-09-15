@@ -16,6 +16,7 @@
     "import-leads": "tsx src/scripts/importLeads.ts",
     "migrate": "tsx src/scripts/migrate.ts",
     "check-providers": "tsx src/scripts/checkProviders.ts",
+    "rotate-encryption-key": "tsx src/scripts/rotateEncryptionKey.ts",
     "loadtest": "tsx src/scripts/loadtest.ts",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -88,12 +88,15 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
 
 - Tenant channel credentials (Twilio auth tokens, SendGrid API keys) are
   encrypted at rest (AES-256-GCM, `src/crypto.ts`) in the `tenants.channels`
-  JSONB column, keyed by `LEADRECOVERY_ENCRYPTION_KEY`. This still isn't a
-  substitute for a real secrets manager for defense-in-depth (rotation,
-  audit logging, access control finer than "has the app's encryption key")
-  — consider AWS Secrets Manager/Vault/similar for higher-stakes deployments.
-  **Losing the encryption key makes existing tenants' credentials
-  unrecoverable** — back it up somewhere durable, separate from the database.
+  JSONB column, keyed by `LEADRECOVERY_ENCRYPTION_KEY`. The key can be
+  rotated without downtime — see "Rotating the encryption key" in
+  `DEPLOYMENT.md`. This still isn't a substitute for a real secrets
+  manager for defense-in-depth (audit logging, access control finer than
+  "has the app's encryption key") — consider AWS Secrets Manager/Vault/
+  similar for higher-stakes deployments. **Losing the encryption key (and
+  any previous key still needed during a rotation) makes existing
+  tenants' credentials unrecoverable** — back it up somewhere durable,
+  separate from the database.
 - Lead and message data includes PII (names, phone numbers, emails,
   conversation content). Make sure the Postgres instance is encrypted at
   rest and access is restricted appropriately, and agree a data-retention

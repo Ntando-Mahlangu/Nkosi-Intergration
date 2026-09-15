@@ -124,7 +124,7 @@
   <div style="margin-top:16px;">
     <button id="connect-btn">Connect</button>
   </div>
-  <div id="auth-error" class="error"></div>
+  <div id="auth-error" class="error" role="alert"></div>
 </div>
 
 <div id="app" style="display:none;">
@@ -139,7 +139,7 @@
     </div>
   </header>
   <main>
-    <div id="reveal-panel"></div>
+    <div id="reveal-panel" role="alert" aria-live="assertive"></div>
 
     <section>
       <h3>Create tenant</h3>
@@ -155,14 +155,16 @@
           </div>
           <button id="create-btn">Create</button>
         </div>
-        <div id="create-error" class="error"></div>
+        <div id="create-error" class="error" role="alert"></div>
       </div>
     </section>
 
     <section>
       <h3>Tenants</h3>
       <div class="toolbar">
-        <span class="stat" id="tenants-summary"></span>
+        <span class="stat" id="tenants-summary" role="status" aria-live="polite"></span>
+        <button class="secondary" id="tenants-prev-btn">Prev</button>
+        <button class="secondary" id="tenants-next-btn">Next</button>
       </div>
       <div id="tenants"></div>
     </section>
@@ -177,6 +179,11 @@
 
     <section>
       <h3>Audit log</h3>
+      <div class="toolbar">
+        <span class="stat" id="audit-summary" role="status" aria-live="polite"></span>
+        <button class="secondary" id="audit-prev-btn">Prev</button>
+        <button class="secondary" id="audit-next-btn">Next</button>
+      </div>
       <div id="audit-log"></div>
     </section>
   </main>
@@ -187,6 +194,10 @@
   const authPanel = document.getElementById("auth");
   const app = document.getElementById("app");
   const authError = document.getElementById("auth-error");
+
+  const PAGE_SIZE = 20;
+  const tenantsPage = { offset: 0, total: 0 };
+  const auditPage = { offset: 0, total: 0 };
 
   function getSession() {
     try {
@@ -219,6 +230,32 @@
     return res.status === 204 ? undefined : res.json();
   }
 
+  // Like api(), but also reports X-Total-Count (sent by the paginated
+  // ?limit=&offset= admin endpoints) so callers can render prev/next controls.
+  async function apiPaged(session, path, page) {
+    const url = new URL(path, session.baseUrl);
+    url.searchParams.set("limit", String(PAGE_SIZE));
+    url.searchParams.set("offset", String(page.offset));
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: "Bearer " + session.adminKey },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || (res.status + " " + res.statusText));
+    }
+    const totalHeader = Number(res.headers.get("X-Total-Count"));
+    page.total = Number.isFinite(totalHeader) ? totalHeader : 0;
+    return res.json();
+  }
+
+  function renderPager(page, summaryEl, prevBtn, nextBtn, label) {
+    const shownFrom = page.total === 0 ? 0 : page.offset + 1;
+    const shownTo = Math.min(page.offset + PAGE_SIZE, page.total);
+    summaryEl.textContent = `${shownFrom}-${shownTo} of ${page.total} ${label}`;
+    prevBtn.disabled = page.offset === 0;
+    nextBtn.disabled = page.offset + PAGE_SIZE >= page.total;
+  }
+
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
@@ -238,7 +275,13 @@
 
   function renderTenants(tenants) {
     const el = document.getElementById("tenants");
-    document.getElementById("tenants-summary").textContent = tenants.length + " tenant(s)";
+    renderPager(
+      tenantsPage,
+      document.getElementById("tenants-summary"),
+      document.getElementById("tenants-prev-btn"),
+      document.getElementById("tenants-next-btn"),
+      "tenant(s)"
+    );
     if (tenants.length === 0) {
       el.innerHTML = '<div class="empty">No tenants yet.</div>';
       return;
@@ -274,7 +317,7 @@
     }
     el.innerHTML = `
       <table>
-        <thead><tr><th>Status</th><th>Tenant</th><th>Reason</th><th>Attempts</th><th>Last error</th><th>Last attempt</th></tr></thead>
+        <thead><tr><th scope="col">Status</th><th scope="col">Tenant</th><th scope="col">Reason</th><th scope="col">Attempts</th><th scope="col">Last error</th><th scope="col">Last attempt</th></tr></thead>
         <tbody>
           ${items
             .map(
@@ -295,13 +338,20 @@
 
   function renderAuditLog(entries) {
     const el = document.getElementById("audit-log");
+    renderPager(
+      auditPage,
+      document.getElementById("audit-summary"),
+      document.getElementById("audit-prev-btn"),
+      document.getElementById("audit-next-btn"),
+      "entries"
+    );
     if (entries.length === 0) {
       el.innerHTML = '<div class="empty">No admin actions recorded yet.</div>';
       return;
     }
     el.innerHTML = `
       <table>
-        <thead><tr><th>When</th><th>Action</th><th>Tenant</th><th>Details</th></tr></thead>
+        <thead><tr><th scope="col">When</th><th scope="col">Action</th><th scope="col">Tenant</th><th scope="col">Details</th></tr></thead>
         <tbody>
           ${entries
             .map(
@@ -320,9 +370,9 @@
 
   async function loadAll(session) {
     const [tenants, notifications, auditLog] = await Promise.all([
-      api(session, "/admin/tenants"),
+      apiPaged(session, "/admin/tenants", tenantsPage),
       api(session, "/admin/notifications/failed"),
-      api(session, "/admin/audit-log?limit=50"),
+      apiPaged(session, "/admin/audit-log", auditPage),
     ]);
     renderTenants(tenants);
     renderNotifications(notifications);
@@ -351,6 +401,8 @@
 
   document.getElementById("logout-btn").addEventListener("click", () => {
     setSession(null);
+    tenantsPage.offset = 0;
+    auditPage.offset = 0;
     app.style.display = "none";
     authPanel.style.display = "block";
   });
@@ -358,6 +410,34 @@
   document.getElementById("refresh-btn").addEventListener("click", () => {
     const session = getSession();
     if (session) loadAll(session).catch((err) => alert(err.message));
+  });
+
+  document.getElementById("tenants-prev-btn").addEventListener("click", () => {
+    const session = getSession();
+    if (!session) return;
+    tenantsPage.offset = Math.max(0, tenantsPage.offset - PAGE_SIZE);
+    loadAll(session).catch((err) => alert(err.message));
+  });
+
+  document.getElementById("tenants-next-btn").addEventListener("click", () => {
+    const session = getSession();
+    if (!session) return;
+    tenantsPage.offset += PAGE_SIZE;
+    loadAll(session).catch((err) => alert(err.message));
+  });
+
+  document.getElementById("audit-prev-btn").addEventListener("click", () => {
+    const session = getSession();
+    if (!session) return;
+    auditPage.offset = Math.max(0, auditPage.offset - PAGE_SIZE);
+    loadAll(session).catch((err) => alert(err.message));
+  });
+
+  document.getElementById("audit-next-btn").addEventListener("click", () => {
+    const session = getSession();
+    if (!session) return;
+    auditPage.offset += PAGE_SIZE;
+    loadAll(session).catch((err) => alert(err.message));
   });
 
   document.getElementById("create-btn").addEventListener("click", async () => {

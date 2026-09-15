@@ -59,7 +59,7 @@ export function createStores(): Stores {
     const pool = getPool();
     return {
       leadStore: new PostgresLeadStore(pool),
-      tenantStore: new PostgresTenantStore(pool, encryptionKey),
+      tenantStore: new PostgresTenantStore(pool, encryptionKey, process.env.LEADRECOVERY_ENCRYPTION_KEY_PREVIOUS),
       messageStore: new PostgresMessageStore(pool),
       notificationStore: new PostgresNotificationStore(pool),
       auditLogStore: new PostgresAuditLogStore(pool),
