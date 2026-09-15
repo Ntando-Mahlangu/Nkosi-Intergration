@@ -164,6 +164,32 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     await expect(storeWithOnlyOldKey.getTenant(TENANT.id)).rejects.toThrow();
   });
 
+  it("listTenants (as the rotation script's read side does) survives a re-run after a partial rotation", async () => {
+    // Regression test for a real bug: rotateEncryptionKey.ts re-run after it
+    // partially succeeded (one tenant already re-encrypted under the new
+    // key, another not yet) used to crash listTenants() itself — before even
+    // reaching the per-tenant try/catch — because the read-side store had no
+    // way to decode a row already under the new key. Fixed by giving the
+    // read-side store the new key as its previousEncryptionKey fallback too.
+    const oldKey = TEST_ENCRYPTION_KEY;
+    const newKey = generateEncryptionKey();
+    const setupStore = new PostgresTenantStore(pool, oldKey);
+    await setupStore.createTenant(TENANT);
+    await setupStore.createTenant({ ...TENANT, id: "tenant-2", apiKey: "test-key-2" });
+
+    // Simulate a rotation already completed for TENANT (but not tenant-2).
+    const writeWithNewKey = new PostgresTenantStore(pool, newKey, oldKey);
+    const fresh = await setupStore.getTenant(TENANT.id);
+    await writeWithNewKey.updateTenant(TENANT.id, { channels: fresh!.channels });
+
+    // This is exactly how the (fixed) script constructs its read-side store.
+    const readWithOldKey = new PostgresTenantStore(pool, oldKey, newKey);
+    const tenants = await readWithOldKey.listTenants();
+    expect(tenants).toHaveLength(2);
+    expect(tenants.find((t) => t.id === TENANT.id)?.channels.sms?.authToken).toBe(TENANT.channels.sms?.authToken);
+    expect(tenants.find((t) => t.id === "tenant-2")?.channels.sms?.authToken).toBe(TENANT.channels.sms?.authToken);
+  });
+
   it("round-trips a lead and supports lookup by phone/email and partial updates", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant(TENANT);

@@ -105,7 +105,10 @@ jobs:
 
       - run: docker compose run --rm migrate
 
-      - run: docker compose up -d app worker
+      # app only for now, not worker — the tenant must exist *before* the
+      # worker's own startup tick runs (see below), so onboarding has to
+      # happen first.
+      - run: docker compose up -d app
 
       - name: Wait for the app to report ready
         run: |
@@ -132,10 +135,19 @@ jobs:
           test -n "$tenant_key"
           curl -sf http://localhost:3000/tenants/me -H "Authorization: Bearer $tenant_key"
 
+      # Only started now: worker.ts runs an immediate tick on startup (see
+      # "Also run once immediately on startup" in src/worker.ts), and its
+      # default cron schedule is hourly — starting it before the tenant
+      # above existed would mean its one and only tick within this job's
+      # lifetime ran over zero tenants, so "worker_tick" (which is logged
+      # per tenant processed) would never appear and the check below would
+      # only ever be proving the process started, not that it did anything.
+      - run: docker compose up -d worker
+
       - name: Confirm the worker ran a tick against the real stack
         run: |
           for i in $(seq 1 15); do
-            if docker compose logs worker 2>&1 | grep -q "worker_tick\|worker_scheduled"; then
+            if docker compose logs worker 2>&1 | grep -q "worker_tick"; then
               echo "worker ticked"
               exit 0
             fi

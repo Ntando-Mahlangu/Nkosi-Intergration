@@ -174,6 +174,53 @@ test.describe("Admin UI (public/admin.html)", () => {
     }
   });
 
+  test("deleting every tenant on the last page falls back to a valid page instead of showing empty", async ({
+    page,
+  }) => {
+    const label = uniqueName("E2E PageDelete");
+    const created: string[] = [];
+    for (let i = 0; i < 21; i++) {
+      const res = await page.request.post("/admin/tenants", {
+        headers: { Authorization: `Bearer ${ADMIN_KEY}` },
+        data: { name: `${label} ${i}`, timezone: "UTC" },
+      });
+      expect(res.ok()).toBe(true);
+      created.push(((await res.json()) as { id: string }).id);
+    }
+
+    try {
+      await connect(page);
+      await page.click("#tenants-next-btn");
+      await expect(page.locator("#tenants-prev-btn")).toBeEnabled();
+
+      // Delete every tenant on this (last) page, one at a time. Fixed number
+      // of iterations, not "until the list is empty" — once the final one is
+      // deleted the view falls back to page 1, which is non-empty, so an
+      // "until empty" loop would keep going and delete page 1 too.
+      const page2Count = await page.locator("#tenants .card").count();
+      expect(page2Count).toBeGreaterThan(0);
+      for (let i = 0; i < page2Count; i++) {
+        const card = page.locator("#tenants .card").first();
+        page.once("dialog", (d) => d.accept());
+        await card.getByRole("button", { name: "Delete" }).click();
+        await expect(page.locator("#tenants-summary")).not.toHaveText("");
+      }
+
+      // Deleting the last tenant on the last page must not leave the view
+      // stuck showing "No tenants yet." while tenants still exist elsewhere —
+      // it should fall back to the last valid page.
+      await expect(page.locator("#tenants")).not.toContainText("No tenants yet.");
+      await expect(page.locator("#tenants .card").first()).toBeVisible();
+      await expect(page.locator("#tenants-prev-btn")).toBeDisabled();
+    } finally {
+      for (const id of created) {
+        await page.request.delete(`/admin/tenants/${id}`, {
+          headers: { Authorization: `Bearer ${ADMIN_KEY}` },
+        });
+      }
+    }
+  });
+
   test("reconnects automatically on reload using the persisted session", async ({ page }) => {
     await connect(page);
     await page.reload();

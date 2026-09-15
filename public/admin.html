@@ -244,7 +244,15 @@
       throw new Error(body.error || (res.status + " " + res.statusText));
     }
     const totalHeader = Number(res.headers.get("X-Total-Count"));
-    page.total = Number.isFinite(totalHeader) ? totalHeader : 0;
+    const total = Number.isFinite(totalHeader) ? totalHeader : 0;
+    page.total = total;
+    // Self-correct if the current offset now lands past the end — e.g.
+    // deleting the last tenant on the last page — instead of showing an
+    // empty page: step back to the last valid page and refetch once.
+    if (page.offset > 0 && page.offset >= total) {
+      page.offset = Math.max(0, Math.floor((total - 1) / PAGE_SIZE) * PAGE_SIZE);
+      return apiPaged(session, path, page);
+    }
     return res.json();
   }
 

@@ -630,6 +630,12 @@ describe("notify on interested reply", () => {
       .field("text", "yes please, sounds good");
 
     expect(res.status).toBe(204);
+    // The webhook route fires this notification via `void notifyHumanAttention(...)`
+    // (see src/webhooks/index.ts) — deliberately not awaited, so the response
+    // isn't held up by a slow/unreachable notification target. Wait for the
+    // spy rather than asserting immediately: nothing guarantees the fetch
+    // inside it has actually run by the time the HTTP response resolves.
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
     expect(fetchSpy).toHaveBeenCalledWith(
       "https://hooks.example.com/notify",
       expect.objectContaining({ method: "POST" })
@@ -933,6 +939,10 @@ describe("chatbot auto-reply on inbound messages", () => {
     const history = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
     expect(history.some((m) => m.direction === "outbound")).toBe(false); // no auto-reply sent
 
+    // Fired via `void notifyHumanAttention(...)`, not awaited by the route —
+    // wait for the spy instead of asserting immediately (see the identical
+    // comment in the "notify on interested reply" describe block above).
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
     expect(fetchSpy).toHaveBeenCalledWith(
       "https://hooks.example.com/notify",
       expect.objectContaining({ method: "POST" })
