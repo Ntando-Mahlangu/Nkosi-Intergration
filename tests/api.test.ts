@@ -1032,6 +1032,35 @@ describe("chatbot auto-reply on inbound messages", () => {
     expect(lead?.status).toBe("responded");
   });
 
+  it("survives the channel adapter throwing while sending the auto-reply instead of failing the whole webhook request", async () => {
+    // Regression test: sendAndLog's adapter.send() call had no try/catch,
+    // so a real provider-level error (not just {ok: false}) used to
+    // propagate out of the whole inbound-webhook request.
+    anthropicCreateMock.mockResolvedValueOnce({
+      content: [{ type: "text", text: "We're open Mon-Fri 8am-5pm!" }],
+    });
+    const stores = buildChatbotStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const { emailAdapter } = await import("../src/channels/email.js");
+    const sendSpy = vi.spyOn(emailAdapter, "send").mockRejectedValueOnce(new Error("SendGrid: 401 unauthorized"));
+
+    const res = await request(app)
+      .post(`/webhooks/${CHATBOT_TENANT.id}/sendgrid/email?token=${CHATBOT_TENANT.apiKey}`)
+      .field("from", "Jordan <jordan@example.com>")
+      .field("text", "what are your hours?");
+
+    expect(res.status).toBe(204);
+    // Classification/status still completed even though the reply couldn't be sent.
+    const lead = await stores.leadStore.getLeadById(CHATBOT_TENANT.id, LEAD.id);
+    expect(lead?.status).toBe("responded");
+    const history = await stores.messageStore.getMessagesForLead(CHATBOT_TENANT.id, LEAD.id);
+    expect(history.some((m) => m.direction === "outbound")).toBe(false); // the failed send was never logged
+
+    sendSpy.mockRestore();
+  });
+
   it("notifies for a human instead of replying when the model escalates", async () => {
     anthropicCreateMock.mockResolvedValueOnce({ content: [{ type: "text", text: "ESCALATE" }] });
     const tenant: Tenant = { ...CHATBOT_TENANT, notifyWebhookUrl: "https://hooks.example.com/notify" };

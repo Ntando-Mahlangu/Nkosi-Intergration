@@ -1,5 +1,5 @@
-import { CHANNEL_PRIORITY, type Channel, type Lead, type Tenant } from "../types.js";
-import type { ChannelAdapter } from "./types.js";
+import { CHANNEL_PRIORITY, type Channel, type ComposedMessage, type Lead, type Tenant } from "../types.js";
+import type { ChannelAdapter, SendResult } from "./types.js";
 import { smsAdapter } from "./sms.js";
 import { whatsappAdapter } from "./whatsapp.js";
 import { emailAdapter } from "./email.js";
@@ -14,6 +14,28 @@ const ADAPTERS: Record<Channel, ChannelAdapter> = {
 
 export function getAdapter(channel: Channel): ChannelAdapter {
   return ADAPTERS[channel];
+}
+
+/**
+ * Sends through the given channel, converting a thrown provider-level error
+ * (Twilio/SendGrid can throw, not just return {ok: false} — an invalid
+ * phone number, a blocked recipient, a revoked key) into the same
+ * {ok: false} shape an adapter already returns for an expected failure.
+ * Callers loop over many leads or handle one request at a time; either way,
+ * one bad send must never abort whatever's calling this. Never throws.
+ */
+export async function safeSend(
+  channel: Channel,
+  tenant: Tenant,
+  lead: Lead,
+  message: ComposedMessage,
+  messageId: string
+): Promise<SendResult> {
+  try {
+    return await getAdapter(channel).send(tenant, lead, message, messageId);
+  } catch (err) {
+    return { ok: false, channel, detail: (err as Error).message };
+  }
 }
 
 /**

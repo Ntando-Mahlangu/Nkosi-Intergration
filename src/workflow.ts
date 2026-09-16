@@ -4,7 +4,7 @@ import { checkSuppression } from "./compliance.js";
 import { scoreLeads, sortByPriority } from "./scoring.js";
 import { determineContactReason } from "./reason.js";
 import { composeInitialMessage } from "./messaging.js";
-import { getAdapter, selectChannel, type SendResult } from "./channels/index.js";
+import { safeSend, selectChannel, type SendResult } from "./channels/index.js";
 import { isWithinQuietHours } from "./quietHours.js";
 import { composeFollowUpMessage, followUpReason, getLeadsDueForFollowUp } from "./followup.js";
 import { generateId } from "./idgen.js";
@@ -103,8 +103,13 @@ async function sendPlans(
 
   for (const plan of plans) {
     const messageId = generateId("msg");
-    const adapter = getAdapter(plan.message.channel);
-    const result = await adapter.send(tenant, plan.lead, plan.message, messageId);
+    // safeSend never throws — a channel adapter can throw a real
+    // provider-level error (Twilio/SendGrid rejecting a malformed number),
+    // not just return {ok: false}, and without that guarantee one such
+    // lead used to abort this whole loop, silently skipping every
+    // remaining lead in this tenant's batch (and, for the initial batch,
+    // the follow-up batch never even ran).
+    const result = await safeSend(plan.message.channel, tenant, plan.lead, plan.message, messageId);
     sent.push({ plan, result, isFollowUp });
 
     if (result.ok) {

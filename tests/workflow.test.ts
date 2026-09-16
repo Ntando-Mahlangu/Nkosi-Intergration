@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { InMemoryLeadStore, InMemoryMessageStore } from "../src/store/memory.js";
 import { buildRecoveryPlans, runRecoveryWorkflow } from "../src/workflow.js";
 import type { Lead, Tenant } from "../src/types.js";
@@ -134,5 +134,52 @@ describe("runRecoveryWorkflow", () => {
 
     const updated = await store.getLeadById(TENANT.id, "followup-lead");
     expect(updated?.followUpCount).toBe(1);
+  });
+
+  it("a channel adapter throwing for one lead doesn't abort the rest of the batch", async () => {
+    // Regression test: adapter.send() can throw a real provider-level error
+    // (Twilio rejecting a malformed number), not just return {ok: false} —
+    // sendPlans() used to have no try/catch around that call, so the first
+    // such lead aborted the loop and silently skipped every lead after it.
+    const leadA: Lead = {
+      id: "lead-a",
+      tenantId: TENANT.id,
+      name: "Lead A",
+      phone: "+27821110001",
+      source: "crm",
+      createdAt: NOW.toISOString(),
+      status: "new",
+    };
+    const leadB: Lead = {
+      id: "lead-b",
+      tenantId: TENANT.id,
+      name: "Lead B",
+      phone: "+27821110002",
+      source: "crm",
+      createdAt: NOW.toISOString(),
+      status: "new",
+    };
+    const store = new InMemoryLeadStore([leadA, leadB]);
+
+    const { smsAdapter } = await import("../src/channels/sms.js");
+    const sendSpy = vi.spyOn(smsAdapter, "send").mockRejectedValueOnce(new Error("Twilio: invalid phone number"));
+
+    const result = await runRecoveryWorkflow(TENANT, store, undefined, NOW);
+
+    expect(result.sent).toHaveLength(2);
+    const forA = result.sent.find((s) => s.plan.lead.id === "lead-a");
+    const forB = result.sent.find((s) => s.plan.lead.id === "lead-b");
+    expect(forA?.result.ok).toBe(false);
+    expect(forA?.result.detail).toContain("invalid phone number");
+    expect(forB?.result.ok).toBe(true);
+
+    // The lead whose send threw keeps its pre-send status; the one after
+    // it in the loop still got contacted normally.
+    const updatedA = await store.getLeadById(TENANT.id, "lead-a");
+    const updatedB = await store.getLeadById(TENANT.id, "lead-b");
+    expect(updatedA?.status).toBe("new");
+    expect(updatedB?.status).toBe("contacted_no_response");
+
+    sendSpy.mockRestore();
   });
 });

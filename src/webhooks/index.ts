@@ -4,7 +4,7 @@ import multer from "multer";
 import type { Stores } from "../store/index.js";
 import { classifyReply } from "../reply/classify.js";
 import { generateAutoReply } from "../chatbot.js";
-import { getAdapter } from "../channels/index.js";
+import { safeSend } from "../channels/index.js";
 import { requireTenantAuth } from "../middleware/auth.js";
 import { createWebhookLimiter } from "../middleware/rateLimit.js";
 import { generateId } from "../idgen.js";
@@ -72,7 +72,11 @@ async function sendAndLog(
   kind: NonNullable<Message["kind"]>
 ): Promise<void> {
   const messageId = generateId("msg");
-  const result = await getAdapter(message.channel).send(tenant, lead, message, messageId);
+  // safeSend never throws — a provider SDK (Twilio/SendGrid) can throw on a
+  // provider-level error, not just return {ok: false}, and without that
+  // guarantee it would turn what's really just "the auto-reply/closer
+  // couldn't be sent" into a request failure for the whole inbound webhook.
+  const result = await safeSend(message.channel, tenant, lead, message, messageId);
   if (!result.ok) {
     logger.error("send_failed", { kind, leadId: lead.id, channel: message.channel, detail: result.detail });
     return;
