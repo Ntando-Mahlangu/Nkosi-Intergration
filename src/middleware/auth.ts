@@ -2,6 +2,7 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { TenantStore } from "../store/types.js";
 import type { Tenant } from "../types.js";
 import { safeCompare } from "../security.js";
+import { asyncHandler } from "./asyncHandler.js";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -21,7 +22,13 @@ function extractBearerToken(req: Request): string | undefined {
 
 /** Resolves the calling tenant from `Authorization: Bearer <tenant api key>` and attaches it to `req.tenant`. */
 export function requireTenantAuth(tenantStore: TenantStore): RequestHandler {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  // asyncHandler-wrapped for the same reason every route handler using this
+  // is: it's async middleware, not a route handler, but Express 4 doesn't
+  // forward a rejection from either kind to error-handling middleware on
+  // its own — without this, tenantStore.getTenantByApiKey throwing (a
+  // transient DB error) would leave the request hanging forever with no
+  // response ever sent, on every tenant-authenticated route in the app.
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
     const token = extractBearerToken(req);
     if (!token) {
       res.status(401).json({ error: "missing Authorization: Bearer <api key> header" });
@@ -38,7 +45,7 @@ export function requireTenantAuth(tenantStore: TenantStore): RequestHandler {
     }
     req.tenant = tenant;
     next();
-  };
+  });
 }
 
 /** Protects tenant-management endpoints with a single operator-held admin key (ADMIN_API_KEY env var). */

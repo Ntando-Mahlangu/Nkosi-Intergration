@@ -79,6 +79,17 @@ describe("tenant auth middleware", () => {
     expect(res.status).toBe(200);
     expect(res.body.tenantId).toBe(TENANT.id);
   });
+
+  it("responds with an error instead of hanging forever when the tenant store throws", async () => {
+    // Regression test: requireTenantAuth is async middleware, not a route
+    // handler — Express 4 doesn't forward a rejection from either kind to
+    // error-handling middleware on its own. Before this was asyncHandler-
+    // wrapped, getTenantByApiKey throwing left the request with no response
+    // ever sent, on every tenant-authenticated route in the app.
+    vi.spyOn(stores.tenantStore, "getTenantByApiKey").mockRejectedValueOnce(new Error("db exploded"));
+    const res = await request(app).get("/whoami").set("Authorization", `Bearer ${TENANT.apiKey}`);
+    expect(res.status).toBe(500);
+  });
 });
 
 describe("admin auth middleware", () => {
@@ -451,6 +462,32 @@ describe("webhook: generic lead intake", () => {
       .send({ name: "No Contact Info" });
 
     expect(res.status).toBe(400);
+  });
+
+  it("survives the underlying store throwing instead of crashing the process (asyncHandler)", async () => {
+    // Regression test: every route handler here is async, and Express 4
+    // does not forward a rejected promise from one to error middleware on
+    // its own — it becomes an unhandled rejection, which (in production,
+    // with installFatalErrorHandlers wired up) crashes the whole server.
+    // This simulates exactly that: a store call throwing mid-request.
+    const stores = buildStores();
+    vi.spyOn(stores.leadStore, "createLead").mockRejectedValue(new Error("db exploded"));
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    let unhandled: unknown;
+    process.once("unhandledRejection", (reason) => {
+      unhandled = reason;
+    });
+
+    const res = await request(app)
+      .post("/webhooks/lead")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ phone: "+27820000000" });
+
+    expect(res.status).toBe(500);
+    expect(unhandled).toBeUndefined();
+    process.removeAllListeners("unhandledRejection");
   });
 });
 

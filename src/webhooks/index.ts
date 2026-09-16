@@ -13,6 +13,7 @@ import { safeCompare } from "../security.js";
 import { substituteTemplate } from "../templateSubstitute.js";
 import { notifyHumanAttention } from "../notify.js";
 import { verifySendGridEventSignature } from "../sendgridVerify.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 import { logger } from "../logger.js";
 import type { ComposedMessage, Lead, LeadSource, Message, Tenant } from "../types.js";
 
@@ -172,132 +173,148 @@ export function createWebhookRoutes(stores: Stores): Router {
   router.use("/webhooks", createWebhookLimiter());
 
   // --- Twilio inbound SMS/WhatsApp replies ---
-  router.post("/webhooks/:tenantId/twilio/sms", express.urlencoded({ extended: false }), async (req, res) => {
-    const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
-    const authToken = tenant?.channels.sms?.authToken ?? tenant?.channels.whatsapp?.authToken;
-    if (!tenant || !authToken) {
-      res.status(404).send();
-      return;
-    }
+  router.post(
+    "/webhooks/:tenantId/twilio/sms",
+    express.urlencoded({ extended: false }),
+    asyncHandler(async (req, res) => {
+      const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
+      const authToken = tenant?.channels.sms?.authToken ?? tenant?.channels.whatsapp?.authToken;
+      if (!tenant || !authToken) {
+        res.status(404).send();
+        return;
+      }
 
-    const signature = req.header("x-twilio-signature") ?? "";
-    const valid = twilio.validateRequest(authToken, signature, requestUrl(req), req.body);
-    if (!valid) {
-      res.status(403).send("invalid Twilio signature");
-      return;
-    }
+      const signature = req.header("x-twilio-signature") ?? "";
+      const valid = twilio.validateRequest(authToken, signature, requestUrl(req), req.body);
+      if (!valid) {
+        res.status(403).send("invalid Twilio signature");
+        return;
+      }
 
-    const from = req.body.From as string | undefined;
-    const body = (req.body.Body as string | undefined) ?? "";
-    // Twilio's WhatsApp `From` is "whatsapp:+2782..." — stored lead phone
-    // numbers are always bare E.164 (the "whatsapp:" prefix is only ever
-    // added when *sending*, see src/channels/whatsapp.ts's toWhatsAppAddress),
-    // so this must be stripped before the lookup or a genuine WhatsApp reply
-    // never matches its lead at all.
-    const channel = from?.startsWith("whatsapp:") ? "whatsapp" : "sms";
-    const phone = from?.replace(/^whatsapp:/, "");
-    const lead = phone ? await stores.leadStore.findLeadByContact(tenant.id, { phone }) : undefined;
+      const from = req.body.From as string | undefined;
+      const body = (req.body.Body as string | undefined) ?? "";
+      // Twilio's WhatsApp `From` is "whatsapp:+2782..." — stored lead phone
+      // numbers are always bare E.164 (the "whatsapp:" prefix is only ever
+      // added when *sending*, see src/channels/whatsapp.ts's toWhatsAppAddress),
+      // so this must be stripped before the lookup or a genuine WhatsApp reply
+      // never matches its lead at all.
+      const channel = from?.startsWith("whatsapp:") ? "whatsapp" : "sms";
+      const phone = from?.replace(/^whatsapp:/, "");
+      const lead = phone ? await stores.leadStore.findLeadByContact(tenant.id, { phone }) : undefined;
 
-    if (lead) {
-      await recordInboundAndClassify(stores, tenant, lead, channel, body);
-    }
+      if (lead) {
+        await recordInboundAndClassify(stores, tenant, lead, channel, body);
+      }
 
-    res.type("text/xml").send("<Response></Response>");
-  });
+      res.type("text/xml").send("<Response></Response>");
+    })
+  );
 
   // --- Twilio voice status callback: detects missed calls ---
-  router.post("/webhooks/:tenantId/twilio/voice-status", express.urlencoded({ extended: false }), async (req, res) => {
-    const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
-    if (!tenant?.channels.sms) {
-      res.status(404).send();
-      return;
-    }
-
-    const signature = req.header("x-twilio-signature") ?? "";
-    const valid = twilio.validateRequest(tenant.channels.sms.authToken, signature, requestUrl(req), req.body);
-    if (!valid) {
-      res.status(403).send("invalid Twilio signature");
-      return;
-    }
-
-    const from = req.body.From as string | undefined;
-    const callStatus = req.body.CallStatus as string | undefined;
-    const missed = callStatus === "no-answer" || callStatus === "busy" || callStatus === "failed";
-
-    if (from && missed) {
-      const lead = await stores.leadStore.findLeadByContact(tenant.id, { phone: from });
-      if (lead) {
-        await stores.leadStore.updateLead(tenant.id, lead.id, { hadMissedCall: true });
-      } else {
-        await stores.leadStore.createLead({
-          id: generateId("lead"),
-          tenantId: tenant.id,
-          phone: from,
-          source: "missed_call",
-          createdAt: new Date().toISOString(),
-          status: "new",
-          hadMissedCall: true,
-        });
+  router.post(
+    "/webhooks/:tenantId/twilio/voice-status",
+    express.urlencoded({ extended: false }),
+    asyncHandler(async (req, res) => {
+      const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
+      if (!tenant?.channels.sms) {
+        res.status(404).send();
+        return;
       }
-    }
 
-    res.status(204).send();
-  });
+      const signature = req.header("x-twilio-signature") ?? "";
+      const valid = twilio.validateRequest(tenant.channels.sms.authToken, signature, requestUrl(req), req.body);
+      if (!valid) {
+        res.status(403).send("invalid Twilio signature");
+        return;
+      }
+
+      const from = req.body.From as string | undefined;
+      const callStatus = req.body.CallStatus as string | undefined;
+      const missed = callStatus === "no-answer" || callStatus === "busy" || callStatus === "failed";
+
+      if (from && missed) {
+        const lead = await stores.leadStore.findLeadByContact(tenant.id, { phone: from });
+        if (lead) {
+          await stores.leadStore.updateLead(tenant.id, lead.id, { hadMissedCall: true });
+        } else {
+          await stores.leadStore.createLead({
+            id: generateId("lead"),
+            tenantId: tenant.id,
+            phone: from,
+            source: "missed_call",
+            createdAt: new Date().toISOString(),
+            status: "new",
+            hadMissedCall: true,
+          });
+        }
+      }
+
+      res.status(204).send();
+    })
+  );
 
   // --- Twilio delivery-status callback (SMS/WhatsApp): queued/sent/delivered/failed/undelivered ---
-  router.post("/webhooks/:tenantId/twilio/status", express.urlencoded({ extended: false }), async (req, res) => {
-    const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
-    const authToken = tenant?.channels.sms?.authToken ?? tenant?.channels.whatsapp?.authToken;
-    if (!tenant || !authToken) {
-      res.status(404).send();
-      return;
-    }
+  router.post(
+    "/webhooks/:tenantId/twilio/status",
+    express.urlencoded({ extended: false }),
+    asyncHandler(async (req, res) => {
+      const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
+      const authToken = tenant?.channels.sms?.authToken ?? tenant?.channels.whatsapp?.authToken;
+      if (!tenant || !authToken) {
+        res.status(404).send();
+        return;
+      }
 
-    const signature = req.header("x-twilio-signature") ?? "";
-    const valid = twilio.validateRequest(authToken, signature, requestUrl(req), req.body);
-    if (!valid) {
-      res.status(403).send("invalid Twilio signature");
-      return;
-    }
+      const signature = req.header("x-twilio-signature") ?? "";
+      const valid = twilio.validateRequest(authToken, signature, requestUrl(req), req.body);
+      if (!valid) {
+        res.status(403).send("invalid Twilio signature");
+        return;
+      }
 
-    const messageId = req.query.messageId as string | undefined;
-    const status = req.body.MessageStatus as string | undefined;
-    if (messageId && status) {
-      await stores.messageStore.updateMessageStatus(tenant.id, messageId, status);
-    }
+      const messageId = req.query.messageId as string | undefined;
+      const status = req.body.MessageStatus as string | undefined;
+      if (messageId && status) {
+        await stores.messageStore.updateMessageStatus(tenant.id, messageId, status);
+      }
 
-    res.status(204).send();
-  });
+      res.status(204).send();
+    })
+  );
 
   // --- SendGrid inbound parse (email replies) ---
   // SendGrid posts multipart/form-data and (without the paid signed-webhook
   // feature) doesn't sign requests — a `?token=<tenant api key>` shared
   // secret is a pragmatic MVP guard; swap for SendGrid's signed webhook
   // verification before handling real client traffic (see COMPLIANCE.md).
-  router.post("/webhooks/:tenantId/sendgrid/email", upload.none(), async (req, res) => {
-    const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
-    if (!tenant) {
-      res.status(404).send();
-      return;
-    }
-    const token = req.query.token;
-    if (typeof token !== "string" || !safeCompare(token, tenant.apiKey)) {
-      res.status(403).send("invalid token");
-      return;
-    }
+  router.post(
+    "/webhooks/:tenantId/sendgrid/email",
+    upload.none(),
+    asyncHandler(async (req, res) => {
+      const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
+      if (!tenant) {
+        res.status(404).send();
+        return;
+      }
+      const token = req.query.token;
+      if (typeof token !== "string" || !safeCompare(token, tenant.apiKey)) {
+        res.status(403).send("invalid token");
+        return;
+      }
 
-    const from = req.body.from as string | undefined;
-    const emailMatch = from?.match(/<([^>]+)>/);
-    const fromEmail = (emailMatch ? emailMatch[1] : from)?.trim();
-    const text = (req.body.text as string | undefined) ?? "";
+      const from = req.body.from as string | undefined;
+      const emailMatch = from?.match(/<([^>]+)>/);
+      const fromEmail = (emailMatch ? emailMatch[1] : from)?.trim();
+      const text = (req.body.text as string | undefined) ?? "";
 
-    const lead = fromEmail ? await stores.leadStore.findLeadByContact(tenant.id, { email: fromEmail }) : undefined;
-    if (lead) {
-      await recordInboundAndClassify(stores, tenant, lead, "email", text);
-    }
+      const lead = fromEmail ? await stores.leadStore.findLeadByContact(tenant.id, { email: fromEmail }) : undefined;
+      if (lead) {
+        await recordInboundAndClassify(stores, tenant, lead, "email", text);
+      }
 
-    res.status(204).send();
-  });
+      res.status(204).send();
+    })
+  );
 
   // --- SendGrid Event Webhook (delivery/bounce/etc.) ---
   // Real ECDSA signature verification when the tenant has configured
@@ -314,7 +331,7 @@ export function createWebhookRoutes(stores: Stores): Router {
         (req as Request & { rawBody?: Buffer }).rawBody = buf;
       },
     }),
-    async (req, res) => {
+    asyncHandler(async (req, res) => {
       const tenant = await stores.tenantStore.getTenant(req.params.tenantId);
       if (!tenant) {
         res.status(404).send();
@@ -353,40 +370,45 @@ export function createWebhookRoutes(stores: Stores): Router {
       }
 
       res.status(204).send();
-    }
+    })
   );
 
   // --- Generic lead intake (CRM outgoing webhook / Zapier / Make / n8n) ---
-  router.post("/webhooks/lead", express.json(), requireTenantAuth(stores.tenantStore), async (req, res) => {
-    const tenant = req.tenant!;
-    const body = req.body as Partial<Lead>;
+  router.post(
+    "/webhooks/lead",
+    express.json(),
+    requireTenantAuth(stores.tenantStore),
+    asyncHandler(async (req, res) => {
+      const tenant = req.tenant!;
+      const body = req.body as Partial<Lead>;
 
-    if (!body.phone && !body.email) {
-      res.status(400).json({ error: "at least one of phone or email is required" });
-      return;
-    }
+      if (!body.phone && !body.email) {
+        res.status(400).json({ error: "at least one of phone or email is required" });
+        return;
+      }
 
-    const lead: Lead = {
-      id: generateId("lead"),
-      tenantId: tenant.id,
-      name: body.name,
-      phone: body.phone,
-      email: body.email,
-      source: normalizeSource(body.source),
-      createdAt: new Date().toISOString(),
-      status: "new",
-      requestedService: body.requestedService,
-      previousQuote: body.previousQuote,
-      previousConversationSummary: body.previousConversationSummary,
-      appointmentStatus: body.appointmentStatus,
-      notes: body.notes,
-      hadMissedCall: body.hadMissedCall,
-      preferredChannel: body.preferredChannel,
-    };
+      const lead: Lead = {
+        id: generateId("lead"),
+        tenantId: tenant.id,
+        name: body.name,
+        phone: body.phone,
+        email: body.email,
+        source: normalizeSource(body.source),
+        createdAt: new Date().toISOString(),
+        status: "new",
+        requestedService: body.requestedService,
+        previousQuote: body.previousQuote,
+        previousConversationSummary: body.previousConversationSummary,
+        appointmentStatus: body.appointmentStatus,
+        notes: body.notes,
+        hadMissedCall: body.hadMissedCall,
+        preferredChannel: body.preferredChannel,
+      };
 
-    const created = await stores.leadStore.createLead(lead);
-    res.status(201).json(created);
-  });
+      const created = await stores.leadStore.createLead(lead);
+      res.status(201).json(created);
+    })
+  );
 
   return router;
 }

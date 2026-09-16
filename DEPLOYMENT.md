@@ -330,6 +330,16 @@ process manager (systemd, Docker's restart policy, an orchestrator) should
 restart it — make sure whatever runs this expects that and restarts on
 exit.
 
+Every async Express route handler and the tenant-auth middleware are
+wrapped in `src/middleware/asyncHandler.ts` specifically so a single
+request-level failure (e.g. Twilio rejecting one lead's malformed phone
+number, a transient Postgres error during auth) reaches the server's own
+error-handling middleware — a 500 to that one caller — instead of becoming
+an unhandled rejection that trips the fatal handler above and takes down
+the whole multi-tenant server over one bad request. The fatal handler is
+still the right backstop for anything genuinely unexpected; asyncHandler
+exists so ordinary request failures never have to be.
+
 There's no metrics/APM or error-tracking (e.g. Sentry) integration built
 in. If you want one, the two hook points are exactly the log call sites in
 `src/fatalErrorHandlers.ts` (for anything fatal) and `src/logger.ts`'s

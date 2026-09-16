@@ -3,6 +3,7 @@ import { stdin, stdout } from "node:process";
 import { readFileSync } from "node:fs";
 import { createStores } from "../store/index.js";
 import { generateApiKey, generateId } from "../idgen.js";
+import { parseQuietHour } from "../quietHours.js";
 import type { Tenant } from "../types.js";
 
 async function ask(rl: ReturnType<typeof createInterface>, question: string, fallback = ""): Promise<string> {
@@ -62,7 +63,10 @@ async function main() {
       name,
       apiKey: generateApiKey(),
       timezone,
-      quietHours: { startHour: Number(quietStartRaw), endHour: Number(quietEndRaw) },
+      quietHours: {
+        startHour: parseQuietHour(quietStartRaw, "Quiet hours start"),
+        endHour: parseQuietHour(quietEndRaw, "Quiet hours end"),
+      },
       devMode: false,
       channels: { sms, whatsapp, email },
       knowledgeBase,

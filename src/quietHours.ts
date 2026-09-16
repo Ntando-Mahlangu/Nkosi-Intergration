@@ -3,6 +3,25 @@ import type { Tenant } from "./types.js";
 /** Sensible default if a tenant hasn't set explicit quiet hours: no sends 8pm-8am local time. */
 export const DEFAULT_QUIET_HOURS = { startHour: 20, endHour: 8 } as const;
 
+/**
+ * Parses a quiet-hours boundary from free-text input (e.g. the onboarding
+ * CLI), throwing a clear error on anything that isn't a whole number 0-23 —
+ * `Number("8pm")` is `NaN`, and storing that silently rather than validating
+ * it disables quiet-hours protection entirely: `NaN === NaN`, `NaN < NaN`,
+ * `hour >= NaN`, and `hour < NaN` are all `false`, so isWithinQuietHours
+ * above would unconditionally return false with no error ever surfaced.
+ */
+export function parseQuietHour(raw: string, label: string): number {
+  // Number("") is 0 (a valid hour), not NaN — reject blank input explicitly
+  // rather than silently treating "skipped this prompt" as "midnight".
+  const trimmed = raw.trim();
+  const n = Number(trimmed);
+  if (!trimmed || !Number.isInteger(n) || n < 0 || n > 23) {
+    throw new Error(`${label} must be a whole number from 0 to 23 (got "${raw}").`);
+  }
+  return n;
+}
+
 function localHour(timezone: string, now: Date): number {
   const formatted = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,

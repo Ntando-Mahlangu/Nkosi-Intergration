@@ -6,6 +6,7 @@ import { requireAdminAuth, requireTenantAuth } from "../middleware/auth.js";
 import { createAdminLimiter, createTenantLimiter } from "../middleware/rateLimit.js";
 import { generateApiKey, generateId } from "../idgen.js";
 import { parsePageParams, paginate } from "../pagination.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 import { logger } from "../logger.js";
 
 /**
@@ -151,124 +152,154 @@ export function createTenantRoutes({ tenantStore, notificationStore, auditLogSto
   // message templates/chatbot) using its own API key. id/apiKey/createdAt/
   // status are immutable here — a tenant can't un-suspend itself, and API
   // key rotation goes through the admin API.
-  router.patch("/tenants/me", createTenantLimiter(), tenantAuth, async (req, res) => {
-    const tenant = req.tenant!;
-    const body = req.body as Partial<TenantConfigBody>;
+  router.patch(
+    "/tenants/me",
+    createTenantLimiter(),
+    tenantAuth,
+    asyncHandler(async (req, res) => {
+      const tenant = req.tenant!;
+      const body = req.body as Partial<TenantConfigBody>;
 
-    if (body.status !== undefined) {
-      res.status(400).json({ error: "status can only be changed via the admin API" });
-      return;
-    }
-    const error = validateTenantConfig(body, tenant);
-    if (error) {
-      res.status(400).json({ error });
-      return;
-    }
+      if (body.status !== undefined) {
+        res.status(400).json({ error: "status can only be changed via the admin API" });
+        return;
+      }
+      const error = validateTenantConfig(body, tenant);
+      if (error) {
+        res.status(400).json({ error });
+        return;
+      }
 
-    const updated = await tenantStore.updateTenant(tenant.id, buildTenantPatch(body, { includeStatus: false }));
-    res.json(toPublicTenant(updated!));
-  });
+      const updated = await tenantStore.updateTenant(tenant.id, buildTenantPatch(body, { includeStatus: false }));
+      res.json(toPublicTenant(updated!));
+    })
+  );
 
   // Optional ?limit=&offset= pagination; omitted (the default) returns everything, unchanged from before.
-  router.get("/admin/tenants", createAdminLimiter(), adminAuth, async (req, res) => {
-    const tenants = await tenantStore.listTenants();
-    res.set("X-Total-Count", String(tenants.length));
-    res.json(paginate(tenants, parsePageParams(req)).map(toPublicTenant));
-  });
+  router.get(
+    "/admin/tenants",
+    createAdminLimiter(),
+    adminAuth,
+    asyncHandler(async (req, res) => {
+      const tenants = await tenantStore.listTenants();
+      res.set("X-Total-Count", String(tenants.length));
+      res.json(paginate(tenants, parsePageParams(req)).map(toPublicTenant));
+    })
+  );
 
-  router.post("/admin/tenants", createAdminLimiter(), adminAuth, async (req, res) => {
-    const body = req.body as Partial<TenantConfigBody>;
-    if (!body.name || !body.timezone) {
-      res.status(400).json({ error: "name and timezone are required" });
-      return;
-    }
-    const error = validateTenantConfig(body);
-    if (error) {
-      res.status(400).json({ error });
-      return;
-    }
+  router.post(
+    "/admin/tenants",
+    createAdminLimiter(),
+    adminAuth,
+    asyncHandler(async (req, res) => {
+      const body = req.body as Partial<TenantConfigBody>;
+      if (!body.name || !body.timezone) {
+        res.status(400).json({ error: "name and timezone are required" });
+        return;
+      }
+      const error = validateTenantConfig(body);
+      if (error) {
+        res.status(400).json({ error });
+        return;
+      }
 
-    const tenant: Tenant = {
-      id: generateId("tenant"),
-      name: body.name,
-      apiKey: generateApiKey(),
-      timezone: body.timezone,
-      quietHours: body.quietHours,
-      devMode: body.devMode ?? false,
-      channels: body.channels ?? {},
-      notifyWebhookUrl: body.notifyWebhookUrl,
-      templates: body.templates,
-      knowledgeBase: body.knowledgeBase,
-      autoReplyEnabled: body.autoReplyEnabled ?? false,
-      status: "active",
-      createdAt: new Date().toISOString(),
-    };
+      const tenant: Tenant = {
+        id: generateId("tenant"),
+        name: body.name,
+        apiKey: generateApiKey(),
+        timezone: body.timezone,
+        quietHours: body.quietHours,
+        devMode: body.devMode ?? false,
+        channels: body.channels ?? {},
+        notifyWebhookUrl: body.notifyWebhookUrl,
+        templates: body.templates,
+        knowledgeBase: body.knowledgeBase,
+        autoReplyEnabled: body.autoReplyEnabled ?? false,
+        status: "active",
+        createdAt: new Date().toISOString(),
+      };
 
-    const created = await tenantStore.createTenant(tenant);
-    await recordAudit(auditLogStore, {
-      tenantId: created.id,
-      action: "tenant.create",
-      actor: "admin",
-      details: { name: created.name, timezone: created.timezone },
-    });
-    // Only place the raw API key is ever returned — the client must save it now.
-    res.status(201).json({ ...toPublicTenant(created), apiKey: created.apiKey });
-  });
+      const created = await tenantStore.createTenant(tenant);
+      await recordAudit(auditLogStore, {
+        tenantId: created.id,
+        action: "tenant.create",
+        actor: "admin",
+        details: { name: created.name, timezone: created.timezone },
+      });
+      // Only place the raw API key is ever returned — the client must save it now.
+      res.status(201).json({ ...toPublicTenant(created), apiKey: created.apiKey });
+    })
+  );
 
   // Admin update — the only way to change a tenant's status (e.g. suspend for
   // non-payment or while an issue is investigated) or edit config on a
   // client's behalf without needing their API key.
-  router.patch("/admin/tenants/:id", createAdminLimiter(), adminAuth, async (req, res) => {
-    const existing = await tenantStore.getTenant(req.params.id);
-    if (!existing) {
-      res.status(404).json({ error: "no such tenant" });
-      return;
-    }
-    const body = req.body as Partial<TenantConfigBody>;
-    const error = validateTenantConfig(body, existing);
-    if (error) {
-      res.status(400).json({ error });
-      return;
-    }
+  router.patch(
+    "/admin/tenants/:id",
+    createAdminLimiter(),
+    adminAuth,
+    asyncHandler(async (req, res) => {
+      const existing = await tenantStore.getTenant(req.params.id);
+      if (!existing) {
+        res.status(404).json({ error: "no such tenant" });
+        return;
+      }
+      const body = req.body as Partial<TenantConfigBody>;
+      const error = validateTenantConfig(body, existing);
+      if (error) {
+        res.status(400).json({ error });
+        return;
+      }
 
-    const updated = await tenantStore.updateTenant(req.params.id, buildTenantPatch(body, { includeStatus: true }));
-    await recordAudit(auditLogStore, {
-      tenantId: req.params.id,
-      action: "tenant.admin_update",
-      actor: "admin",
-      // Field names only — never the values, so this never duplicates a
-      // credential/secret into a second store.
-      details: { fieldsChanged: Object.keys(body) },
-    });
-    res.json(toPublicTenant(updated!));
-  });
+      const updated = await tenantStore.updateTenant(req.params.id, buildTenantPatch(body, { includeStatus: true }));
+      await recordAudit(auditLogStore, {
+        tenantId: req.params.id,
+        action: "tenant.admin_update",
+        actor: "admin",
+        // Field names only — never the values, so this never duplicates a
+        // credential/secret into a second store.
+        details: { fieldsChanged: Object.keys(body) },
+      });
+      res.json(toPublicTenant(updated!));
+    })
+  );
 
   // Rotates a tenant's API key without touching anything else — the old key
   // stops working immediately. Use this instead of delete+recreate when a
   // key has leaked; the tenant keeps its id, leads, and message history.
-  router.post("/admin/tenants/:id/rotate-key", createAdminLimiter(), adminAuth, async (req, res) => {
-    const existing = await tenantStore.getTenant(req.params.id);
-    if (!existing) {
-      res.status(404).json({ error: "no such tenant" });
-      return;
-    }
-    const updated = await tenantStore.updateTenant(req.params.id, { apiKey: generateApiKey() });
-    await recordAudit(auditLogStore, { tenantId: req.params.id, action: "tenant.key_rotate", actor: "admin" });
-    // Only place the new raw API key is ever returned — the client must save it now.
-    res.json({ ...toPublicTenant(updated!), apiKey: updated!.apiKey });
-  });
+  router.post(
+    "/admin/tenants/:id/rotate-key",
+    createAdminLimiter(),
+    adminAuth,
+    asyncHandler(async (req, res) => {
+      const existing = await tenantStore.getTenant(req.params.id);
+      if (!existing) {
+        res.status(404).json({ error: "no such tenant" });
+        return;
+      }
+      const updated = await tenantStore.updateTenant(req.params.id, { apiKey: generateApiKey() });
+      await recordAudit(auditLogStore, { tenantId: req.params.id, action: "tenant.key_rotate", actor: "admin" });
+      // Only place the new raw API key is ever returned — the client must save it now.
+      res.json({ ...toPublicTenant(updated!), apiKey: updated!.apiKey });
+    })
+  );
 
   // Permanently removes a tenant. In Postgres this cascades to the tenant's
   // leads and messages (ON DELETE CASCADE) — there is no undo.
-  router.delete("/admin/tenants/:id", createAdminLimiter(), adminAuth, async (req, res) => {
-    const deleted = await tenantStore.deleteTenant(req.params.id);
-    if (!deleted) {
-      res.status(404).json({ error: "no such tenant" });
-      return;
-    }
-    await recordAudit(auditLogStore, { tenantId: req.params.id, action: "tenant.delete", actor: "admin" });
-    res.status(204).send();
-  });
+  router.delete(
+    "/admin/tenants/:id",
+    createAdminLimiter(),
+    adminAuth,
+    asyncHandler(async (req, res) => {
+      const deleted = await tenantStore.deleteTenant(req.params.id);
+      if (!deleted) {
+        res.status(404).json({ error: "no such tenant" });
+        return;
+      }
+      await recordAudit(auditLogStore, { tenantId: req.params.id, action: "tenant.delete", actor: "admin" });
+      res.status(204).send();
+    })
+  );
 
   // Visibility into notify.ts's dead-letter queue: notifications ("interested"
   // replies / chatbot escalations) that failed to reach a tenant's
@@ -277,16 +308,26 @@ export function createTenantRoutes({ tenantStore, notificationStore, auditLogSto
   // NOTIFICATION_MAX_ATTEMPTS and need a human to notice (usually a broken
   // notifyWebhookUrl) and fix the target, at which point new notifications
   // succeed again — this endpoint is how you'd notice in the first place.
-  router.get("/admin/notifications/failed", createAdminLimiter(), adminAuth, async (_req, res) => {
-    res.json(await notificationStore.listAll());
-  });
+  router.get(
+    "/admin/notifications/failed",
+    createAdminLimiter(),
+    adminAuth,
+    asyncHandler(async (_req, res) => {
+      res.json(await notificationStore.listAll());
+    })
+  );
 
   // Optional ?limit=&offset= pagination; omitted returns everything.
-  router.get("/admin/audit-log", createAdminLimiter(), adminAuth, async (req, res) => {
-    const total = await auditLogStore.count();
-    res.set("X-Total-Count", String(total));
-    res.json(await auditLogStore.list(parsePageParams(req)));
-  });
+  router.get(
+    "/admin/audit-log",
+    createAdminLimiter(),
+    adminAuth,
+    asyncHandler(async (req, res) => {
+      const total = await auditLogStore.count();
+      res.set("X-Total-Count", String(total));
+      res.json(await auditLogStore.list(parsePageParams(req)));
+    })
+  );
 
   return router;
 }
