@@ -135,7 +135,13 @@ async function sendPlans(
         patch.firstOutreachSentAt = now.toISOString();
         patch.followUpCount = 0;
       }
-      await store.updateLead(tenant.id, plan.lead.id, patch);
+      // Guarded on the lead's status still being what this plan was built
+      // from: the send above (a real network call) can take long enough for
+      // the lead to reply in the meantime — an inbound webhook recording
+      // that reply (e.g. opted_out, do_not_contact, responded) races this
+      // write, and without the guard this patch would blindly overwrite
+      // that status back to "contacted_no_response".
+      await store.updateLead(tenant.id, plan.lead.id, patch, { onlyIfStatusIn: [plan.lead.status] });
     }
   }
 

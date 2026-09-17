@@ -1,4 +1,4 @@
-import type { Lead, Message, Tenant } from "../types.js";
+import type { Lead, LeadStatus, Message, Tenant } from "../types.js";
 
 /**
  * A notification (an "interested" reply, or a chatbot escalation) that
@@ -68,13 +68,24 @@ export interface AuditLogStore {
  * in memory.ts is for local development and tests. PostgresLeadStore (in
  * postgres.ts) is the production-shaped implementation.
  */
+/**
+ * Guards an updateLead call against clobbering a status change that
+ * happened concurrently (e.g. a lead replying STOP mid-send). When given,
+ * the patch is applied only if the lead's current status is still one of
+ * `onlyIfStatusIn` — otherwise the update is skipped and the lead's current
+ * (unmodified) state is returned instead.
+ */
+export interface UpdateLeadGuard {
+  onlyIfStatusIn: LeadStatus[];
+}
+
 export interface LeadStore {
   getAllLeads(tenantId: string): Promise<Lead[]>;
   getLeadById(tenantId: string, id: string): Promise<Lead | undefined>;
   /** Finds a lead by phone or email within a tenant — used to match inbound replies to a lead. */
   findLeadByContact(tenantId: string, contact: { phone?: string; email?: string }): Promise<Lead | undefined>;
   createLead(lead: Lead): Promise<Lead>;
-  updateLead(tenantId: string, id: string, patch: Partial<Lead>): Promise<Lead | undefined>;
+  updateLead(tenantId: string, id: string, patch: Partial<Lead>, guard?: UpdateLeadGuard): Promise<Lead | undefined>;
 }
 
 export interface TenantStore {

@@ -182,4 +182,41 @@ describe("runRecoveryWorkflow", () => {
 
     sendSpy.mockRestore();
   });
+
+  it("doesn't overwrite a status change that lands mid-send back to contacted_no_response", async () => {
+    // Regression test: sendPlans() unconditionally patched
+    // {status: "contacted_no_response", ...} after a successful send. A real
+    // send is a network call, so a reply (e.g. "STOP") can be recorded by
+    // the inbound-webhook handler while it's in flight — sendPlans() must
+    // not then clobber that reply-driven status back to
+    // "contacted_no_response" just because the send itself succeeded.
+    const lead: Lead = {
+      id: "recoverable-1",
+      tenantId: TENANT.id,
+      name: "Amara Ncube",
+      phone: "+27821111111",
+      source: "missed_call",
+      createdAt: new Date("2026-09-10T00:00:00.000Z").toISOString(),
+      requestedService: "kitchen remodel",
+      status: "new",
+    };
+    const store = new InMemoryLeadStore([lead]);
+
+    const { smsAdapter } = await import("../src/channels/sms.js");
+    const sendSpy = vi.spyOn(smsAdapter, "send").mockImplementationOnce(async () => {
+      // Simulate the lead replying STOP and the webhook handler recording
+      // that opt-out while this send is still in flight.
+      await store.updateLead(TENANT.id, lead.id, { status: "opted_out" });
+      return { ok: true, channel: "sms", providerMessageId: "SM-concurrent" };
+    });
+
+    const result = await runRecoveryWorkflow(TENANT, store, undefined, NOW);
+    expect(result.sent).toHaveLength(1);
+    expect(result.sent[0].result.ok).toBe(true);
+
+    const updated = await store.getLeadById(TENANT.id, lead.id);
+    expect(updated?.status).toBe("opted_out"); // not clobbered back to "contacted_no_response"
+
+    sendSpy.mockRestore();
+  });
 });

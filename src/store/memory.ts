@@ -8,6 +8,7 @@ import type {
   MessageStore,
   NotificationStore,
   TenantStore,
+  UpdateLeadGuard,
 } from "./types.js";
 
 export class InMemoryLeadStore implements LeadStore {
@@ -39,9 +40,20 @@ export class InMemoryLeadStore implements LeadStore {
     return lead;
   }
 
-  async updateLead(tenantId: string, id: string, patch: Partial<Lead>): Promise<Lead | undefined> {
+  async updateLead(
+    tenantId: string,
+    id: string,
+    patch: Partial<Lead>,
+    guard?: UpdateLeadGuard
+  ): Promise<Lead | undefined> {
     const existing = this.leads.get(id);
     if (!existing || existing.tenantId !== tenantId) return undefined;
+    // Re-reads `this.leads.get(id)` above rather than trusting a snapshot the
+    // caller took earlier, so this always merges against the current state —
+    // but the patch itself can still carry an explicit, stale status decided
+    // before some concurrent update changed it (e.g. a lead replying STOP
+    // mid-send); the guard rejects applying such a stale patch.
+    if (guard && !guard.onlyIfStatusIn.includes(existing.status)) return existing;
     const updated = { ...existing, ...patch };
     this.leads.set(id, updated);
     return updated;

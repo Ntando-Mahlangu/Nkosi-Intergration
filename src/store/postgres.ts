@@ -8,6 +8,7 @@ import type {
   MessageStore,
   NotificationStore,
   TenantStore,
+  UpdateLeadGuard,
 } from "./types.js";
 import { decryptSecret, encryptSecret } from "../crypto.js";
 import { generateId } from "../idgen.js";
@@ -43,6 +44,28 @@ const LEAD_COLUMNS = `id, tenant_id, name, phone, email, source, created_at, las
   previous_conversation_summary, requested_service, previous_quote, appointment_status, notes,
   status, preferred_channel, had_missed_call, responded_after_contact, follow_up_count,
   next_follow_up_at, first_outreach_sent_at`;
+
+/** Maps a patchable Lead field to its column — `id`/`tenantId` are the WHERE key, never patched. */
+const LEAD_PATCH_COLUMNS: Partial<Record<keyof Lead, string>> = {
+  name: "name",
+  phone: "phone",
+  email: "email",
+  source: "source",
+  createdAt: "created_at",
+  lastContactedAt: "last_contacted_at",
+  previousConversationSummary: "previous_conversation_summary",
+  requestedService: "requested_service",
+  previousQuote: "previous_quote",
+  appointmentStatus: "appointment_status",
+  notes: "notes",
+  status: "status",
+  preferredChannel: "preferred_channel",
+  hadMissedCall: "had_missed_call",
+  respondedAfterContact: "responded_after_contact",
+  followUpCount: "follow_up_count",
+  nextFollowUpAt: "next_follow_up_at",
+  firstOutreachSentAt: "first_outreach_sent_at",
+};
 
 export class PostgresLeadStore implements LeadStore {
   constructor(private pool: Pool) {}
@@ -108,43 +131,50 @@ export class PostgresLeadStore implements LeadStore {
     return lead;
   }
 
-  async updateLead(tenantId: string, id: string, patch: Partial<Lead>): Promise<Lead | undefined> {
-    const existing = await this.getLeadById(tenantId, id);
-    if (!existing) return undefined;
-    const merged: Lead = { ...existing, ...patch };
+  /**
+   * Updates only the columns present in `patch` in a single UPDATE statement
+   * (with an optional status guard — see UpdateLeadGuard) rather than
+   * reading the row, merging in JS, and writing every column back. That
+   * read-then-full-row-overwrite pattern was a lost-update race: two
+   * concurrent callers patching different fields (e.g. the worker recording
+   * a sent follow-up while an inbound webhook records a reply) could each
+   * read the row before the other's write landed, so whichever wrote last
+   * would silently revert the other's change — including a compliance-
+   * relevant one like an opt-out.
+   */
+  async updateLead(
+    tenantId: string,
+    id: string,
+    patch: Partial<Lead>,
+    guard?: UpdateLeadGuard
+  ): Promise<Lead | undefined> {
+    const entries = (Object.keys(patch) as (keyof Lead)[])
+      .filter((key) => key in LEAD_PATCH_COLUMNS)
+      .map((key) => [LEAD_PATCH_COLUMNS[key] as string, patch[key] ?? null] as const);
+    if (entries.length === 0) return this.getLeadById(tenantId, id);
 
-    await this.pool.query(
-      `UPDATE leads SET
-        name = $3, phone = $4, email = $5, source = $6, created_at = $7, last_contacted_at = $8,
-        previous_conversation_summary = $9, requested_service = $10, previous_quote = $11,
-        appointment_status = $12, notes = $13, status = $14, preferred_channel = $15,
-        had_missed_call = $16, responded_after_contact = $17, follow_up_count = $18,
-        next_follow_up_at = $19, first_outreach_sent_at = $20
-      WHERE tenant_id = $1 AND id = $2`,
-      [
-        tenantId,
-        id,
-        merged.name ?? null,
-        merged.phone ?? null,
-        merged.email ?? null,
-        merged.source,
-        merged.createdAt,
-        merged.lastContactedAt ?? null,
-        merged.previousConversationSummary ?? null,
-        merged.requestedService ?? null,
-        merged.previousQuote ?? null,
-        merged.appointmentStatus ?? null,
-        merged.notes ?? null,
-        merged.status,
-        merged.preferredChannel ?? null,
-        merged.hadMissedCall ?? null,
-        merged.respondedAfterContact ?? null,
-        merged.followUpCount ?? null,
-        merged.nextFollowUpAt ?? null,
-        merged.firstOutreachSentAt ?? null,
-      ]
+    const values: unknown[] = [tenantId, id];
+    const setClause = entries
+      .map(([column, value]) => {
+        values.push(value);
+        return `${column} = $${values.length}`;
+      })
+      .join(", ");
+
+    let guardClause = "";
+    if (guard) {
+      values.push(guard.onlyIfStatusIn);
+      guardClause = ` AND status = ANY($${values.length})`;
+    }
+
+    const { rows } = await this.pool.query(
+      `UPDATE leads SET ${setClause} WHERE tenant_id = $1 AND id = $2${guardClause} RETURNING ${LEAD_COLUMNS}`,
+      values
     );
-    return merged;
+    // Either the lead doesn't exist, or (only possible with a guard) its
+    // status had already moved on — tell them apart by re-reading.
+    if (rows[0]) return leadFromRow(rows[0]);
+    return this.getLeadById(tenantId, id);
   }
 }
 
@@ -257,33 +287,48 @@ export class PostgresTenantStore implements TenantStore {
     return tenant;
   }
 
+  /**
+   * Updates only the columns present in `patch` in a single UPDATE
+   * statement, rather than reading the row, merging in JS, and writing
+   * every column back — that read-then-full-row-overwrite pattern was a
+   * lost-update race: e.g. a tenant's own settings save (PATCH /tenants/me,
+   * which never touches `status`) racing an admin suspending it could read
+   * the row before the admin's write landed, then write back every column
+   * from its own stale read — including `status`, silently un-suspending
+   * the tenant. Patching only the columns actually present here means a
+   * request that never touches `status` can never write to it at all.
+   */
   async updateTenant(id: string, patch: Partial<Tenant>): Promise<Tenant | undefined> {
-    const existing = await this.getTenant(id);
-    if (!existing) return undefined;
-    const merged: Tenant = { ...existing, ...patch };
+    const values: unknown[] = [id];
+    const setClauses: string[] = [];
+    const push = (column: string, value: unknown) => {
+      values.push(value);
+      setClauses.push(`${column} = $${values.length}`);
+    };
 
-    await this.pool.query(
-      `UPDATE tenants SET name = $2, api_key = $3, timezone = $4, quiet_hours_start = $5,
-        quiet_hours_end = $6, dev_mode = $7, channels = $8, notify_webhook_url = $9, templates = $10,
-        knowledge_base = $11, auto_reply_enabled = $12, status = $13
-      WHERE id = $1`,
-      [
-        id,
-        merged.name,
-        merged.apiKey,
-        merged.timezone,
-        merged.quietHours?.startHour ?? null,
-        merged.quietHours?.endHour ?? null,
-        merged.devMode ?? false,
-        this.encodeChannels(merged.channels),
-        merged.notifyWebhookUrl ?? null,
-        merged.templates ? JSON.stringify(merged.templates) : null,
-        merged.knowledgeBase ?? null,
-        merged.autoReplyEnabled ?? false,
-        merged.status ?? "active",
-      ]
+    if ("name" in patch) push("name", patch.name);
+    if ("apiKey" in patch) push("api_key", patch.apiKey);
+    if ("timezone" in patch) push("timezone", patch.timezone);
+    if ("quietHours" in patch) {
+      push("quiet_hours_start", patch.quietHours?.startHour ?? null);
+      push("quiet_hours_end", patch.quietHours?.endHour ?? null);
+    }
+    if ("devMode" in patch) push("dev_mode", patch.devMode ?? false);
+    if ("channels" in patch) push("channels", this.encodeChannels(patch.channels ?? {}));
+    if ("notifyWebhookUrl" in patch) push("notify_webhook_url", patch.notifyWebhookUrl ?? null);
+    if ("templates" in patch) push("templates", patch.templates ? JSON.stringify(patch.templates) : null);
+    if ("knowledgeBase" in patch) push("knowledge_base", patch.knowledgeBase ?? null);
+    if ("autoReplyEnabled" in patch) push("auto_reply_enabled", patch.autoReplyEnabled ?? false);
+    if ("status" in patch) push("status", patch.status ?? "active");
+    if ("createdAt" in patch) push("created_at", patch.createdAt);
+
+    if (setClauses.length === 0) return this.getTenant(id);
+
+    const { rows } = await this.pool.query(
+      `UPDATE tenants SET ${setClauses.join(", ")} WHERE id = $1 RETURNING ${TENANT_COLUMNS}`,
+      values
     );
-    return merged;
+    return rows[0] ? this.fromRow(rows[0]) : undefined;
   }
 
   async deleteTenant(id: string): Promise<boolean> {

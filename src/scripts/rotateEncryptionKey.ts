@@ -46,10 +46,12 @@ async function main() {
   // doesn't blow up on listTenants()/getTenant() for the rows already done —
   // without it, decodeChannels throws on the very first already-rotated row.
   const readWithOldKey = new PostgresTenantStore(pool, oldKey, newKey);
-  // updateTenant() re-reads the existing row internally before merging the
-  // patch — this store must be able to decode that still-old-key-encrypted
-  // row too (it's the target key, but the row it's about to overwrite
-  // hasn't been rotated yet), hence oldKey as the fallback here as well.
+  // updateTenant() only writes the columns it's given (here, just
+  // `channels`), but decoding a RETURNING row still runs through the same
+  // decodeChannels() as a read — and every row it's about to write to here
+  // is still old-key-encrypted at the point this store first touches it
+  // (that's the whole premise of a rotation), hence oldKey as the fallback
+  // here as well.
   const writeWithNewKey = new PostgresTenantStore(pool, newKey, oldKey);
 
   try {

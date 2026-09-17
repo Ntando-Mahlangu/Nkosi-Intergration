@@ -190,6 +190,29 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(tenants.find((t) => t.id === "tenant-2")?.channels.sms?.authToken).toBe(TENANT.channels.sms?.authToken);
   });
 
+  it("survives two concurrent updateTenant calls patching different fields (no lost update)", async () => {
+    // Regression test: updateTenant() used to read the row, merge the patch
+    // in JS, then write every column back — so two concurrent callers each
+    // patching a different field could each read the row before the other's
+    // write landed, and whichever wrote last would silently revert the
+    // other's change (e.g. a tenant's own settings save reverting an
+    // admin's concurrent suspension, or vice versa). Firing both patches via
+    // Promise.all lets their internal reads genuinely interleave — this
+    // only passes because the fix writes just the patched column, not a
+    // full-row snapshot.
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant(TENANT);
+
+    await Promise.all([
+      tenantStore.updateTenant(TENANT.id, { knowledgeBase: "concurrent write A" }),
+      tenantStore.updateTenant(TENANT.id, { status: "suspended" }),
+    ]);
+
+    const reread = await tenantStore.getTenant(TENANT.id);
+    expect(reread?.knowledgeBase).toBe("concurrent write A");
+    expect(reread?.status).toBe("suspended");
+  });
+
   it("round-trips a lead and supports lookup by phone/email and partial updates", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant(TENANT);
@@ -214,6 +237,62 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     const reread = await leadStore.getLeadById(TENANT.id, "lead-1");
     expect(reread?.status).toBe("contacted_no_response");
     expect(reread?.followUpCount).toBe(0);
+  });
+
+  it("survives two concurrent updateLead calls patching different fields (no lost update)", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    const leadStore = new PostgresLeadStore(pool);
+    await tenantStore.createTenant(TENANT);
+    await leadStore.createLead(LEAD);
+
+    await Promise.all([
+      leadStore.updateLead(TENANT.id, LEAD.id, { notes: "called, left voicemail" }),
+      leadStore.updateLead(TENANT.id, LEAD.id, { status: "opted_out" }),
+    ]);
+
+    const reread = await leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(reread?.notes).toBe("called, left voicemail");
+    expect(reread?.status).toBe("opted_out");
+  });
+
+  it("updateLead's guard skips the patch if the lead's status already moved on, returning its current state instead", async () => {
+    // Regression test for workflow.ts's outreach-status write: it patches
+    // {status: "contacted_no_response", ...} guarded on the status the send
+    // was planned against, so a reply that lands mid-send (opted_out here)
+    // isn't silently overwritten back to "contacted_no_response".
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    const leadStore = new PostgresLeadStore(pool);
+    await tenantStore.createTenant(TENANT);
+    await leadStore.createLead(LEAD); // status: "new"
+
+    await leadStore.updateLead(TENANT.id, LEAD.id, { status: "opted_out" });
+
+    const guarded = await leadStore.updateLead(
+      TENANT.id,
+      LEAD.id,
+      { status: "contacted_no_response", notes: "sent follow-up" },
+      { onlyIfStatusIn: ["new"] } // stale: the plan was built when status was still "new"
+    );
+    expect(guarded?.status).toBe("opted_out");
+    expect(guarded?.notes).toBeUndefined(); // the whole guarded patch was skipped, not just `status`
+
+    const reread = await leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(reread?.status).toBe("opted_out");
+  });
+
+  it("updateLead's guard applies the patch normally when the status still matches", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    const leadStore = new PostgresLeadStore(pool);
+    await tenantStore.createTenant(TENANT);
+    await leadStore.createLead(LEAD); // status: "new"
+
+    const updated = await leadStore.updateLead(
+      TENANT.id,
+      LEAD.id,
+      { status: "contacted_no_response" },
+      { onlyIfStatusIn: ["new"] }
+    );
+    expect(updated?.status).toBe("contacted_no_response");
   });
 
   it("scopes leads strictly per tenant", async () => {
