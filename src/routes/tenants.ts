@@ -7,6 +7,7 @@ import { createAdminLimiter, createTenantLimiter } from "../middleware/rateLimit
 import { generateApiKey, generateId } from "../idgen.js";
 import { parsePageParams, paginate } from "../pagination.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import { isObviouslyUnsafeWebhookHostname } from "../ssrf.js";
 import { logger } from "../logger.js";
 
 /**
@@ -69,7 +70,14 @@ function isValidWebhookUrl(url: unknown): boolean {
   if (typeof url !== "string") return false;
   try {
     const parsed = new URL(url);
-    return parsed.protocol === "https:" || parsed.protocol === "http:";
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    // Synchronous, config-time-only check (no DNS lookup) — catches the
+    // obvious "notifyWebhookUrl set to localhost/an internal IP" case
+    // immediately with a clear error. The load-bearing protection is the
+    // DNS-resolution check deliverNotification does before every actual
+    // send (src/ssrf.ts) — a hostname that resolves to an internal address
+    // only at delivery time isn't (and can't be) caught here.
+    return !isObviouslyUnsafeWebhookHostname(parsed.hostname);
   } catch {
     return false;
   }

@@ -1,4 +1,5 @@
 import { createSign, generateKeyPairSync } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import express from "express";
@@ -25,6 +26,62 @@ vi.mock("@anthropic-ai/sdk", () => ({
     messages = { create: anthropicCreateMock };
   },
 }));
+
+// deliverNotification (src/notify.ts) goes through src/ssrf.ts's
+// postToUntrustedUrl, which resolves notifyWebhookUrl's hostname itself
+// (node:dns/promises) and issues the request via node:http/node:https
+// directly (not fetch) so it can pin the connection to the address it
+// validated — mock all three so the tests below that use
+// "hooks.example.com" as a notifyWebhookUrl don't depend on real
+// DNS/networking.
+const lookupMock = vi.fn();
+vi.mock("node:dns/promises", () => ({
+  lookup: (...args: unknown[]) => lookupMock(...args),
+}));
+
+interface FakeRequestOptions {
+  hostname: string;
+  port: number;
+  path: string;
+  method: string;
+  headers: Record<string, unknown>;
+}
+let notifyRequestStatusCode = 200;
+let lastNotifyRequestOptions: FakeRequestOptions | undefined;
+let lastNotifyRequestBody = "";
+function fakeNotifyRequest(options: FakeRequestOptions, callback: (res: unknown) => void) {
+  lastNotifyRequestOptions = options;
+  const req = new EventEmitter() as EventEmitter & { end: (body?: Buffer | string) => void; destroy: () => void };
+  req.end = (body?: Buffer | string) => {
+    if (body) lastNotifyRequestBody = body.toString();
+    const res = new EventEmitter() as EventEmitter & { statusCode: number; resume: () => void };
+    res.statusCode = notifyRequestStatusCode;
+    res.resume = () => {};
+    queueMicrotask(() => {
+      callback(res);
+      res.emit("end");
+    });
+  };
+  req.destroy = () => {};
+  return req;
+}
+const httpRequestMock = vi.fn(fakeNotifyRequest);
+const httpsRequestMock = vi.fn(fakeNotifyRequest);
+vi.mock("node:http", () => ({
+  default: { request: (...args: [FakeRequestOptions, (res: unknown) => void]) => httpRequestMock(...args) },
+}));
+vi.mock("node:https", () => ({
+  default: { request: (...args: [FakeRequestOptions, (res: unknown) => void]) => httpsRequestMock(...args) },
+}));
+
+beforeEach(() => {
+  lookupMock.mockReset().mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+  httpRequestMock.mockClear();
+  httpsRequestMock.mockClear();
+  notifyRequestStatusCode = 200;
+  lastNotifyRequestOptions = undefined;
+  lastNotifyRequestBody = "";
+});
 
 const TENANT: Tenant = {
   id: "tenant-1",
@@ -880,8 +937,6 @@ describe("notify on interested reply", () => {
     const app = express();
     app.use(createWebhookRoutes(stores));
 
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
-
     const res = await request(app)
       .post(`/webhooks/${TENANT.id}/sendgrid/email?token=${TENANT.apiKey}`)
       .field("from", "Jordan <jordan@example.com>")
@@ -891,21 +946,14 @@ describe("notify on interested reply", () => {
     // The webhook route fires this notification via `void notifyHumanAttention(...)`
     // (see src/webhooks/index.ts) — deliberately not awaited, so the response
     // isn't held up by a slow/unreachable notification target. Wait for the
-    // spy rather than asserting immediately: nothing guarantees the fetch
+    // mock rather than asserting immediately: nothing guarantees the request
     // inside it has actually run by the time the HTTP response resolves.
-    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "https://hooks.example.com/notify",
-      expect.objectContaining({ method: "POST" })
-    );
-    // The real code always passes a JSON string as the body; cast rather than
-    // String(...) it, since RequestInit["body"]'s wider type (e.g. a
-    // ReadableStream) wouldn't stringify to anything meaningful.
-    const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    await vi.waitFor(() => expect(httpsRequestMock).toHaveBeenCalled());
+    expect(lastNotifyRequestOptions?.hostname).toBe("hooks.example.com");
+    expect(lastNotifyRequestOptions?.method).toBe("POST");
+    const body = JSON.parse(lastNotifyRequestBody);
     expect(body.event).toBe("lead_interested");
     expect(body.lead.id).toBe(LEAD.id);
-
-    fetchSpy.mockRestore();
   });
 
   it("never fails the webhook if the notification target is unreachable", async () => {
@@ -920,7 +968,7 @@ describe("notify on interested reply", () => {
     const app = express();
     app.use(createWebhookRoutes(stores));
 
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
+    lookupMock.mockReset().mockRejectedValue(new Error("network down"));
 
     const res = await request(app)
       .post(`/webhooks/${TENANT.id}/sendgrid/email?token=${TENANT.apiKey}`)
@@ -930,8 +978,6 @@ describe("notify on interested reply", () => {
     expect(res.status).toBe(204);
     const lead = await stores.leadStore.getLeadById(TENANT.id, LEAD.id);
     expect(lead?.status).toBe("responded");
-
-    fetchSpy.mockRestore();
   });
 });
 
@@ -996,6 +1042,32 @@ describe("tenant self-service settings", () => {
       .send({ notifyWebhookUrl: "not-a-url" });
 
     expect(res.status).toBe(400);
+  });
+
+  it("rejects a notifyWebhookUrl pointing at localhost or an internal/reserved IP (SSRF)", async () => {
+    // Regression test: notifyWebhookUrl is entirely tenant-controlled and
+    // this server later makes a real outbound POST to it — without this,
+    // a tenant (or anyone holding a leaked tenant API key) could point it
+    // at a cloud metadata endpoint or an internal service. See src/ssrf.ts.
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    for (const url of [
+      "http://localhost/hook",
+      "http://127.0.0.1/hook",
+      "http://169.254.169.254/latest/meta-data/",
+      "http://10.0.0.5/hook",
+      "http://192.168.1.1/hook",
+      "http://[::1]/hook",
+    ]) {
+      const res = await request(app)
+        .patch("/tenants/me")
+        .set("Authorization", `Bearer ${TENANT.apiKey}`)
+        .send({ notifyWebhookUrl: url });
+      expect(res.status, `expected ${url} to be rejected`).toBe(400);
+    }
   });
 
   it("lets a tenant set a knowledge base and enable auto-reply together", async () => {
@@ -1215,7 +1287,6 @@ describe("chatbot auto-reply on inbound messages", () => {
     const stores = buildChatbotStores(tenant);
     const app = express();
     app.use(createWebhookRoutes(stores));
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
 
     const res = await request(app)
       .post(`/webhooks/${tenant.id}/sendgrid/email?token=${tenant.apiKey}`)
@@ -1227,20 +1298,13 @@ describe("chatbot auto-reply on inbound messages", () => {
     expect(history.some((m) => m.direction === "outbound")).toBe(false); // no auto-reply sent
 
     // Fired via `void notifyHumanAttention(...)`, not awaited by the route —
-    // wait for the spy instead of asserting immediately (see the identical
+    // wait for the mock instead of asserting immediately (see the identical
     // comment in the "notify on interested reply" describe block above).
-    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "https://hooks.example.com/notify",
-      expect.objectContaining({ method: "POST" })
-    );
-    // The real code always passes a JSON string as the body; cast rather than
-    // String(...) it, since RequestInit["body"]'s wider type (e.g. a
-    // ReadableStream) wouldn't stringify to anything meaningful.
-    const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    await vi.waitFor(() => expect(httpsRequestMock).toHaveBeenCalled());
+    expect(lastNotifyRequestOptions?.hostname).toBe("hooks.example.com");
+    expect(lastNotifyRequestOptions?.method).toBe("POST");
+    const body = JSON.parse(lastNotifyRequestBody);
     expect(body.event).toBe("needs_human_reply");
-
-    fetchSpy.mockRestore();
   });
 
   it("never calls the LLM for a not_interested reply — sends a fixed closer instead", async () => {

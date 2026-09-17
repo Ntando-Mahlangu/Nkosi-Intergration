@@ -1,6 +1,7 @@
 import type { Channel, Lead, Tenant } from "./types.js";
 import type { NotificationStore } from "./store/types.js";
 import { logger } from "./logger.js";
+import { postToUntrustedUrl } from "./ssrf.js";
 
 export type NotifyReason = "interested" | "needs_human_reply";
 
@@ -41,18 +42,26 @@ function buildPayload(
   };
 }
 
-/** A single delivery attempt. Never throws — returns the failure reason instead. */
+/**
+ * A single delivery attempt. Never throws — returns the failure reason
+ * instead. Uses postToUntrustedUrl (src/ssrf.ts) rather than a plain
+ * fetch(): webhookUrl is entirely tenant-controlled and this is a real
+ * server-side request triggered by lead/tenant-controlled events (a reply
+ * classifying "interested", a chatbot escalation) — postToUntrustedUrl
+ * pins the connection to a single validated address so this can't be used
+ * as a DNS-rebinding SSRF proxy into an internal network, and never
+ * follows a redirect a compromised/malicious target might issue.
+ */
 export async function deliverNotification(
   webhookUrl: string,
   payload: Record<string, unknown>
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) return { ok: false, error: `webhook responded ${res.status}` };
+    const result = await postToUntrustedUrl(webhookUrl, JSON.stringify(payload));
+    if (result.redirected) {
+      return { ok: false, error: "webhook responded with a redirect, which is not followed" };
+    }
+    if (!result.ok) return { ok: false, error: `webhook responded ${result.status}` };
     return { ok: true };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
