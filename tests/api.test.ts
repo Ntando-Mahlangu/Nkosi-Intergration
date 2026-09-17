@@ -774,6 +774,69 @@ describe("Twilio SMS/WhatsApp inbound webhook", () => {
     const updated = await stores.leadStore.getLeadById(tenant.id, LEAD.id);
     expect(updated?.status).toBe("opted_out");
   });
+
+  it("validates a WhatsApp reply's signature against the whatsapp token when it differs from the sms token", async () => {
+    // Regression test: a tenant can configure independent Twilio credentials
+    // per channel (e.g. a separate (sub)account for WhatsApp), but this
+    // route is shared by both channels. It used to pick whichever of
+    // channels.sms/channels.whatsapp came first (sms, when both are set) and
+    // validate every request's signature against only that one token — so a
+    // genuine WhatsApp request, signed with the whatsapp token, would fail
+    // signature verification and get 403'd whenever the two tokens differ.
+    vi.spyOn(twilio, "validateRequest").mockImplementation((token) => token === "whatsapp-token");
+    const tenant: Tenant = {
+      ...TENANT,
+      channels: {
+        sms: { accountSid: "AC1", authToken: "sms-token", fromNumber: "+15550000" },
+        whatsapp: { accountSid: "AC1", authToken: "whatsapp-token", fromNumber: "+15550000" },
+      },
+    };
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/twilio/sms`)
+      .type("form")
+      .send({ From: `whatsapp:${LEAD.phone}`, Body: "STOP" });
+
+    expect(res.status).toBe(200);
+    const updated = await stores.leadStore.getLeadById(tenant.id, LEAD.id);
+    expect(updated?.status).toBe("opted_out");
+  });
+
+  it("still 403s when neither configured token validates the signature", async () => {
+    vi.spyOn(twilio, "validateRequest").mockReturnValue(false);
+    const tenant: Tenant = {
+      ...TENANT,
+      channels: {
+        sms: { accountSid: "AC1", authToken: "sms-token", fromNumber: "+15550000" },
+        whatsapp: { accountSid: "AC1", authToken: "whatsapp-token", fromNumber: "+15550000" },
+      },
+    };
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/twilio/sms`)
+      .type("form")
+      .send({ From: LEAD.phone, Body: "STOP" });
+
+    expect(res.status).toBe(403);
+  });
 });
 
 describe("webhook: a suspended tenant is fully paused, not just blocked from the tenant API", () => {

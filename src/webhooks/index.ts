@@ -50,6 +50,23 @@ function requestUrl(req: Request): string {
   return `${req.protocol}://${req.get("host")}${req.originalUrl}`;
 }
 
+/**
+ * A tenant can configure independent Twilio credentials per channel (e.g. a
+ * different (sub)account for WhatsApp than for SMS), but /twilio/sms and
+ * /twilio/status are shared endpoints for both channels. Validating only
+ * against the SMS token would reject every genuine WhatsApp request's
+ * signature (and vice versa) whenever the two tokens actually differ,
+ * silently 403ing real inbound messages — so this tries every configured
+ * token and accepts the request if any one of them validates.
+ */
+function validTwilioSignature(tenant: Tenant, signature: string, url: string, body: Record<string, string>): boolean {
+  const tokens = new Set([tenant.channels.sms?.authToken, tenant.channels.whatsapp?.authToken].filter(Boolean));
+  for (const token of tokens) {
+    if (twilio.validateRequest(token as string, signature, url, body)) return true;
+  }
+  return false;
+}
+
 const DEFAULT_NOT_INTERESTED_CLOSER =
   "No problem, {name} — thanks for letting us know! Feel free to reach out anytime if that changes.";
 
@@ -189,7 +206,7 @@ export function createWebhookRoutes(stores: Stores): Router {
       }
 
       const signature = req.header("x-twilio-signature") ?? "";
-      const valid = twilio.validateRequest(authToken, signature, requestUrl(req), req.body);
+      const valid = validTwilioSignature(tenant, signature, requestUrl(req), req.body);
       if (!valid) {
         res.status(403).send("invalid Twilio signature");
         return;
@@ -286,7 +303,7 @@ export function createWebhookRoutes(stores: Stores): Router {
       }
 
       const signature = req.header("x-twilio-signature") ?? "";
-      const valid = twilio.validateRequest(authToken, signature, requestUrl(req), req.body);
+      const valid = validTwilioSignature(tenant, signature, requestUrl(req), req.body);
       if (!valid) {
         res.status(403).send("invalid Twilio signature");
         return;

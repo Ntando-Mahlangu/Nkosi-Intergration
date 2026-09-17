@@ -259,7 +259,12 @@ export class PostgresTenantStore implements TenantStore {
   }
 
   async listTenants(): Promise<Tenant[]> {
-    const { rows } = await this.pool.query(`SELECT ${TENANT_COLUMNS} FROM tenants ORDER BY created_at ASC`);
+    // `id` as a tiebreaker (not just created_at) so two tenants created in
+    // the same instant still sort deterministically — GET /admin/tenants
+    // pages through this same order in JS (see routes/tenants.ts), and an
+    // unstable tie order there could show a tenant twice or not at all
+    // across two page fetches even with no concurrent writes in between.
+    const { rows } = await this.pool.query(`SELECT ${TENANT_COLUMNS} FROM tenants ORDER BY created_at ASC, id ASC`);
     return rows.map((row) => this.fromRow(row));
   }
 
@@ -500,8 +505,13 @@ export class PostgresAuditLogStore implements AuditLogStore {
   }
 
   async list({ limit, offset }: { limit?: number; offset: number }): Promise<AuditLogEntry[]> {
+    // `id` as a tiebreaker: two entries recorded in the same instant (e.g.
+    // two admin actions in the same request) would otherwise have no
+    // deterministic order, and GET /admin/audit-log's LIMIT/OFFSET paging
+    // relies on a stable order across separate page requests to avoid
+    // showing an entry twice or skipping it.
     const { rows } = await this.pool.query(
-      `SELECT ${AUDIT_LOG_COLUMNS} FROM audit_log ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      `SELECT ${AUDIT_LOG_COLUMNS} FROM audit_log ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2`,
       [limit ?? null, offset]
     );
     return rows.map(auditLogEntryFromRow);
