@@ -401,6 +401,18 @@ export class PostgresMessageStore implements MessageStore {
     );
     return rows[0] ? messageFromRow(rows[0]) : undefined;
   }
+
+  async listForTenant(tenantId: string, range?: { since?: string; until?: string }): Promise<Message[]> {
+    const { rows } = await this.pool.query(
+      `SELECT ${MESSAGE_COLUMNS} FROM messages
+       WHERE tenant_id = $1
+         AND ($2::timestamptz IS NULL OR at >= $2)
+         AND ($3::timestamptz IS NULL OR at <= $3)
+       ORDER BY at ASC`,
+      [tenantId, range?.since ?? null, range?.until ?? null]
+    );
+    return rows.map(messageFromRow);
+  }
 }
 
 function failedNotificationFromRow(row: Record<string, unknown>): FailedNotification {

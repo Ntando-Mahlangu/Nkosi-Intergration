@@ -43,6 +43,11 @@ Prefer automation? `POST /admin/tenants` (with `Authorization: Bearer
 <ADMIN_API_KEY>`) does the same thing programmatically — see `README.md`.
 `public/admin.html` wraps this in a clickable form (and shows the API key
 in a copyable "shown once" panel) if you'd rather not run a CLI or curl.
+If more than one person runs the admin side of the agency, set
+`ADMIN_API_KEYS` (a `name:key` list) instead of a single shared
+`ADMIN_API_KEY` so the audit log (`GET /admin/audit-log`) records *who*
+provisioned/suspended/deleted a tenant, not just an indistinguishable
+"admin" for everyone.
 
 If the client doesn't have Twilio/SendGrid accounts yet, create the tenant
 anyway with those fields blank; it can run in `devMode` (console-only sends)
@@ -157,16 +162,24 @@ reply — see step 8 below for setting that up.
   notifies it automatically — no need to poll `GET /leads/:id/messages`.
 - Agree on a reporting cadence (conversations recovered, appointments
   booked, revenue attributed) — this is the number that justifies the
-  service to the client.
+  service to the client, and the retainer invoice you send them.
 
 ## 9. Ongoing
 
+- Pull `GET /tenants/me/report?since=<start of period>&until=<end of period>`
+  for the numbers a monthly retainer report needs — lead status counts
+  (a current pipeline snapshot) and message activity (outbound sends by
+  kind, inbound replies by classification) for that window — instead of
+  hand-computing them from `GET /leads` and message history.
 - Review the `skipped`/`deferred` lists periodically — a growing "no usable
   contact channel" count usually means a data-quality problem upstream.
   `GET /leads/plan` is the quickest health check.
 - Revisit quiet hours / scoring thresholds (`src/scoring.ts`
   `SCORING_WINDOWS`) per vertical — a plumber's "recent" and a real estate
   agent's "recent" aren't the same.
+- If a client asks for a copy of their own data, `GET /leads/export`
+  (`?format=csv`, the default, or `?format=json`) gives every lead field as
+  a one-shot download — see `COMPLIANCE.md` "Data handling."
 
 ## 10. Pausing or offboarding a client
 

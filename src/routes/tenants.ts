@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Stores } from "../store/index.js";
 import type { AuditLogEntry, AuditLogStore } from "../store/types.js";
-import { toPublicTenant, type Tenant } from "../types.js";
+import { toPublicTenant, type Lead, type Message, type ReplyClassification, type Tenant } from "../types.js";
 import { requireAdminAuth, requireTenantAuth } from "../middleware/auth.js";
 import { createAdminLimiter, createTenantLimiter } from "../middleware/rateLimit.js";
 import { generateApiKey, generateId } from "../idgen.js";
@@ -146,7 +146,13 @@ function buildTenantPatch(
  * are how a new client gets onboarded programmatically; `npm run onboard`
  * wraps this same flow in an interactive CLI.
  */
-export function createTenantRoutes({ tenantStore, notificationStore, auditLogStore }: Stores): Router {
+export function createTenantRoutes({
+  tenantStore,
+  leadStore,
+  messageStore,
+  notificationStore,
+  auditLogStore,
+}: Stores): Router {
   const router = Router();
   const tenantAuth = requireTenantAuth(tenantStore);
   const adminAuth = requireAdminAuth();
@@ -154,6 +160,67 @@ export function createTenantRoutes({ tenantStore, notificationStore, auditLogSto
   router.get("/tenants/me", createTenantLimiter(), tenantAuth, (req, res) => {
     res.json(toPublicTenant(req.tenant!));
   });
+
+  // A summary the tenant (or whoever runs this on their behalf) can use for
+  // "what did this cost/deliver this period" reporting — e.g. a monthly
+  // retainer's activity report — without hand-computing it from GET /leads
+  // and message history. `leads` is always a current pipeline-health
+  // snapshot (not date-filtered); `messages` is activity within the
+  // optional [since, until] window, which is what a billing-period report
+  // actually wants ("what happened this month"), not "what leads happen to
+  // have been created this month."
+  router.get(
+    "/tenants/me/report",
+    createTenantLimiter(),
+    tenantAuth,
+    asyncHandler(async (req, res) => {
+      const tenant = req.tenant!;
+      const since = typeof req.query.since === "string" ? req.query.since : undefined;
+      const until = typeof req.query.until === "string" ? req.query.until : undefined;
+      if (since !== undefined && Number.isNaN(Date.parse(since))) {
+        res.status(400).json({ error: "since must be a valid ISO date" });
+        return;
+      }
+      if (until !== undefined && Number.isNaN(Date.parse(until))) {
+        res.status(400).json({ error: "until must be a valid ISO date" });
+        return;
+      }
+
+      // Independent queries — fetch concurrently rather than paying for two
+      // sequential round trips to the store.
+      const [leads, messages] = await Promise.all([
+        leadStore.getAllLeads(tenant.id),
+        messageStore.listForTenant(tenant.id, { since, until }),
+      ]);
+
+      const leadsByStatus: Partial<Record<Lead["status"], number>> = {};
+      for (const lead of leads) {
+        leadsByStatus[lead.status] = (leadsByStatus[lead.status] ?? 0) + 1;
+      }
+
+      let outboundSent = 0;
+      const outboundByKind: Partial<Record<NonNullable<Message["kind"]>, number>> = {};
+      let inboundReceived = 0;
+      const inboundByClassification: Partial<Record<ReplyClassification | "unclassified", number>> = {};
+      for (const message of messages) {
+        if (message.direction === "outbound") {
+          outboundSent++;
+          const kind = message.kind ?? "campaign";
+          outboundByKind[kind] = (outboundByKind[kind] ?? 0) + 1;
+        } else {
+          inboundReceived++;
+          const classification = message.classification ?? "unclassified";
+          inboundByClassification[classification] = (inboundByClassification[classification] ?? 0) + 1;
+        }
+      }
+
+      res.json({
+        range: { since: since ?? null, until: until ?? null },
+        leads: { total: leads.length, byStatus: leadsByStatus },
+        messages: { outboundSent, outboundByKind, inboundReceived, inboundByClassification },
+      });
+    })
+  );
 
   // Self-service settings: a tenant can update its own operational config
   // (timezone/quiet hours/devMode/channel credentials/notification hook/
@@ -231,7 +298,7 @@ export function createTenantRoutes({ tenantStore, notificationStore, auditLogSto
       await recordAudit(auditLogStore, {
         tenantId: created.id,
         action: "tenant.create",
-        actor: "admin",
+        actor: req.adminActor ?? "admin",
         details: { name: created.name, timezone: created.timezone },
       });
       // Only place the raw API key is ever returned — the client must save it now.
@@ -263,7 +330,7 @@ export function createTenantRoutes({ tenantStore, notificationStore, auditLogSto
       await recordAudit(auditLogStore, {
         tenantId: req.params.id,
         action: "tenant.admin_update",
-        actor: "admin",
+        actor: req.adminActor ?? "admin",
         // Field names only — never the values, so this never duplicates a
         // credential/secret into a second store.
         details: { fieldsChanged: Object.keys(body) },
@@ -286,7 +353,11 @@ export function createTenantRoutes({ tenantStore, notificationStore, auditLogSto
         return;
       }
       const updated = await tenantStore.updateTenant(req.params.id, { apiKey: generateApiKey() });
-      await recordAudit(auditLogStore, { tenantId: req.params.id, action: "tenant.key_rotate", actor: "admin" });
+      await recordAudit(auditLogStore, {
+        tenantId: req.params.id,
+        action: "tenant.key_rotate",
+        actor: req.adminActor ?? "admin",
+      });
       // Only place the new raw API key is ever returned — the client must save it now.
       res.json({ ...toPublicTenant(updated!), apiKey: updated!.apiKey });
     })
@@ -304,7 +375,11 @@ export function createTenantRoutes({ tenantStore, notificationStore, auditLogSto
         res.status(404).json({ error: "no such tenant" });
         return;
       }
-      await recordAudit(auditLogStore, { tenantId: req.params.id, action: "tenant.delete", actor: "admin" });
+      await recordAudit(auditLogStore, {
+        tenantId: req.params.id,
+        action: "tenant.delete",
+        actor: req.adminActor ?? "admin",
+      });
       res.status(204).send();
     })
   );

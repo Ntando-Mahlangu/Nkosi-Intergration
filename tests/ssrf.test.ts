@@ -189,4 +189,18 @@ describe("postToUntrustedUrl (delivery-time: resolve once, pin the connection, n
     requestShouldError = new Error("ECONNREFUSED");
     await expect(postToUntrustedUrl("http://hooks.example.com/notify", "{}")).rejects.toThrow("ECONNREFUSED");
   });
+
+  it("times out (rather than hanging forever) when the DNS lookup itself never resolves", async () => {
+    // Regression test: node:dns/promises' lookup() has no built-in timeout.
+    // A caller like fatalErrorHandlers.ts awaits an operator alert before
+    // calling process.exit(1) — if a hung resolver could block this
+    // indefinitely, that "must always eventually exit" guarantee breaks.
+    vi.useFakeTimers();
+    lookupMock.mockReturnValueOnce(new Promise(() => {})); // never resolves
+    const result = postToUntrustedUrl("http://hooks.example.com/notify", "{}", 5_000);
+    const assertion = expect(result).rejects.toThrow("timed out after 5000ms");
+    await vi.advanceTimersByTimeAsync(5_000);
+    await assertion;
+    vi.useRealTimers();
+  });
 });

@@ -120,6 +120,20 @@ export class InMemoryMessageStore implements MessageStore {
     message.deliveryStatus = deliveryStatus;
     return message;
   }
+
+  async listForTenant(tenantId: string, range?: { since?: string; until?: string }): Promise<Message[]> {
+    const sinceMs = range?.since ? new Date(range.since).getTime() : undefined;
+    const untilMs = range?.until ? new Date(range.until).getTime() : undefined;
+    return this.messages
+      .filter((m) => {
+        if (m.tenantId !== tenantId) return false;
+        const at = new Date(m.at).getTime();
+        if (sinceMs !== undefined && at < sinceMs) return false;
+        if (untilMs !== undefined && at > untilMs) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  }
 }
 
 export class InMemoryNotificationStore implements NotificationStore {

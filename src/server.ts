@@ -14,6 +14,7 @@ import { createCorsMiddleware } from "./middleware/cors.js";
 import { asyncHandler } from "./middleware/asyncHandler.js";
 import { logger } from "./logger.js";
 import { installFatalErrorHandlers } from "./fatalErrorHandlers.js";
+import { leadsToCsv } from "./csv.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageVersion = (
@@ -97,6 +98,27 @@ export function createApp() {
       const leads = await stores.leadStore.getAllLeads(req.tenant!.id);
       res.set("X-Total-Count", String(leads.length));
       res.json(paginate(leads, parsePageParams(req)));
+    })
+  );
+
+  // A full-fidelity export of a tenant's own lead data — every Lead field,
+  // as CSV (default, for opening in a spreadsheet) or JSON — for their own
+  // records or a data right-of-access request (see COMPLIANCE.md "Data
+  // handling"). Unlike /leads, this is never paginated: it's a one-shot
+  // download, not something a UI pages through.
+  app.get(
+    "/leads/export",
+    ...auth,
+    asyncHandler(async (req: Request, res: Response) => {
+      const leads = await stores.leadStore.getAllLeads(req.tenant!.id);
+      if (req.query.format === "json") {
+        res.setHeader("Content-Disposition", 'attachment; filename="leads-export.json"');
+        res.json(leads);
+        return;
+      }
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", 'attachment; filename="leads-export.csv"');
+      res.send(leadsToCsv(leads));
     })
   );
 

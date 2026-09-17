@@ -100,6 +100,54 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Suspended" }
 
+  /tenants/me/report:
+    get:
+      tags: [tenant-self-service]
+      summary: Activity summary for reporting/billing
+      description: >
+        Lead status counts (a current pipeline-health snapshot, not
+        date-filtered) plus message activity — outbound sends by kind,
+        inbound replies by classification — within an optional
+        [since, until] window.
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - name: since
+          in: query
+          description: ISO 8601 date-time; only messages at/after this bound activity is aggregated.
+          schema: { type: string, format: date-time }
+        - name: until
+          in: query
+          description: ISO 8601 date-time; only messages at/before this bound activity is aggregated.
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  range:
+                    type: object
+                    properties:
+                      since: { type: string, nullable: true, format: date-time }
+                      until: { type: string, nullable: true, format: date-time }
+                  leads:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      byStatus: { type: object, additionalProperties: { type: integer } }
+                  messages:
+                    type: object
+                    properties:
+                      outboundSent: { type: integer }
+                      outboundByKind: { type: object, additionalProperties: { type: integer } }
+                      inboundReceived: { type: integer }
+                      inboundByClassification: { type: object, additionalProperties: { type: integer } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+
   /admin/tenants:
     get:
       tags: [admin]
@@ -304,6 +352,32 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+
+  /leads/export:
+    get:
+      tags: [leads]
+      summary: Full-fidelity export of every lead field
+      description: >
+        A one-shot download (never paginated) — for a client's own records
+        or a data right-of-access request. CSV by default; pass
+        ?format=json for a plain JSON array instead.
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [csv, json], default: csv }
+      responses:
+        "200":
+          description: OK
+          content:
+            text/csv:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Lead" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Suspended" }
 

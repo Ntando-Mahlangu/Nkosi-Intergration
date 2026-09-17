@@ -105,6 +105,9 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
   comparison (`src/security.ts`) to avoid leaking timing information; all
   admin/webhook/tenant-authed routes are also rate limited
   (`src/middleware/rateLimit.ts`) against brute-force/flooding.
+- A client's right-of-access request — "send me a copy of everything you
+  have on my leads" — is `GET /leads/export` (`?format=csv`, the default,
+  or `?format=json`), every lead field as a one-shot download.
 - A client's right-to-erasure request, or a decision to fully offboard
   them, is handled by `DELETE /admin/tenants/<id>` (see `ONBOARDING.md`
   step 10) — in Postgres this cascades to every lead and message that
@@ -117,7 +120,9 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
   evidence for "who suspended/deleted this tenant, and when" if a client
   ever disputes it. Config-change entries record only which fields
   changed, never the new values, so credentials are never duplicated
-  outside their encrypted storage.
+  outside their encrypted storage. If more than one person runs the admin
+  side of the agency, set `ADMIN_API_KEYS` (see `ONBOARDING.md` step 3) so
+  this log records *who*, not just an indistinguishable "admin."
 
 ## Ongoing
 

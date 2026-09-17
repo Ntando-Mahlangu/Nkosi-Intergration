@@ -43,10 +43,12 @@ export interface NotificationStore {
 
 /**
  * Records admin actions (tenant create/update/delete/key-rotation) for
- * accountability — there's currently one admin key, not per-admin-user
- * identity, so `actor` is always "admin"; this still shows *what* changed
- * and *when*, which is the part that matters for "who suspended tenant X
- * and why is a client locked out."
+ * accountability. `actor` is whichever admin key's name authenticated the
+ * request (see requireAdminAuth's parseAdminKeys in middleware/auth.ts) —
+ * "admin" for the legacy single ADMIN_API_KEY, or a per-person name when
+ * ADMIN_API_KEYS is configured — showing *who* changed *what* and *when*,
+ * which is the part that matters for "who suspended tenant X and why is a
+ * client locked out."
  */
 export interface AuditLogEntry {
   id: string;
@@ -64,11 +66,6 @@ export interface AuditLogStore {
 }
 
 /**
- * Pluggable source of leads, scoped per tenant. The in-memory implementation
- * in memory.ts is for local development and tests. PostgresLeadStore (in
- * postgres.ts) is the production-shaped implementation.
- */
-/**
  * Guards an updateLead call against clobbering a status change that
  * happened concurrently (e.g. a lead replying STOP mid-send). When given,
  * the patch is applied only if the lead's current status is still one of
@@ -79,6 +76,11 @@ export interface UpdateLeadGuard {
   onlyIfStatusIn: LeadStatus[];
 }
 
+/**
+ * Pluggable source of leads, scoped per tenant. The in-memory implementation
+ * in memory.ts is for local development and tests. PostgresLeadStore (in
+ * postgres.ts) is the production-shaped implementation.
+ */
 export interface LeadStore {
   getAllLeads(tenantId: string): Promise<Lead[]>;
   getLeadById(tenantId: string, id: string): Promise<Lead | undefined>;
@@ -103,4 +105,10 @@ export interface MessageStore {
   getMessagesForLead(tenantId: string, leadId: string): Promise<Message[]>;
   /** Updates delivery status for a message previously logged with this id (used by provider delivery-status webhooks). */
   updateMessageStatus(tenantId: string, messageId: string, deliveryStatus: string): Promise<Message | undefined>;
+  /**
+   * Every message across a tenant (not scoped to one lead), optionally
+   * bounded to `[since, until]` on `at` — the activity feed the reporting
+   * endpoint (GET /tenants/me/report) aggregates over.
+   */
+  listForTenant(tenantId: string, range?: { since?: string; until?: string }): Promise<Message[]>;
 }

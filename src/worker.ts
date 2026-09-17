@@ -8,6 +8,7 @@ import { cleanupExpiredRateLimitCounters } from "./middleware/pgRateLimitStore.j
 import { getPool } from "./db/pool.js";
 import { installFatalErrorHandlers } from "./fatalErrorHandlers.js";
 import { acquireWorkerLockOrExit } from "./workerLock.js";
+import { sendOperatorAlert } from "./operatorAlert.js";
 
 // This file is always run directly (nothing else imports it), so this is
 // always the actual process entrypoint — safe to install unconditionally,
@@ -58,6 +59,19 @@ async function redeliverFailedNotifications(stores: Stores): Promise<void> {
           attempts: n.attempts + 1,
           error: result.error,
         });
+        // Mirrors the store's own pending->dead condition (see
+        // markAttemptFailed in store/memory.ts and store/postgres.ts) —
+        // this is the one tick where a human needs to notice: nothing will
+        // retry this notification again, and its target (usually a broken
+        // notifyWebhookUrl) needs fixing.
+        if (n.attempts + 1 >= NOTIFICATION_MAX_ATTEMPTS) {
+          void sendOperatorAlert(`Notification permanently failed for tenant ${n.tenantId}`, {
+            tenantId: n.tenantId,
+            leadId: n.leadId,
+            reason: n.reason,
+            error: result.error,
+          });
+        }
       }
     } catch (err) {
       // One notification's bookkeeping failure (e.g. a transient DB error
@@ -108,13 +122,19 @@ if (process.env.LEADRECOVERY_RUN_ONCE === "true") {
     .then(() => process.exit(0))
     .catch((err) => {
       logger.error("worker_run_once_failed", { error: (err as Error).message });
-      process.exit(1);
+      void sendOperatorAlert(`Worker run failed: ${(err as Error).message}`).finally(() => process.exit(1));
     });
 } else {
   logger.info("worker_scheduled", { schedule, concurrency: CONCURRENCY });
   cron.schedule(schedule, () => {
-    runOnce().catch((err) => logger.error("worker_run_failed", { error: (err as Error).message }));
+    runOnce().catch((err) => {
+      logger.error("worker_run_failed", { error: (err as Error).message });
+      void sendOperatorAlert(`Worker tick failed: ${(err as Error).message}`);
+    });
   });
   // Also run once immediately on startup so a freshly deployed worker doesn't wait for the first tick.
-  runOnce().catch((err) => logger.error("worker_initial_run_failed", { error: (err as Error).message }));
+  runOnce().catch((err) => {
+    logger.error("worker_initial_run_failed", { error: (err as Error).message });
+    void sendOperatorAlert(`Worker's initial run failed: ${(err as Error).message}`);
+  });
 }

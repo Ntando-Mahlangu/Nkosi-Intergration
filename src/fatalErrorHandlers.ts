@@ -1,4 +1,5 @@
 import { logger } from "./logger.js";
+import { sendOperatorAlert } from "./operatorAlert.js";
 
 /**
  * Last-resort safety net for the server/worker processes: something that
@@ -18,20 +19,30 @@ import { logger } from "./logger.js";
  * that might be imported by tests — installing process-wide handlers
  * during `vitest run` would interfere with vitest's own error reporting.
  *
- * A real deployment should also wire an APM/error-tracking service (Sentry
- * or similar) into these two handlers; this repo doesn't hardwire one in
- * since that needs a real account/DSN, but the hook point is here — see
- * DEPLOYMENT.md.
+ * Also fires a best-effort operator alert (src/operatorAlert.ts) — a no-op
+ * unless OPERATOR_ALERT_WEBHOOK_URL is configured — bounded by that
+ * function's own timeout (DNS + request, so up to roughly twice its
+ * `timeoutMs` in the worst case — see src/ssrf.ts's withTimeout) so a
+ * slow/broken alert target can delay, but never indefinitely block, the
+ * crash-and-restart this function exists to guarantee. A real deployment
+ * should still consider wiring an APM/error-tracking service (Sentry or
+ * similar) in as well for deeper diagnostics; this repo doesn't hardwire
+ * one in since that needs a real account/DSN, but the hook point is here —
+ * see DEPLOYMENT.md.
  */
 export function installFatalErrorHandlers(processName: string): void {
   process.on("uncaughtException", (err) => {
     logger.error("uncaught_exception", { process: processName, error: err.message, stack: err.stack });
-    process.exit(1);
+    void sendOperatorAlert(`Fatal error in ${processName}: ${err.message}`, { process: processName }).finally(() =>
+      process.exit(1)
+    );
   });
 
   process.on("unhandledRejection", (reason) => {
     const error = reason instanceof Error ? reason : new Error(String(reason));
     logger.error("unhandled_rejection", { process: processName, error: error.message, stack: error.stack });
-    process.exit(1);
+    void sendOperatorAlert(`Fatal error in ${processName}: ${error.message}`, { process: processName }).finally(() =>
+      process.exit(1)
+    );
   });
 }

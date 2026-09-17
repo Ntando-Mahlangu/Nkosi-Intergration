@@ -343,6 +343,51 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(history[1].classification).toBe("stop");
   });
 
+  it("listForTenant returns every message across leads, scoped by tenant and an optional since/until window", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    const leadStore = new PostgresLeadStore(pool);
+    const messageStore = new PostgresMessageStore(pool);
+    await tenantStore.createTenant(TENANT);
+    await tenantStore.createTenant({ ...TENANT, id: "tenant-2", apiKey: "other-key" });
+    await leadStore.createLead(LEAD);
+    await leadStore.createLead({ ...LEAD, id: "lead-2", tenantId: "tenant-2" });
+
+    await messageStore.logMessage({
+      id: "msg-old",
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      channel: "sms",
+      direction: "outbound",
+      body: "old",
+      at: new Date("2020-01-01T00:00:00.000Z").toISOString(),
+    });
+    await messageStore.logMessage({
+      id: "msg-recent",
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      channel: "sms",
+      direction: "inbound",
+      body: "recent",
+      at: new Date("2026-06-01T00:00:00.000Z").toISOString(),
+      classification: "interested",
+    });
+    await messageStore.logMessage({
+      id: "msg-other-tenant",
+      tenantId: "tenant-2",
+      leadId: "lead-2",
+      channel: "sms",
+      direction: "outbound",
+      body: "not this tenant",
+      at: new Date("2026-06-01T00:00:00.000Z").toISOString(),
+    });
+
+    const all = await messageStore.listForTenant(TENANT.id);
+    expect(all.map((m) => m.id)).toEqual(["msg-old", "msg-recent"]); // scoped to the tenant, chronological
+
+    const windowed = await messageStore.listForTenant(TENANT.id, { since: "2025-01-01T00:00:00.000Z" });
+    expect(windowed.map((m) => m.id)).toEqual(["msg-recent"]);
+  });
+
   it("records and updates delivery status by message id", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     const leadStore = new PostgresLeadStore(pool);

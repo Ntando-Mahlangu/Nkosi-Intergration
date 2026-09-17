@@ -324,11 +324,34 @@ Both processes also install a last-resort handler
 (`src/fatalErrorHandlers.ts`) for anything that slips past every specific
 try/catch already in place — an uncaught exception or unhandled promise
 rejection. It logs the error the same way (an `uncaught_exception` /
-`unhandled_rejection` line) and then exits deliberately (Node's own
+`unhandled_rejection` line), fires a best-effort operator alert (see below)
+bounded by a short timeout, and then exits deliberately (Node's own
 guidance: don't keep running with possibly-corrupted state), so your
 process manager (systemd, Docker's restart policy, an orchestrator) should
 restart it — make sure whatever runs this expects that and restarts on
 exit.
+
+### Alerting
+
+Set `OPERATOR_ALERT_WEBHOOK_URL` to a Slack incoming webhook URL (or any
+endpoint that accepts a JSON POST with a `text` field — `src/operatorAlert.ts`)
+and this app pings it on:
+
+- A fatal error about to crash the server or worker process (the handler
+  above).
+- A worker tick failing outright (not a single tenant's send failing —
+  that's already isolated per-tenant and just logged — but the run itself
+  throwing, e.g. the tenant list failing to load).
+- A notification (an `interested` reply, or a chatbot escalation)
+  permanently failing after exhausting every retry — the same `dead`
+  transition `GET /admin/notifications/failed` shows, surfaced proactively
+  instead of only on request.
+
+This is entirely optional — unset (the default), none of it fires and
+you'd only notice via logs. It's a lightweight, dependency-free floor, not
+a substitute for a real APM/error-tracking service if you want deeper
+diagnostics (stack traces, breadcrumbs, alerting rules) — see below for
+wiring one of those in as well.
 
 Every async Express route handler and the tenant-auth middleware are
 wrapped in `src/middleware/asyncHandler.ts` specifically so a single
@@ -353,8 +376,9 @@ A notification (an `interested` reply, or a chatbot escalation) that fails
 to reach a tenant's `notifyWebhookUrl` is retried, then persisted rather
 than dropped, and retried again by the worker on every subsequent tick —
 see `GET /admin/notifications/failed` in the README's API reference. Check
-this endpoint (or alert on it) periodically; a growing `dead` count usually
-means a tenant's Slack webhook/URL broke.
+this endpoint periodically (or rely on the `OPERATOR_ALERT_WEBHOOK_URL`
+alert above, which fires the moment one gives up); a growing `dead` count
+usually means a tenant's Slack webhook/URL broke.
 
 ## Health checks
 

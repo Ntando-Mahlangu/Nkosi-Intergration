@@ -49,6 +49,36 @@ function isPrivateOrReservedIp(ip: string, family: 4 | 6): boolean {
   return false;
 }
 
+/**
+ * node:dns/promises' lookup() has no built-in timeout — a hung/unreachable
+ * resolver (misconfigured DNS, a network partition, a typo'd internal-only
+ * domain) would otherwise block postToUntrustedUrl indefinitely. That's a
+ * real problem for a caller like fatalErrorHandlers.ts, which awaits an
+ * operator alert (src/operatorAlert.ts, itself built on this) before
+ * calling process.exit(1) — an indefinite hang there would defeat the
+ * entire point of that "last resort, must always eventually exit" handler.
+ * `timeoutMs` bounds the DNS lookup and the HTTP request as two separate,
+ * sequential phases (each gets its own fresh `timeoutMs` budget), so the
+ * real worst case is up to roughly 2x `timeoutMs`, not `timeoutMs` — still
+ * a hard bound (which is what matters here), just not as tight as the
+ * parameter name alone suggests.
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    );
+  });
+}
+
 /** Synchronous, config-time-only check (no DNS lookup) — catches the obvious case immediately when a tenant saves a URL. */
 export function isObviouslyUnsafeWebhookHostname(rawHostname: string): boolean {
   const hostname = stripBrackets(rawHostname);
@@ -105,7 +135,11 @@ export async function postToUntrustedUrl(
     pinnedAddress = hostname;
     pinnedFamily = literalFamily as 4 | 6;
   } else {
-    const addresses = await lookup(hostname, { all: true });
+    const addresses = await withTimeout(
+      lookup(hostname, { all: true }),
+      timeoutMs,
+      `DNS lookup for ${hostname} timed out after ${timeoutMs}ms`
+    );
     const safe = addresses.find((a) => !isPrivateOrReservedIp(a.address, a.family as 4 | 6));
     if (!safe) throw new Error("refusing to connect: hostname has no public address");
     pinnedAddress = safe.address;

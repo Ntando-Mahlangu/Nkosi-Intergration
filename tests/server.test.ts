@@ -29,3 +29,45 @@ describe("X-API-Version header", () => {
     expect(res.headers["x-api-version"]).toBe(pkg.version);
   });
 });
+
+describe("GET /leads/export", () => {
+  const DEMO_API_KEY = "demo-key"; // src/demoTenant.ts — the fixed demo tenant this app boots with when DATABASE_URL is unset
+
+  it("requires tenant auth", async () => {
+    const res = await request(createApp()).get("/leads/export");
+    expect(res.status).toBe(401);
+  });
+
+  it("defaults to a CSV attachment with a header row and one row per lead", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+
+    const res = await request(app).get("/leads/export").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/csv");
+    expect(res.headers["content-disposition"]).toContain('attachment; filename="leads-export.csv"');
+    const lines = res.text.trim().split("\r\n");
+    expect(lines[0]).toBe(
+      "id,name,phone,email,source,status,createdAt,firstOutreachSentAt,lastContactedAt,followUpCount," +
+        "nextFollowUpAt,requestedService,previousQuote,previousConversationSummary,appointmentStatus," +
+        "preferredChannel,hadMissedCall,respondedAfterContact,notes"
+    );
+    expect(lines).toHaveLength(1 + leads.body.length); // header + one row per lead
+  });
+
+  it("returns the full lead objects as a JSON attachment when ?format=json", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+
+    const res = await request(app)
+      .get("/leads/export")
+      .query({ format: "json" })
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(res.status).toBe(200);
+    expect(res.headers["content-disposition"]).toContain('attachment; filename="leads-export.json"');
+    expect(res.body).toHaveLength(leads.body.length);
+    expect(res.body.map((l: { id: string }) => l.id).sort()).toEqual(
+      leads.body.map((l: { id: string }) => l.id).sort()
+    );
+  });
+});

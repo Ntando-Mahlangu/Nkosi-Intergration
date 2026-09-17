@@ -178,6 +178,71 @@ describe("admin auth middleware", () => {
   });
 });
 
+describe("admin auth middleware: multiple named keys (ADMIN_API_KEYS)", () => {
+  const originalAdminKey = process.env.ADMIN_API_KEY;
+  const originalAdminKeys = process.env.ADMIN_API_KEYS;
+
+  afterEach(() => {
+    if (originalAdminKey === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = originalAdminKey;
+    if (originalAdminKeys === undefined) delete process.env.ADMIN_API_KEYS;
+    else process.env.ADMIN_API_KEYS = originalAdminKeys;
+  });
+
+  function buildApp() {
+    const app = express();
+    app.get("/admin-only", requireAdminAuth(), (req, res) => res.json({ adminActor: req.adminActor }));
+    return app;
+  }
+
+  it("authenticates each named key and records the matching actor", async () => {
+    delete process.env.ADMIN_API_KEY;
+    process.env.ADMIN_API_KEYS = "alice:alice-key,bob:bob-key";
+    const app = buildApp();
+
+    const asAlice = await request(app).get("/admin-only").set("Authorization", "Bearer alice-key");
+    expect(asAlice.status).toBe(200);
+    expect(asAlice.body.adminActor).toBe("alice");
+
+    const asBob = await request(app).get("/admin-only").set("Authorization", "Bearer bob-key");
+    expect(asBob.status).toBe(200);
+    expect(asBob.body.adminActor).toBe("bob");
+  });
+
+  it("still accepts the legacy ADMIN_API_KEY alongside named keys, recording actor 'admin'", async () => {
+    process.env.ADMIN_API_KEY = "legacy-key";
+    process.env.ADMIN_API_KEYS = "alice:alice-key";
+    const app = buildApp();
+
+    const legacy = await request(app).get("/admin-only").set("Authorization", "Bearer legacy-key");
+    expect(legacy.status).toBe(200);
+    expect(legacy.body.adminActor).toBe("admin");
+
+    const named = await request(app).get("/admin-only").set("Authorization", "Bearer alice-key");
+    expect(named.status).toBe(200);
+    expect(named.body.adminActor).toBe("alice");
+  });
+
+  it("rejects a key that isn't any configured admin key", async () => {
+    delete process.env.ADMIN_API_KEY;
+    process.env.ADMIN_API_KEYS = "alice:alice-key";
+    const app = buildApp();
+
+    const res = await request(app).get("/admin-only").set("Authorization", "Bearer someone-elses-key");
+    expect(res.status).toBe(401);
+  });
+
+  it("skips a malformed ADMIN_API_KEYS entry instead of rejecting every configured key", async () => {
+    delete process.env.ADMIN_API_KEY;
+    process.env.ADMIN_API_KEYS = "not-a-valid-entry,alice:alice-key";
+    const app = buildApp();
+
+    const res = await request(app).get("/admin-only").set("Authorization", "Bearer alice-key");
+    expect(res.status).toBe(200);
+    expect(res.body.adminActor).toBe("alice");
+  });
+});
+
 describe("tenant management routes", () => {
   it("creates a tenant and returns its API key exactly once", async () => {
     process.env.ADMIN_API_KEY = "admin-secret";
@@ -200,6 +265,107 @@ describe("tenant management routes", () => {
     expect(me.body.name).toBe("New Biz");
     expect(me.body.apiKey).toBeUndefined(); // public shape never re-exposes the key
     delete process.env.ADMIN_API_KEY;
+  });
+});
+
+describe("GET /tenants/me/report", () => {
+  function buildApp(stores: Stores) {
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+    return app;
+  }
+
+  it("summarizes lead status counts and message activity", async () => {
+    const stores = buildStores();
+    await stores.leadStore.createLead({ ...LEAD, id: "lead-2", status: "opted_out" });
+    await stores.messageStore.logMessage({
+      id: "msg-out-1",
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      channel: "sms",
+      direction: "outbound",
+      body: "hi",
+      at: new Date().toISOString(),
+    });
+    await stores.messageStore.logMessage({
+      id: "msg-out-2",
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      channel: "email",
+      direction: "outbound",
+      body: "answering a question",
+      at: new Date().toISOString(),
+      kind: "auto_reply",
+    });
+    await stores.messageStore.logMessage({
+      id: "msg-in-1",
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      channel: "sms",
+      direction: "inbound",
+      body: "yes please",
+      at: new Date().toISOString(),
+      classification: "interested",
+    });
+    const app = buildApp(stores);
+
+    const res = await request(app).get("/tenants/me/report").set("Authorization", `Bearer ${TENANT.apiKey}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.leads.total).toBe(2);
+    expect(res.body.leads.byStatus).toEqual({ contacted_no_response: 1, opted_out: 1 });
+    expect(res.body.messages.outboundSent).toBe(2);
+    expect(res.body.messages.outboundByKind).toEqual({ campaign: 1, auto_reply: 1 });
+    expect(res.body.messages.inboundReceived).toBe(1);
+    expect(res.body.messages.inboundByClassification).toEqual({ interested: 1 });
+  });
+
+  it("scopes message activity to the given since/until window, without affecting the lead snapshot", async () => {
+    const stores = buildStores();
+    await stores.messageStore.logMessage({
+      id: "msg-old",
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      channel: "sms",
+      direction: "outbound",
+      body: "old",
+      at: "2020-01-01T00:00:00.000Z",
+    });
+    await stores.messageStore.logMessage({
+      id: "msg-recent",
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      channel: "sms",
+      direction: "outbound",
+      body: "recent",
+      at: new Date().toISOString(),
+    });
+    const app = buildApp(stores);
+
+    const res = await request(app)
+      .get("/tenants/me/report")
+      .query({ since: "2025-01-01T00:00:00.000Z" })
+      .set("Authorization", `Bearer ${TENANT.apiKey}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.messages.outboundSent).toBe(1); // only "recent" is inside the window
+    expect(res.body.leads.total).toBe(1); // unaffected by the date filter
+  });
+
+  it("rejects an invalid since/until value", async () => {
+    const app = buildApp(buildStores());
+    const res = await request(app)
+      .get("/tenants/me/report")
+      .query({ since: "not-a-date" })
+      .set("Authorization", `Bearer ${TENANT.apiKey}`);
+    expect(res.status).toBe(400);
+  });
+
+  it("requires tenant auth", async () => {
+    const app = buildApp(buildStores());
+    const res = await request(app).get("/tenants/me/report");
+    expect(res.status).toBe(401);
   });
 });
 
@@ -290,7 +456,11 @@ describe("admin audit log", () => {
     process.env.ADMIN_API_KEY = "admin-secret";
   });
   afterEach(() => {
+    // In an afterEach (not just at the end of the one test that sets it) so
+    // ADMIN_API_KEYS is cleaned up even if an assertion earlier in that test
+    // throws — otherwise it leaks into every later test in this file.
     delete process.env.ADMIN_API_KEY;
+    delete process.env.ADMIN_API_KEYS;
   });
 
   it("records tenant create/admin_update/key_rotate/delete and lists them newest first", async () => {
@@ -327,6 +497,24 @@ describe("admin audit log", () => {
     // admin_update logs which fields changed, never the values (no credentials duplicated into a second store)
     const updateEntry = log.body.find((e: { action: string }) => e.action === "tenant.admin_update");
     expect(updateEntry.details).toEqual({ fieldsChanged: ["status"] });
+  });
+
+  it("records which named admin key (ADMIN_API_KEYS) performed an action, not just a generic 'admin'", async () => {
+    delete process.env.ADMIN_API_KEY;
+    process.env.ADMIN_API_KEYS = "alice:alice-key";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer alice-key")
+      .send({ name: "New Biz", timezone: "Africa/Johannesburg" });
+    expect(created.status).toBe(201);
+
+    const log = await request(app).get("/admin/audit-log").set("Authorization", "Bearer alice-key");
+    expect(log.body[0].actor).toBe("alice");
   });
 
   it("still completes the tenant mutation and responds, even if the audit write itself fails", async () => {

@@ -286,6 +286,8 @@ All routes except `/health` and the webhooks require `Authorization: Bearer
 | GET | `/leads` | List the tenant's leads. Optional `?limit=&offset=`; always sets `X-Total-Count` |
 | GET | `/leads/plan` | Dry run: scored + composed plans, nothing sent. Same optional pagination |
 | GET | `/leads/:id/messages` | Conversation history for one lead (includes delivery status) |
+| GET | `/leads/export` | Full-fidelity export of every lead field, as CSV (default) or `?format=json` — for a client's own records or a data right-of-access request |
+| GET | `/tenants/me/report` | Activity summary for reporting/billing: lead status counts (current snapshot) + message activity (sent/replied, by kind/classification) over an optional `?since=&until=` window |
 | POST | `/workflow/run` | Sends initial outreach + due follow-ups |
 | POST | `/webhooks/lead` | Generic lead intake (tenant-auth) |
 | POST | `/webhooks/:tenantId/twilio/sms` | Twilio inbound SMS/WhatsApp reply (signature-verified) |
@@ -303,7 +305,8 @@ See [`.env.example`](./.env.example) for the copyable version with full comments
 | `DATABASE_URL` | Postgres connection string; omit for the in-memory demo |
 | `LEADRECOVERY_ENCRYPTION_KEY` | **Required** when `DATABASE_URL` is set — encrypts tenant provider credentials at rest |
 | `LEADRECOVERY_ENCRYPTION_KEY_PREVIOUS` | Set only while rotating the encryption key — see `DEPLOYMENT.md` "Rotating the encryption key" |
-| `ADMIN_API_KEY` | Enables `/admin/tenants`; unset disables tenant management |
+| `ADMIN_API_KEY` | Enables `/admin/tenants`; unset disables tenant management. A single shared key — every action is logged as actor "admin" |
+| `ADMIN_API_KEYS` | Optional, in addition to or instead of `ADMIN_API_KEY`: a comma-separated `name:key` list so each person holds their own key and the audit log records who did what |
 | `LEADRECOVERY_CORS_ORIGIN` | Comma-separated allowed origins for cross-origin API calls (or `*`); unset sends no CORS headers, which is fine for the bundled same-origin dashboards |
 | `PUBLIC_BASE_URL` | This app's public HTTPS base URL — needed for correct Twilio signature verification behind a proxy, and for delivery-status callback URLs |
 | `PORT` | API server port (default 3000) |
@@ -312,6 +315,7 @@ See [`.env.example`](./.env.example) for the copyable version with full comments
 | `LEADRECOVERY_WORKER_CONCURRENCY` | How many tenants the worker processes in parallel per tick (default 4) — tunes concurrency *within* the one worker process only; see `DEPLOYMENT.md` for why exactly one worker replica must run |
 | `LEADRECOVERY_USE_LLM_CLASSIFICATION` | `true` enables the optional Claude-based reply classification enhancement |
 | `ANTHROPIC_API_KEY` | Required if the above is enabled, **or** if any tenant has `autoReplyEnabled: true` (the chatbot) |
+| `OPERATOR_ALERT_WEBHOOK_URL` | Optional: a Slack-compatible webhook this app pings on its own operational problems (a fatal error, a failed worker tick, a notification exhausting its retries) — see "Alerting" in `DEPLOYMENT.md` |
 
 ## Auto-reply chatbot
 
