@@ -22,6 +22,16 @@ installFatalErrorHandlers("worker");
 // documented — a second replica exits immediately instead of running.
 const CONCURRENCY = Number(process.env.LEADRECOVERY_WORKER_CONCURRENCY ?? 4);
 
+// Created once for the lifetime of this process, not per tick. With
+// DATABASE_URL set this doesn't matter much (every call just wraps the same
+// underlying pool) — but without it, createStores() builds fresh in-memory
+// stores reloaded from data/sample-leads.json, discarding every lead's sent/
+// opted-out/follow-up state from the previous tick. Calling it once here
+// (not inside runOnce()) means a worker left running in local/demo mode
+// (LEADRECOVERY_RUN_ONCE unset, no Postgres) doesn't re-send the initial
+// outreach to the same leads on every single scheduled tick forever.
+const stores = createStores();
+
 /**
  * Retries every not-yet-dead failed notification (see notify.ts) once per
  * tick, with the same bounded concurrency as the tenant loop below (a long
@@ -63,7 +73,6 @@ async function redeliverFailedNotifications(stores: Stores): Promise<void> {
 }
 
 async function runOnce(): Promise<void> {
-  const stores = createStores();
   const tenants = (await stores.tenantStore.listTenants()).filter((t) => t.status !== "suspended");
   const now = new Date();
 
