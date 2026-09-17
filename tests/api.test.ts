@@ -719,6 +719,154 @@ describe("Twilio SMS/WhatsApp inbound webhook", () => {
   });
 });
 
+describe("webhook: a suspended tenant is fully paused, not just blocked from the tenant API", () => {
+  // Regression tests: PATCH /admin/tenants/:id {"status":"suspended"} (see
+  // ONBOARDING.md "Pausing or offboarding a client") is documented as
+  // blocking "all of that tenant's API/webhook auth — including inbound
+  // replies" — but none of these five routes ever checked tenant.status at
+  // all, so a suspended tenant's inbound Twilio/SendGrid traffic kept being
+  // classified, auto-replied to, and notified on exactly as if nothing had
+  // changed.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function suspendedTenant(overrides: Partial<Tenant> = {}): Tenant {
+    return { ...TENANT, status: "suspended", ...overrides };
+  }
+
+  it("twilio/sms: does not classify, reply to, or opt out a lead", async () => {
+    vi.spyOn(twilio, "validateRequest").mockReturnValue(true);
+    const tenant = suspendedTenant({ channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+1" } } });
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/twilio/sms`)
+      .type("form")
+      .send({ From: LEAD.phone, Body: "STOP" });
+
+    expect(res.status).toBe(200); // still a clean TwiML response — never surfaces suspension to Twilio
+    const updated = await stores.leadStore.getLeadById(tenant.id, LEAD.id);
+    expect(updated?.status).toBe(LEAD.status); // untouched
+    expect(await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id)).toHaveLength(0);
+  });
+
+  it("twilio/voice-status: does not create or update a lead for a missed call", async () => {
+    vi.spyOn(twilio, "validateRequest").mockReturnValue(true);
+    const tenant = suspendedTenant({ channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+1" } } });
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/twilio/voice-status`)
+      .type("form")
+      .send({ From: "+27820000099", CallStatus: "no-answer" });
+
+    expect(res.status).toBe(204);
+    expect(await stores.leadStore.getAllLeads(tenant.id)).toHaveLength(0);
+  });
+
+  it("twilio/status: does not update delivery status", async () => {
+    vi.spyOn(twilio, "validateRequest").mockReturnValue(true);
+    const tenant = suspendedTenant({ channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+1" } } });
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    await stores.messageStore.logMessage({
+      id: "msg-1",
+      tenantId: tenant.id,
+      leadId: LEAD.id,
+      channel: "sms",
+      direction: "outbound",
+      body: "hi",
+      at: new Date().toISOString(),
+    });
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/twilio/status?messageId=msg-1`)
+      .type("form")
+      .send({ MessageStatus: "delivered" });
+
+    expect(res.status).toBe(204);
+    const [message] = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
+    expect(message.deliveryStatus).toBeUndefined();
+  });
+
+  it("sendgrid/email: does not classify or auto-reply", async () => {
+    const tenant = suspendedTenant();
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/sendgrid/email?token=${tenant.apiKey}`)
+      .field("from", "Jordan <jordan@example.com>")
+      .field("text", "please STOP emailing me");
+
+    expect(res.status).toBe(204);
+    const updated = await stores.leadStore.getLeadById(tenant.id, LEAD.id);
+    expect(updated?.status).toBe(LEAD.status);
+    expect(await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id)).toHaveLength(0);
+  });
+
+  it("sendgrid/events: does not update delivery status", async () => {
+    const tenant = suspendedTenant();
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    await stores.messageStore.logMessage({
+      id: "msg-1",
+      tenantId: tenant.id,
+      leadId: LEAD.id,
+      channel: "email",
+      direction: "outbound",
+      body: "hi",
+      at: new Date().toISOString(),
+    });
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/sendgrid/events?token=${tenant.apiKey}`)
+      .send([{ event: "delivered", leadrecovery_message_id: "msg-1" }]);
+
+    expect(res.status).toBe(204);
+    const [message] = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
+    expect(message.deliveryStatus).toBeUndefined();
+  });
+});
+
 describe("notify on interested reply", () => {
   it("POSTs to the tenant's notifyWebhookUrl when a reply classifies as interested", async () => {
     const tenantWithHook: Tenant = { ...TENANT, notifyWebhookUrl: "https://hooks.example.com/notify" };

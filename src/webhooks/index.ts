@@ -195,6 +195,16 @@ export function createWebhookRoutes(stores: Stores): Router {
         return;
       }
 
+      // A suspended tenant (see PATCH /admin/tenants/:id) must be fully
+      // paused — no classification, no auto-reply/closer sends, no
+      // notifications — not just blocked from the authenticated tenant API.
+      // Responds exactly like "no lead matched" so this isn't distinguishable
+      // from ordinary traffic and Twilio doesn't retry it as an error.
+      if (tenant.status === "suspended") {
+        res.type("text/xml").send("<Response></Response>");
+        return;
+      }
+
       const from = req.body.From as string | undefined;
       const body = (req.body.Body as string | undefined) ?? "";
       // Twilio's WhatsApp `From` is "whatsapp:+2782..." — stored lead phone
@@ -229,6 +239,12 @@ export function createWebhookRoutes(stores: Stores): Router {
       const valid = twilio.validateRequest(tenant.channels.sms.authToken, signature, requestUrl(req), req.body);
       if (!valid) {
         res.status(403).send("invalid Twilio signature");
+        return;
+      }
+
+      // See the identical suspended-tenant check in the /twilio/sms route above.
+      if (tenant.status === "suspended") {
+        res.status(204).send();
         return;
       }
 
@@ -276,6 +292,12 @@ export function createWebhookRoutes(stores: Stores): Router {
         return;
       }
 
+      // See the identical suspended-tenant check in the /twilio/sms route above.
+      if (tenant.status === "suspended") {
+        res.status(204).send();
+        return;
+      }
+
       const messageId = req.query.messageId as string | undefined;
       const status = req.body.MessageStatus as string | undefined;
       if (messageId && status) {
@@ -303,6 +325,12 @@ export function createWebhookRoutes(stores: Stores): Router {
       const token = req.query.token;
       if (typeof token !== "string" || !safeCompare(token, tenant.apiKey)) {
         res.status(403).send("invalid token");
+        return;
+      }
+
+      // See the identical suspended-tenant check in the /twilio/sms route above.
+      if (tenant.status === "suspended") {
+        res.status(204).send();
         return;
       }
 
@@ -362,6 +390,12 @@ export function createWebhookRoutes(stores: Stores): Router {
           res.status(403).send("invalid token");
           return;
         }
+      }
+
+      // See the identical suspended-tenant check in the /twilio/sms route above.
+      if (tenant.status === "suspended") {
+        res.status(204).send();
+        return;
       }
 
       const events = Array.isArray(req.body) ? req.body : [];
