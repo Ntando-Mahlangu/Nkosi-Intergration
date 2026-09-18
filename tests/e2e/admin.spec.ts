@@ -174,6 +174,65 @@ test.describe("Admin UI (public/admin.html)", () => {
     }
   });
 
+  test("a slow, superseded page response never overwrites a newer one (pager race)", async ({ page }) => {
+    // Regression test: loadAll() used to have no guard against two overlapping
+    // requests resolving out of order — a fast double-click on "Next" could
+    // let an older, slower response render after a newer one already did,
+    // showing rows from one offset under a pager summary for a different
+    // offset. Reproduced here by artificially delaying the response for the
+    // first click (offset=20) so it resolves after the second (offset=40).
+    const label = uniqueName("E2E Race");
+    const created: string[] = [];
+    for (let i = 0; i < 45; i++) {
+      const res = await page.request.post("/admin/tenants", {
+        headers: { Authorization: `Bearer ${ADMIN_KEY}` },
+        data: { name: `${label} ${i}`, timezone: "UTC" },
+      });
+      expect(res.ok()).toBe(true);
+      created.push(((await res.json()) as { id: string }).id);
+    }
+
+    try {
+      // The real total (other tenants — e.g. the seeded demo one — may
+      // already exist), so the pager math below isn't hardcoded to "45".
+      const totalRes = await page.request.get("/admin/tenants?limit=1&offset=0", {
+        headers: { Authorization: `Bearer ${ADMIN_KEY}` },
+      });
+      const total = Number(totalRes.headers()["x-total-count"]);
+      const expectedShownTo = Math.min(60, total);
+
+      await connect(page);
+
+      await page.route("**/admin/tenants?*", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.searchParams.get("offset") === "20") {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        await route.continue();
+      });
+
+      // Click Next twice back-to-back: the first request (offset=20) is
+      // delayed above; the second (offset=40) is not and resolves first.
+      await page.click("#tenants-next-btn");
+      await page.click("#tenants-next-btn");
+
+      // Wait past the artificial delay, then confirm the newer (offset=40)
+      // response is what's actually showing, and stays that way — the
+      // stale, late-arriving offset=20 response must never overwrite it.
+      await page.waitForTimeout(700);
+      await expect(page.locator("#tenants-summary")).toHaveText(`41-${expectedShownTo} of ${total} tenant(s)`);
+      await expect(page.locator("#tenants")).not.toContainText(`${label} 20`); // offset=20's data
+      await expect(page.locator("#tenants")).toContainText(`${label} 44`); // offset=40's data
+    } finally {
+      await page.unroute("**/admin/tenants?*");
+      for (const id of created) {
+        await page.request.delete(`/admin/tenants/${id}`, {
+          headers: { Authorization: `Bearer ${ADMIN_KEY}` },
+        });
+      }
+    }
+  });
+
   test("deleting every tenant on the last page falls back to a valid page instead of showing empty", async ({
     page,
   }) => {

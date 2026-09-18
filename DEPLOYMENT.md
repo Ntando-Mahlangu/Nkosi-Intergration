@@ -197,6 +197,25 @@ to build Twilio `statusCallback` URLs for delivery-status tracking, so it
 should be set any time the app is reachable from the public internet, not
 just to satisfy signature verification.
 
+Separately, set `TRUST_PROXY_HOPS` (to `1`, for the single proxy this
+section describes) to tell Express to trust that hop
+(`app.set("trust proxy", ...)`), which every rate limiter in
+`middleware/rateLimit.ts` needs to resolve the real client's IP instead of
+the proxy's. Without it, every distinct client behind the same proxy
+shares one rate-limit bucket per limiter — one noisy tenant (or attacker)
+can 429-lock out every other tenant on the same limiter, the opposite of
+what rate limiting is for. This is deliberately a separate setting from
+`PUBLIC_BASE_URL`, not inferred from it: `PUBLIC_BASE_URL` should be set
+any time the app is public, including a direct-exposure deployment or one
+behind a passthrough CDN that doesn't overwrite `X-Forwarded-For` — only
+set `TRUST_PROXY_HOPS` once you've actually verified your proxy overwrites/
+appends that header itself and a client's own value can't survive to this
+app; setting it when that's not true lets any client spoof their own IP
+and bypass rate limiting entirely. Raise it above 1 if your topology has
+more hops in front of that proxy (e.g. a CDN or an extra load balancer) —
+set it to exactly how many proxies sit between the real client and this
+app, no more.
+
 SendGrid Event Webhook signatures (delivery/bounce/etc. tracking) aren't
 affected by the proxy issue — verification there uses SendGrid's own
 per-tenant public key (`eventWebhookPublicKey`, set via the tenant API) or

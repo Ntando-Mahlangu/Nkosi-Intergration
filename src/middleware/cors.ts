@@ -26,6 +26,14 @@ export function createCorsMiddleware(): RequestHandler {
     if (origin && (allowAll || allowedOrigins.has(origin))) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
+      // Per the Fetch/CORS spec, a cross-origin response only exposes the
+      // safelisted headers to JS unless listed here — X-Total-Count (set by
+      // every paginated list endpoint: /leads, /leads/plan, /admin/tenants,
+      // /admin/audit-log) needs this or a cross-origin caller (this exists
+      // specifically to support one — see the doc comment above) always
+      // reads it back as null, e.g. admin.html's pager treating a real
+      // tenant count as 0.
+      res.setHeader("Access-Control-Expose-Headers", "X-Total-Count");
     }
     if (req.method === "OPTIONS") {
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");

@@ -24,6 +24,42 @@ const packageVersion = (
 export function createApp() {
   const stores = createStores();
   const app = express();
+
+  // Without this, req.ip (what every rate limiter in middleware/rateLimit.ts
+  // keys on) is always the immediate socket peer, never the real client, no
+  // matter what X-Forwarded-For says — so every distinct client behind one
+  // reverse proxy shares a single rate-limit bucket, and one noisy tenant
+  // (or attacker) can 429-lock out every other tenant on the same limiter.
+  //
+  // Deliberately gated on TRUST_PROXY_HOPS alone, NOT on PUBLIC_BASE_URL:
+  // DEPLOYMENT.md says to set PUBLIC_BASE_URL "any time the app is reachable
+  // from the public internet" — including a direct-exposure deployment, or
+  // one behind a CDN/load balancer that passes X-Forwarded-For straight
+  // through instead of overwriting it. Inferring "trust this header" from
+  // that unrelated signal would let any client set their own
+  // X-Forwarded-For and get a fresh rate-limit bucket on every request,
+  // bypassing the abuse protection those limiters exist for. Only set
+  // TRUST_PROXY_HOPS once you've verified your actual proxy topology
+  // overwrites/appends this header itself and a client's own value can't
+  // survive to this app.
+  //
+  // Validated rather than passed straight through: Express's `trust proxy`
+  // silently treats a NaN hop count (e.g. from a typo'd env var) as "trust
+  // nothing" — if the operator already opted in, warn and fall back to 1
+  // hop instead of silently reverting to no protection at all. 0 is kept as
+  // its own valid, distinct value (rather than folded into that same
+  // fallback) since an operator may set it deliberately to mean "trust
+  // proxy off" — e.g. after removing a reverse proxy — and silently
+  // promoting that to 1 hop would enable X-Forwarded-For spoofing they
+  // explicitly opted out of.
+  if (process.env.TRUST_PROXY_HOPS !== undefined) {
+    const rawHops = process.env.TRUST_PROXY_HOPS;
+    const parsed = Number(rawHops);
+    const hops = Number.isInteger(parsed) && parsed >= 0 ? parsed : 1;
+    if (hops !== parsed) logger.warn("invalid_trust_proxy_hops", { value: rawHops, using: hops });
+    app.set("trust proxy", hops);
+  }
+
   app.use(createCorsMiddleware());
 
   // See "API versioning" in README.md: there's no /v1 path prefix (this API

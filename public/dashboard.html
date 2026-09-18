@@ -190,7 +190,12 @@
   }
 
   function badge(priority) {
-    return '<span class="badge ' + priority + '">' + priority + "</span>";
+    // priority is always src/scoring.ts's closed "HIGH"|"MEDIUM"|"LOW" union
+    // today, never free-form lead/tenant text, so there's no live injection
+    // path — escaped anyway for defense-in-depth and consistency with every
+    // other render function on this page, all of which escape unconditionally.
+    const safe = escapeHtml(priority);
+    return '<span class="badge ' + safe + '">' + safe + "</span>";
   }
 
   function renderPlans(plans) {

@@ -198,6 +198,13 @@
   const PAGE_SIZE = 20;
   const tenantsPage = { offset: 0, total: 0 };
   const auditPage = { offset: 0, total: 0 };
+  // Monotonic guard against loadAll() calls resolving out of order (a fast
+  // double-click on a pager button, or a click while a slow response is
+  // still in flight): only the most recently *started* call is allowed to
+  // render — an older call's response arriving late must never overwrite
+  // what a newer one already rendered, which would otherwise show a pager
+  // summary (offset X) alongside rows from a different, stale offset.
+  let loadSeq = 0;
 
   function getSession() {
     try {
@@ -230,15 +237,25 @@
     return res.status === 204 ? undefined : res.json();
   }
 
+  // A sentinel apiPaged() returns when its own fetch resolves after a newer
+  // loadAll() call has already started — checked *before* touching page
+  // (offset/total), not just before rendering: page is shared, mutable
+  // state, so a stale call mutating it after a newer call already fetched
+  // against it (or is about to) would corrupt that newer call's own result,
+  // even though loadAll()'s own final "am I still the latest?" check (see
+  // below) would otherwise catch a stale *render*.
+  const STALE = Symbol("stale");
+
   // Like api(), but also reports X-Total-Count (sent by the paginated
   // ?limit=&offset= admin endpoints) so callers can render prev/next controls.
-  async function apiPaged(session, path, page) {
+  async function apiPaged(session, path, page, mySeq) {
     const url = new URL(path, session.baseUrl);
     url.searchParams.set("limit", String(PAGE_SIZE));
     url.searchParams.set("offset", String(page.offset));
     const res = await fetch(url.toString(), {
       headers: { Authorization: "Bearer " + session.adminKey },
     });
+    if (mySeq !== loadSeq) return STALE;
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || (res.status + " " + res.statusText));
@@ -251,7 +268,7 @@
     // empty page: step back to the last valid page and refetch once.
     if (page.offset > 0 && page.offset >= total) {
       page.offset = Math.max(0, Math.floor((total - 1) / PAGE_SIZE) * PAGE_SIZE);
-      return apiPaged(session, path, page);
+      return apiPaged(session, path, page, mySeq);
     }
     return res.json();
   }
@@ -377,11 +394,18 @@
   }
 
   async function loadAll(session) {
+    const mySeq = ++loadSeq;
     const [tenants, notifications, auditLog] = await Promise.all([
-      apiPaged(session, "/admin/tenants", tenantsPage),
+      apiPaged(session, "/admin/tenants", tenantsPage, mySeq),
       api(session, "/admin/notifications/failed"),
-      apiPaged(session, "/admin/audit-log", auditPage),
+      apiPaged(session, "/admin/audit-log", auditPage, mySeq),
     ]);
+    // Either check catches a stale call: apiPaged() returning STALE means
+    // *its own* fetch resolved after being superseded (and, critically,
+    // never touched the shared tenantsPage/auditPage state at all); the
+    // loadSeq check catches the (now redundant, but cheap to keep) case
+    // where every fetch here happened to land before a newer call started.
+    if (mySeq !== loadSeq || tenants === STALE || auditLog === STALE) return;
     renderTenants(tenants);
     renderNotifications(notifications);
     renderAuditLog(auditLog);

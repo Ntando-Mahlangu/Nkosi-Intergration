@@ -308,7 +308,8 @@ See [`.env.example`](./.env.example) for the copyable version with full comments
 | `ADMIN_API_KEY` | Enables `/admin/tenants`; unset disables tenant management. A single shared key — every action is logged as actor "admin" |
 | `ADMIN_API_KEYS` | Optional, in addition to or instead of `ADMIN_API_KEY`: a comma-separated `name:key` list so each person holds their own key and the audit log records who did what |
 | `LEADRECOVERY_CORS_ORIGIN` | Comma-separated allowed origins for cross-origin API calls (or `*`); unset sends no CORS headers, which is fine for the bundled same-origin dashboards |
-| `PUBLIC_BASE_URL` | This app's public HTTPS base URL — needed for correct Twilio signature verification behind a proxy, and for delivery-status callback URLs |
+| `PUBLIC_BASE_URL` | This app's public HTTPS base URL — needed for correct Twilio signature verification behind a proxy and for delivery-status callback URLs. Deliberately unrelated to `TRUST_PROXY_HOPS` below |
+| `TRUST_PROXY_HOPS` | Enables Express `trust proxy` (unset = disabled, the safe default) so rate limiting keys on the real client IP instead of the proxy's — only set this once you've verified your proxy actually overwrites `X-Forwarded-For` itself |
 | `PORT` | API server port (default 3000) |
 | `LEADRECOVERY_CRON_SCHEDULE` | Worker cron expression (default hourly) |
 | `LEADRECOVERY_RUN_ONCE` | `true` runs the worker once and exits, instead of scheduling |
