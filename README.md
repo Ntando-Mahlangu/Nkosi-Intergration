@@ -288,7 +288,7 @@ All routes except `/health` and the webhooks require `Authorization: Bearer
 | GET | `/leads/:id/messages` | Conversation history for one lead (includes delivery status) |
 | GET | `/leads/export` | Full-fidelity export of every lead field, as CSV (default) or `?format=json` — for a client's own records or a data right-of-access request |
 | GET | `/tenants/me/report` | Activity summary for reporting/billing: lead status counts (current snapshot) + message activity (sent/replied, by kind/classification) over an optional `?since=&until=` window |
-| POST | `/workflow/run` | Sends initial outreach + due follow-ups |
+| POST | `/workflow/run` | Sends initial outreach + due follow-ups. Serialized per tenant against the worker's own cron tick (see `workflowLock.ts`) so a manual run can never race the worker and double-send the same lead |
 | POST | `/webhooks/lead` | Generic lead intake (tenant-auth) |
 | POST | `/webhooks/:tenantId/twilio/sms` | Twilio inbound SMS/WhatsApp reply (signature-verified) |
 | POST | `/webhooks/:tenantId/twilio/voice-status` | Twilio call status → missed-call detection (signature-verified) |

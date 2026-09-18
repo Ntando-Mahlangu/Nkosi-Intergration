@@ -16,24 +16,12 @@ import { verifySendGridEventSignature } from "../sendgridVerify.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { logger } from "../logger.js";
 import type { ComposedMessage, Lead, LeadSource, Message, Tenant } from "../types.js";
+import { isLeadSource } from "../types.js";
 
 const upload = multer();
 
-const LEAD_SOURCES: ReadonlySet<LeadSource> = new Set([
-  "crm",
-  "website_form",
-  "missed_call",
-  "booking_software",
-  "email",
-  "sms",
-  "whatsapp",
-  "spreadsheet",
-  "customer_database",
-  "other",
-]);
-
 function normalizeSource(raw: unknown): LeadSource {
-  return typeof raw === "string" && LEAD_SOURCES.has(raw as LeadSource) ? (raw as LeadSource) : "other";
+  return isLeadSource(raw) ? raw : "other";
 }
 
 /**

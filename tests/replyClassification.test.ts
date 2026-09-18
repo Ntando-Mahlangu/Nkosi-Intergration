@@ -30,6 +30,28 @@ describe("classifyReplyByKeyword", () => {
   it("falls back to unknown for ambiguous text", () => {
     expect(classifyReplyByKeyword("ok")).toBe("unknown");
   });
+
+  it("does not misfire a STOP keyword found only as a substring of a larger word", () => {
+    // Regression test: plain String.includes("cancel")/.includes("stop")
+    // matched inside "cancellation"/"nonstop" too, permanently opting a
+    // still-interested lead out (webhooks/index.ts sets status "opted_out",
+    // which compliance.ts's SUPPRESSED_STATUSES then excludes forever).
+    expect(classifyReplyByKeyword("what's your cancellation policy?")).toBe("question");
+    expect(classifyReplyByKeyword("we run nonstop, is that a problem?")).toBe("question");
+  });
+
+  it("does not misfire a negative keyword found only as a substring of a name or word", () => {
+    // Regression test: "nah" (a NEGATIVE_KEYWORDS entry) matched inside the
+    // name "Hannah", misclassifying a plain introduction as "not_interested"
+    // (which SUPPRESSED_STATUSES also treats as permanent).
+    expect(classifyReplyByKeyword("Hi, this is Hannah, sounds good")).toBe("interested");
+  });
+
+  it("still matches a keyword that's a standalone word, including multi-word ones with punctuation around them", () => {
+    expect(classifyReplyByKeyword("please cancel my appointment")).toBe("stop");
+    expect(classifyReplyByKeyword("opt out.")).toBe("stop");
+    expect(classifyReplyByKeyword("no thanks!")).toBe("not_interested");
+  });
 });
 
 describe("classifyReply", () => {

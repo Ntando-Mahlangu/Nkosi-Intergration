@@ -29,6 +29,19 @@ Three long-running things, plus a one-off migration step:
   same reason.) The lock releases automatically the instant the holding
   process's connection closes (crash, restart, redeploy), so a replacement
   replica can always take over — there's no stale-lock cleanup step.
+
+  Separately from the one-replica-only rule above: a tenant's own
+  `POST /workflow/run` (triggered from the dashboard, or an API call) and
+  this worker's cron tick both call the same `runRecoveryWorkflow`, and
+  nothing about either one prevents them from overlapping *for that one
+  tenant* — without coordination, both would read the same lead as
+  "not yet contacted" and actually send it the same message twice, even
+  though only one replica of the worker itself is running. This is handled
+  separately, always (not gated on `DATABASE_URL`), by
+  `src/workflowLock.ts`: an in-process queue serializes overlapping calls
+  within one process, and — when `DATABASE_URL` is set — a Postgres
+  advisory lock keyed per tenant serializes the `app` and `worker`
+  processes against each other too.
 - **`migrate`** — a one-off command (`node dist/scripts/migrate.js`) that
   applies `src/db/migrations/*.sql` in order. Run it once before the first
   deploy and again after pulling any change that adds a migration file.

@@ -10,6 +10,27 @@ export type LeadSource =
   | "customer_database"
   | "other";
 
+// Every value LeadSource can take, for validating untrusted input (a webhook
+// body, a CSV column) against the type at runtime — kept next to the type
+// itself so the two can't drift apart the way two separately-maintained
+// copies of this list would.
+export const LEAD_SOURCES: ReadonlySet<LeadSource> = new Set([
+  "crm",
+  "website_form",
+  "missed_call",
+  "booking_software",
+  "email",
+  "sms",
+  "whatsapp",
+  "spreadsheet",
+  "customer_database",
+  "other",
+]);
+
+export function isLeadSource(value: unknown): value is LeadSource {
+  return typeof value === "string" && LEAD_SOURCES.has(value as LeadSource);
+}
+
 export type LeadStatus =
   | "new"
   | "contacted_no_response"

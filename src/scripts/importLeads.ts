@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { createStores } from "../store/index.js";
 import { generateId } from "../idgen.js";
-import type { Lead, LeadSource } from "../types.js";
+import type { Lead } from "../types.js";
+import { isLeadSource } from "../types.js";
 
 /** Minimal RFC4180-ish CSV parser: handles quoted fields, escaped quotes, and CRLF/LF line endings. */
 function parseCsv(text: string): string[][] {
@@ -109,7 +110,15 @@ async function main() {
       name: col(row, "name") || undefined,
       phone: phone || undefined,
       email: email || undefined,
-      source: (col(row, "source") as LeadSource) || "spreadsheet",
+      // Falls back to "spreadsheet" both when the column is absent/blank and
+      // when it's present but not one of the known LeadSource values — an
+      // unvalidated cast here would silently store arbitrary CSV text in a
+      // field every other part of the codebase (scoring.ts, this file's own
+      // callers) assumes is one of the closed LeadSource union's values.
+      source: (() => {
+        const raw = col(row, "source");
+        return isLeadSource(raw) ? raw : "spreadsheet";
+      })(),
       createdAt: col(row, "createdat") || new Date().toISOString(),
       status: "new",
       requestedService: col(row, "requestedservice") || undefined,

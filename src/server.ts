@@ -9,6 +9,7 @@ import { createTenantLimiter } from "./middleware/rateLimit.js";
 import { createTenantRoutes } from "./routes/tenants.js";
 import { createWebhookRoutes } from "./webhooks/index.js";
 import { buildFollowUpPlans, buildRecoveryPlans, runRecoveryWorkflow } from "./workflow.js";
+import { withTenantWorkflowLock } from "./workflowLock.js";
 import { parsePageParams, paginate } from "./pagination.js";
 import { createCorsMiddleware } from "./middleware/cors.js";
 import { asyncHandler } from "./middleware/asyncHandler.js";
@@ -184,11 +185,17 @@ export function createApp() {
   );
 
   // Executes the full workflow: sends via channel adapters, updates lead status, logs messages.
+  // Locked per tenant (see workflowLock.ts) so this can never overlap with
+  // the worker's own cron tick (or another concurrent call here) for the
+  // same tenant and send the same lead's message twice.
   app.post(
     "/workflow/run",
     ...auth,
     asyncHandler(async (req: Request, res: Response) => {
-      const result = await runRecoveryWorkflow(req.tenant!, stores.leadStore, stores.messageStore);
+      const tenant = req.tenant!;
+      const result = await withTenantWorkflowLock(tenant.id, () =>
+        runRecoveryWorkflow(tenant, stores.leadStore, stores.messageStore)
+      );
       res.json(result);
     })
   );

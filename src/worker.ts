@@ -8,6 +8,7 @@ import { cleanupExpiredRateLimitCounters } from "./middleware/pgRateLimitStore.j
 import { getPool } from "./db/pool.js";
 import { installFatalErrorHandlers } from "./fatalErrorHandlers.js";
 import { acquireWorkerLockOrExit } from "./workerLock.js";
+import { withTenantWorkflowLock } from "./workflowLock.js";
 import { sendOperatorAlert } from "./operatorAlert.js";
 
 // This file is always run directly (nothing else imports it), so this is
@@ -92,7 +93,9 @@ async function runOnce(): Promise<void> {
 
   await mapWithConcurrency(tenants, CONCURRENCY, async (tenant) => {
     try {
-      const result = await runRecoveryWorkflow(tenant, stores.leadStore, stores.messageStore, now);
+      const result = await withTenantWorkflowLock(tenant.id, () =>
+        runRecoveryWorkflow(tenant, stores.leadStore, stores.messageStore, now)
+      );
       const sentCount = result.sent.filter((s) => s.result.ok).length;
       logger.info("worker_tick", {
         tenantId: tenant.id,

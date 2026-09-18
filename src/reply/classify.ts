@@ -2,9 +2,31 @@ import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "../logger.js";
 import type { ReplyClassification } from "../types.js";
 
-const STOP_KEYWORDS = ["stop", "unsubscribe", "cancel", "quit", "remove me", "opt out", "optout"];
-const NEGATIVE_KEYWORDS = ["not interested", "no thanks", "not now", "already sorted", "nah"];
-const POSITIVE_KEYWORDS = ["yes", "yeah", "yep", "sure", "interested", "please", "book", "sounds good"];
+// Escapes a keyword for use inside a RegExp — every keyword here is a fixed
+// string literal, not user input, but this stays correct if that changes.
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Matches a keyword only on a word boundary, not as a substring of a larger
+// word — plain String.includes() would match "cancel" inside "cancellation"
+// or "stop" inside "nonstop", misclassifying a routine question or an
+// unrelated word as an opt-out/negative signal. \b doesn't work at the edges
+// of a multi-word keyword like "opt out" (no word-boundary before/after the
+// inner space), so this checks the character immediately outside the match
+// instead of relying on \b there. Precompiled once per keyword (rather than
+// rebuilding a RegExp on every classifyReplyByKeyword call, which runs once
+// per inbound SMS/WhatsApp reply) since none of these keyword lists change
+// at runtime.
+function keywordPattern(keyword: string): RegExp {
+  return new RegExp(`(?<![a-z0-9])${escapeRegExp(keyword)}(?![a-z0-9])`);
+}
+
+const STOP_KEYWORDS = ["stop", "unsubscribe", "cancel", "quit", "remove me", "opt out", "optout"].map(keywordPattern);
+const NEGATIVE_KEYWORDS = ["not interested", "no thanks", "not now", "already sorted", "nah"].map(keywordPattern);
+const POSITIVE_KEYWORDS = ["yes", "yeah", "yep", "sure", "interested", "please", "book", "sounds good"].map(
+  keywordPattern
+);
 
 function normalize(body: string): string {
   return body.trim().toLowerCase();
@@ -18,14 +40,14 @@ function normalize(body: string): string {
  */
 export function classifyReplyByKeyword(body: string): ReplyClassification {
   const text = normalize(body);
-  if (STOP_KEYWORDS.some((kw) => text.includes(kw))) return "stop";
+  if (STOP_KEYWORDS.some((re) => re.test(text))) return "stop";
   // Negative keywords take priority over the bare "?" catch-all below: a
   // reply like "not interested, but is there a cheaper option?" must stop
   // follow-ups (see SYSTEM_PROMPT.md's "stop on any negative signal" rule),
   // not get treated as a "question" just because it also contains one.
-  if (NEGATIVE_KEYWORDS.some((kw) => text.includes(kw))) return "not_interested";
+  if (NEGATIVE_KEYWORDS.some((re) => re.test(text))) return "not_interested";
   if (text.includes("?")) return "question";
-  if (POSITIVE_KEYWORDS.some((kw) => text.includes(kw))) return "interested";
+  if (POSITIVE_KEYWORDS.some((re) => re.test(text))) return "interested";
   return "unknown";
 }
 
