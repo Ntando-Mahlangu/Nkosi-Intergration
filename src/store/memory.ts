@@ -75,6 +75,10 @@ export class InMemoryTenantStore implements TenantStore {
     return Array.from(this.tenants.values()).find((tenant) => tenant.apiKey === apiKey);
   }
 
+  async getTenantByPaddleSubscriptionId(subscriptionId: string): Promise<Tenant | undefined> {
+    return Array.from(this.tenants.values()).find((tenant) => tenant.paddleSubscriptionId === subscriptionId);
+  }
+
   async listTenants(): Promise<Tenant[]> {
     return Array.from(this.tenants.values());
   }

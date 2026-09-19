@@ -1,6 +1,5 @@
 import { Router } from "express";
 import type { Stores } from "../store/index.js";
-import type { AuditLogEntry, AuditLogStore } from "../store/types.js";
 import { toPublicTenant, type Lead, type Message, type ReplyClassification, type Tenant } from "../types.js";
 import { requireAdminAuth, requireTenantAuth } from "../middleware/auth.js";
 import { createAdminLimiter, createTenantLimiter } from "../middleware/rateLimit.js";
@@ -8,29 +7,7 @@ import { generateApiKey, generateId } from "../idgen.js";
 import { parsePageParams, paginate } from "../pagination.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { isObviouslyUnsafeWebhookHostname } from "../ssrf.js";
-import { logger } from "../logger.js";
-
-/**
- * Records an audit-log entry without ever throwing. The tenant mutation
- * this accompanies has already succeeded and its response is about to be
- * sent — a transient failure to persist the audit trail must never hang
- * the request or crash the process (Express 4 doesn't catch a rejection
- * thrown after this point on its own).
- */
-async function recordAudit(
-  auditLogStore: AuditLogStore,
-  entry: Omit<AuditLogEntry, "id" | "createdAt">
-): Promise<void> {
-  try {
-    await auditLogStore.record(entry);
-  } catch (err) {
-    logger.error("audit_log_write_failed", {
-      action: entry.action,
-      tenantId: entry.tenantId,
-      error: (err as Error).message,
-    });
-  }
-}
+import { recordAudit } from "../audit.js";
 
 const MAX_KNOWLEDGE_BASE_LENGTH = 20_000;
 
@@ -45,6 +22,7 @@ interface TenantConfigBody {
   knowledgeBase?: string;
   autoReplyEnabled?: boolean;
   status?: Tenant["status"];
+  paddleSubscriptionId?: string | null;
 }
 
 /** True if `timezone` is a real IANA zone Intl can resolve — an invalid one throws at quiet-hours-check time otherwise. */
@@ -142,6 +120,15 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   if (!isValidTemplates(body.templates)) {
     return "templates.initialGrounded/initialUngrounded/notInterestedCloser must be non-empty strings, and followUps (if set) an array of non-empty strings";
   }
+  // null is allowed through (same precedent as templates above) so the
+  // admin API has a way to explicitly clear a tenant's subscription link.
+  if (
+    body.paddleSubscriptionId !== undefined &&
+    body.paddleSubscriptionId !== null &&
+    !isNonEmptyString(body.paddleSubscriptionId)
+  ) {
+    return "paddleSubscriptionId must be a non-empty string, or null to clear it";
+  }
   const mergedKnowledgeBase = body.knowledgeBase !== undefined ? body.knowledgeBase : existing?.knowledgeBase;
   const mergedAutoReplyEnabled =
     body.autoReplyEnabled !== undefined ? body.autoReplyEnabled : existing?.autoReplyEnabled;
@@ -164,8 +151,47 @@ function buildTenantPatch(
   if (body.templates !== undefined) patch.templates = body.templates;
   if (body.knowledgeBase !== undefined) patch.knowledgeBase = body.knowledgeBase;
   if (body.autoReplyEnabled !== undefined) patch.autoReplyEnabled = body.autoReplyEnabled;
+  // Gated the same as status: both are billing/access-control state that
+  // only an admin sets, never the tenant itself via PATCH /tenants/me — a
+  // tenant setting its own paddleSubscriptionId could let it get matched
+  // (and have its status flipped) by a *different* tenant's Paddle events
+  // whenever those happen to omit custom_data.tenantId (see
+  // /webhooks/paddle's fallback lookup in webhooks/index.ts).
   if (includeStatus && body.status !== undefined) patch.status = body.status;
+  // Trimmed so incidental whitespace can't break an exact-match lookup
+  // (getTenantByPaddleSubscriptionId, or the conflict check above); null
+  // collapses to undefined, which is how a patch clears the field (same
+  // precedent as templates elsewhere in this file).
+  if (includeStatus && body.paddleSubscriptionId !== undefined) {
+    patch.paddleSubscriptionId =
+      typeof body.paddleSubscriptionId === "string" ? body.paddleSubscriptionId.trim() : undefined;
+  }
   return patch;
+}
+
+/**
+ * Returns an error message if `paddleSubscriptionId` already belongs to a
+ * *different* tenant — migration 0009's partial unique index backs this up
+ * at the DB layer too (so this can never be bypassed even by a bug here),
+ * but that would surface as an opaque constraint-violation error; this
+ * gives a clear 400 instead. Two tenants sharing one subscription id would
+ * make /webhooks/paddle's fallback lookup (getTenantByPaddleSubscriptionId)
+ * match an arbitrary one of them.
+ */
+async function checkPaddleSubscriptionIdConflict(
+  tenantStore: Stores["tenantStore"],
+  paddleSubscriptionId: string | null | undefined,
+  excludeTenantId?: string
+): Promise<string | undefined> {
+  // Trimmed for the same reason buildTenantPatch trims it: an untrimmed
+  // lookup value would never match the trimmed value actually stored.
+  const trimmed = typeof paddleSubscriptionId === "string" ? paddleSubscriptionId.trim() : undefined;
+  if (!trimmed) return undefined;
+  const existing = await tenantStore.getTenantByPaddleSubscriptionId(trimmed);
+  if (existing && existing.id !== excludeTenantId) {
+    return `paddleSubscriptionId "${trimmed}" is already assigned to tenant ${existing.id}`;
+  }
+  return undefined;
 }
 
 /**
@@ -267,6 +293,10 @@ export function createTenantRoutes({
         res.status(400).json({ error: "status can only be changed via the admin API" });
         return;
       }
+      if (body.paddleSubscriptionId !== undefined) {
+        res.status(400).json({ error: "paddleSubscriptionId can only be changed via the admin API" });
+        return;
+      }
       const error = validateTenantConfig(body, tenant);
       if (error) {
         res.status(400).json({ error });
@@ -305,6 +335,11 @@ export function createTenantRoutes({
         res.status(400).json({ error });
         return;
       }
+      const conflict = await checkPaddleSubscriptionIdConflict(tenantStore, body.paddleSubscriptionId);
+      if (conflict) {
+        res.status(400).json({ error: conflict });
+        return;
+      }
 
       const tenant: Tenant = {
         id: generateId("tenant"),
@@ -319,6 +354,8 @@ export function createTenantRoutes({
         knowledgeBase: body.knowledgeBase,
         autoReplyEnabled: body.autoReplyEnabled ?? false,
         status: "active",
+        paddleSubscriptionId:
+          typeof body.paddleSubscriptionId === "string" ? body.paddleSubscriptionId.trim() : undefined,
         createdAt: new Date().toISOString(),
       };
 
@@ -351,6 +388,11 @@ export function createTenantRoutes({
       const error = validateTenantConfig(body, existing);
       if (error) {
         res.status(400).json({ error });
+        return;
+      }
+      const conflict = await checkPaddleSubscriptionIdConflict(tenantStore, body.paddleSubscriptionId, existing.id);
+      if (conflict) {
+        res.status(400).json({ error: conflict });
         return;
       }
 

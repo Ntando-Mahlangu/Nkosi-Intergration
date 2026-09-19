@@ -237,6 +237,47 @@ which depends on how the app sees its own address. See "SendGrid Event
 Webhook signing" in `README.md`/`ONBOARDING.md` for how to obtain and set
 that key per tenant.
 
+## Billing (Paddle)
+
+`POST /webhooks/paddle` auto-suspends a tenant when its Paddle subscription
+lapses (canceled, past due, paused, a failed payment) and reactivates it
+when the subscription is active again — the same effect as an admin
+clicking "Suspend"/"Reactivate" in `admin.html`, just automatic. Unlike
+every other webhook route, this one isn't scoped to a tenant in the URL:
+Paddle is the *agency's own* billing account, shared across every tenant,
+authenticated by one `PADDLE_WEBHOOK_SECRET` (see `.env.example`). Leaving
+it unset disables the route entirely (503) — tenant status then only ever
+changes via the admin API, exactly as before this feature existed.
+
+To wire it up:
+
+1. In the Paddle dashboard, create a notification destination pointed at
+   `https://<your-domain>/webhooks/paddle`, and copy its signing secret into
+   `PADDLE_WEBHOOK_SECRET`.
+2. Send at least these event types (others are harmlessly ignored):
+   `subscription.canceled`, `subscription.past_due`, `subscription.paused`,
+   `transaction.payment_failed` (suspend), and `subscription.activated`,
+   `subscription.resumed`, `transaction.completed` (reactivate).
+3. **Pass `custom_data: { "tenantId": "<this app's tenant id>" }` when
+   creating each customer's subscription/transaction via the Paddle API**
+   (not the checkout-overlay `passthrough` option, which Paddle does not
+   copy onto subsequent webhook events) — this is how the webhook knows
+   which tenant an event is about. It's the primary match; a tenant's
+   `paddleSubscriptionId` (visible/settable via the admin API, and
+   self-filled the first time a custom_data-carrying event for that tenant
+   arrives) is only a fallback for events that happen to omit it.
+
+A tenant getting a *new* subscription (a plan change, or cancel-and-
+resubscribe) is expected to carry a different subscription id under the
+same custom_data.tenantId — the webhook accepts this (logging a
+`paddle_webhook_subscription_rebind` warning, not an error) rather than
+rejecting it, since there's no way to tell that apart from an operator
+mistake at checkout-link creation without a human's judgment. Two tenants
+can never end up pointing at the *same* subscription id, though: the admin
+API rejects assigning a `paddleSubscriptionId` already used by another
+tenant, and a partial unique index on the `tenants` table backs that up
+even if a bug ever bypassed the API check.
+
 ## Load testing
 
 ```bash

@@ -53,7 +53,8 @@ export interface NotificationStore {
 export interface AuditLogEntry {
   id: string;
   tenantId?: string;
-  action: "tenant.create" | "tenant.admin_update" | "tenant.delete" | "tenant.key_rotate";
+  action:
+    "tenant.create" | "tenant.admin_update" | "tenant.delete" | "tenant.key_rotate" | "tenant.paddle_status_change";
   actor: string;
   details?: Record<string, unknown>;
   createdAt: string;
@@ -93,6 +94,8 @@ export interface LeadStore {
 export interface TenantStore {
   getTenant(id: string): Promise<Tenant | undefined>;
   getTenantByApiKey(apiKey: string): Promise<Tenant | undefined>;
+  /** Fallback lookup for /webhooks/paddle when an event's custom_data doesn't carry a tenantId — see Tenant.paddleSubscriptionId. */
+  getTenantByPaddleSubscriptionId(subscriptionId: string): Promise<Tenant | undefined>;
   listTenants(): Promise<Tenant[]>;
   createTenant(tenant: Tenant): Promise<Tenant>;
   updateTenant(id: string, patch: Partial<Tenant>): Promise<Tenant | undefined>;

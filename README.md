@@ -295,6 +295,7 @@ All routes except `/health` and the webhooks require `Authorization: Bearer
 | POST | `/webhooks/:tenantId/twilio/status` | Twilio delivery-status callback (signature-verified) |
 | POST | `/webhooks/:tenantId/sendgrid/email` | SendGrid inbound parse (`?token=` guarded) |
 | POST | `/webhooks/:tenantId/sendgrid/events` | SendGrid Event Webhook — delivered/bounce/etc. (`?token=` guarded) |
+| POST | `/webhooks/paddle` | Paddle billing — auto-suspends/reactivates a tenant on subscription lapse/recovery (signature-verified, agency-wide not per-tenant; see "Billing (Paddle)" in `DEPLOYMENT.md`) |
 
 ## Environment variables
 
@@ -307,6 +308,7 @@ See [`.env.example`](./.env.example) for the copyable version with full comments
 | `LEADRECOVERY_ENCRYPTION_KEY_PREVIOUS` | Set only while rotating the encryption key — see `DEPLOYMENT.md` "Rotating the encryption key" |
 | `ADMIN_API_KEY` | Enables `/admin/tenants`; unset disables tenant management. A single shared key — every action is logged as actor "admin" |
 | `ADMIN_API_KEYS` | Optional, in addition to or instead of `ADMIN_API_KEY`: a comma-separated `name:key` list so each person holds their own key and the audit log records who did what |
+| `PADDLE_WEBHOOK_SECRET` | Enables `POST /webhooks/paddle` (auto-suspend/reactivate on subscription lapse/recovery); unset disables it entirely — see "Billing (Paddle)" in `DEPLOYMENT.md` |
 | `LEADRECOVERY_CORS_ORIGIN` | Comma-separated allowed origins for cross-origin API calls (or `*`); unset sends no CORS headers, which is fine for the bundled same-origin dashboards |
 | `PUBLIC_BASE_URL` | This app's public HTTPS base URL — needed for correct Twilio signature verification behind a proxy and for delivery-status callback URLs. Deliberately unrelated to `TRUST_PROXY_HOPS` below |
 | `TRUST_PROXY_HOPS` | Enables Express `trust proxy` (unset = disabled, the safe default) so rate limiting keys on the real client IP instead of the proxy's — only set this once you've verified your proxy actually overwrites `X-Forwarded-For` itself |

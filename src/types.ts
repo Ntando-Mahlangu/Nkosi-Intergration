@@ -213,6 +213,28 @@ export interface Tenant {
    * payment, an issue under investigation) without deleting their data.
    */
   status?: "active" | "suspended";
+  /**
+   * Paddle subscription id (`sub_...`) backing this tenant's billing, if
+   * any — set once, either by the agency operator or automatically by
+   * /webhooks/paddle the first time a subscription event for this tenant
+   * arrives. Used as a fallback lookup in that webhook when an event's
+   * custom_data doesn't carry a tenantId (see src/paddleVerify.ts /
+   * webhooks/index.ts's Paddle route); the primary match is always
+   * custom_data.tenantId. Not required for a tenant with no billing
+   * integration (e.g. the demo tenant, or one invoiced manually).
+   */
+  paddleSubscriptionId?: string;
+  /**
+   * The `occurred_at` timestamp (ISO 8601, as Paddle sends it) of the most
+   * recent Paddle webhook event actually applied to this tenant's status —
+   * guards against an out-of-order/delayed delivery retry undoing a newer
+   * status change. Paddle documents that webhooks can arrive out of order
+   * (retries, multiple delivery workers); without this, a slow
+   * subscription.past_due (suspend) that finally arrives after a later
+   * subscription.activated (reactivate) already processed would silently
+   * re-suspend an otherwise-current tenant.
+   */
+  paddleLastEventAt?: string;
   createdAt: string;
 }
 

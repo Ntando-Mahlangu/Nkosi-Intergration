@@ -521,6 +521,26 @@ paths:
         "200": { description: Handled }
         "403": { description: Invalid signature/token }
 
+  /webhooks/paddle:
+    post:
+      tags: [webhooks]
+      summary: Paddle billing — auto-suspend/reactivate on subscription lapse/recovery
+      description: >
+        Not scoped to a tenant in the URL — Paddle is the agency's own
+        billing account, shared across every tenant. Signature-verified via
+        the `Paddle-Signature` header against PADDLE_WEBHOOK_SECRET; disabled
+        (503) entirely when that env var is unset. See "Billing (Paddle)" in
+        DEPLOYMENT.md.
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "204": { description: Handled (including no-op event types and unmatched tenants) }
+        "403": { description: Invalid signature }
+        "503": { description: PADDLE_WEBHOOK_SECRET not configured }
+
 components:
   securitySchemes:
     tenantAuth:

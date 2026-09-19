@@ -433,6 +433,22 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(reactivated?.status).toBe("active");
   });
 
+  it("round-trips paddleSubscriptionId and supports lookup by it", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant({ ...TENANT, paddleSubscriptionId: "sub_created" });
+
+    const byId = await tenantStore.getTenant(TENANT.id);
+    expect(byId?.paddleSubscriptionId).toBe("sub_created");
+
+    const bySubscription = await tenantStore.getTenantByPaddleSubscriptionId("sub_created");
+    expect(bySubscription?.id).toBe(TENANT.id);
+
+    const updated = await tenantStore.updateTenant(TENANT.id, { paddleSubscriptionId: "sub_corrected" });
+    expect(updated?.paddleSubscriptionId).toBe("sub_corrected");
+    expect(await tenantStore.getTenantByPaddleSubscriptionId("sub_created")).toBeUndefined();
+    expect((await tenantStore.getTenantByPaddleSubscriptionId("sub_corrected"))?.id).toBe(TENANT.id);
+  });
+
   it("deleteTenant removes the tenant and, via ON DELETE CASCADE, its leads and messages", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     const leadStore = new PostgresLeadStore(pool);

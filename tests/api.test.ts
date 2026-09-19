@@ -1,4 +1,4 @@
-import { createSign, generateKeyPairSync } from "node:crypto";
+import { createHmac, createSign, generateKeyPairSync } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
@@ -264,6 +264,108 @@ describe("tenant management routes", () => {
     expect(me.status).toBe(200);
     expect(me.body.name).toBe("New Biz");
     expect(me.body.apiKey).toBeUndefined(); // public shape never re-exposes the key
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("lets an admin set and update a tenant's paddleSubscriptionId, for /webhooks/paddle's fallback lookup", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "New Biz", timezone: "Africa/Johannesburg", paddleSubscriptionId: "sub_created" });
+    expect(created.status).toBe(201);
+    expect(created.body.paddleSubscriptionId).toBe("sub_created");
+
+    const patched = await request(app)
+      .patch(`/admin/tenants/${created.body.id}`)
+      .set("Authorization", "Bearer admin-secret")
+      .send({ paddleSubscriptionId: "sub_corrected" });
+    expect(patched.status).toBe(200);
+    expect(patched.body.paddleSubscriptionId).toBe("sub_corrected");
+
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("rejects assigning a paddleSubscriptionId that's already assigned to a different tenant", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    await stores.tenantStore.updateTenant(TENANT.id, { paddleSubscriptionId: "sub_taken" });
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "New Biz", timezone: "Africa/Johannesburg", paddleSubscriptionId: "sub_taken" });
+    expect(created.status).toBe(400);
+    expect(created.body.error).toMatch(/already assigned/);
+
+    // Creating a second tenant with its own subscription, then trying to
+    // PATCH it onto the one already used by TENANT, must also be rejected.
+    const other = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Other Biz", timezone: "UTC" });
+    const patched = await request(app)
+      .patch(`/admin/tenants/${other.body.id}`)
+      .set("Authorization", "Bearer admin-secret")
+      .send({ paddleSubscriptionId: "sub_taken" });
+    expect(patched.status).toBe(400);
+    expect(patched.body.error).toMatch(/already assigned/);
+
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("trims paddleSubscriptionId before storing and matching, so incidental whitespace can't break exact-match lookups", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "New Biz", timezone: "Africa/Johannesburg", paddleSubscriptionId: "  sub_padded  " });
+    expect(created.status).toBe(201);
+    expect(created.body.paddleSubscriptionId).toBe("sub_padded");
+
+    // Assigning the same id with different surrounding whitespace to another
+    // tenant must still be caught as a conflict against the trimmed value.
+    const conflict = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Other Biz", timezone: "UTC", paddleSubscriptionId: "sub_padded" });
+    expect(conflict.status).toBe(400);
+    expect(conflict.body.error).toMatch(/already assigned/);
+
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("allows an admin to clear a tenant's paddleSubscriptionId by sending null", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    await stores.tenantStore.updateTenant(TENANT.id, { paddleSubscriptionId: "sub_existing" });
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const patched = await request(app)
+      .patch(`/admin/tenants/${TENANT.id}`)
+      .set("Authorization", "Bearer admin-secret")
+      .send({ paddleSubscriptionId: null });
+    expect(patched.status).toBe(200);
+    expect(patched.body.paddleSubscriptionId).toBeUndefined();
+
+    const tenant = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenant?.paddleSubscriptionId).toBeUndefined();
+
     delete process.env.ADMIN_API_KEY;
   });
 });
@@ -908,6 +1010,286 @@ describe("webhook: SendGrid delivery events", () => {
   });
 });
 
+describe("webhook: Paddle billing", () => {
+  const PADDLE_SECRET = "pdl_ntfset_test_secret";
+  const originalPaddleSecret = process.env.PADDLE_WEBHOOK_SECRET;
+
+  function signPaddle(rawBody: string): { header: string; timestamp: string } {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const hash = createHmac("sha256", PADDLE_SECRET).update(`${timestamp}:${rawBody}`).digest("hex");
+    return { header: `ts=${timestamp};h1=${hash}`, timestamp };
+  }
+
+  beforeEach(() => {
+    process.env.PADDLE_WEBHOOK_SECRET = PADDLE_SECRET;
+  });
+
+  afterEach(() => {
+    if (originalPaddleSecret === undefined) delete process.env.PADDLE_WEBHOOK_SECRET;
+    else process.env.PADDLE_WEBHOOK_SECRET = originalPaddleSecret;
+  });
+
+  it("returns 503 when PADDLE_WEBHOOK_SECRET isn't configured", async () => {
+    delete process.env.PADDLE_WEBHOOK_SECRET;
+    const stores = buildStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app).post("/webhooks/paddle").send({});
+    expect(res.status).toBe(503);
+  });
+
+  it("rejects a missing or invalid signature", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const rawBody = JSON.stringify({ event_type: "subscription.canceled", data: { id: "sub_1" } });
+    const noSig = await request(app).post("/webhooks/paddle").set("Content-Type", "application/json").send(rawBody);
+    expect(noSig.status).toBe(403);
+
+    const badSig = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", "ts=123;h1=deadbeef")
+      .send(rawBody);
+    expect(badSig.status).toBe(403);
+  });
+
+  it("suspends the tenant matched by custom_data.tenantId on subscription.canceled, and records an audit entry", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const rawBody = JSON.stringify({
+      event_type: "subscription.canceled",
+      data: { id: "sub_abc123", custom_data: { tenantId: TENANT.id } },
+    });
+    const { header } = signPaddle(rawBody);
+
+    const res = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", header)
+      .send(rawBody);
+
+    expect(res.status).toBe(204);
+    const tenant = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenant?.status).toBe("suspended");
+    // Self-heals the fallback mapping for future events that lack custom_data.
+    expect(tenant?.paddleSubscriptionId).toBe("sub_abc123");
+
+    const entries = await stores.auditLogStore.list({ limit: 10, offset: 0 });
+    const entry = entries.find((e) => e.action === "tenant.paddle_status_change");
+    expect(entry?.actor).toBe("paddle");
+    expect(entry?.tenantId).toBe(TENANT.id);
+  });
+
+  it("reactivates a suspended tenant on subscription.activated", async () => {
+    const stores = buildStores();
+    await stores.tenantStore.updateTenant(TENANT.id, { status: "suspended" });
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const rawBody = JSON.stringify({
+      event_type: "subscription.activated",
+      data: { id: "sub_abc123", custom_data: { tenantId: TENANT.id } },
+    });
+    const { header } = signPaddle(rawBody);
+
+    const res = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", header)
+      .send(rawBody);
+
+    expect(res.status).toBe(204);
+    const tenant = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenant?.status).toBe("active");
+  });
+
+  it("suspends via a transaction event's data.subscription_id, matched against the tenant's stored paddleSubscriptionId (no custom_data needed)", async () => {
+    const stores = buildStores();
+    await stores.tenantStore.updateTenant(TENANT.id, { paddleSubscriptionId: "sub_xyz789" });
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    // transaction.* events carry the subscription id as `subscription_id`,
+    // not `id` (which is the transaction's own id) — and, unlike the tests
+    // above, this payload has no custom_data at all, exercising the
+    // paddleSubscriptionId fallback lookup.
+    const rawBody = JSON.stringify({
+      event_type: "transaction.payment_failed",
+      data: { id: "txn_1", subscription_id: "sub_xyz789" },
+    });
+    const { header } = signPaddle(rawBody);
+
+    const res = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", header)
+      .send(rawBody);
+
+    expect(res.status).toBe(204);
+    const tenant = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenant?.status).toBe("suspended");
+  });
+
+  it("ignores an event type it doesn't act on, without changing tenant status", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const rawBody = JSON.stringify({
+      event_type: "subscription.created",
+      data: { id: "sub_abc123", custom_data: { tenantId: TENANT.id } },
+    });
+    const { header } = signPaddle(rawBody);
+
+    const res = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", header)
+      .send(rawBody);
+
+    expect(res.status).toBe(204);
+    const tenant = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenant?.status).not.toBe("suspended"); // unchanged — never suspended in the first place
+  });
+
+  it("safely no-ops when no tenant matches (no custom_data, no stored paddleSubscriptionId anywhere)", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const rawBody = JSON.stringify({
+      event_type: "subscription.canceled",
+      data: { id: "sub_unrelated" },
+    });
+    const { header } = signPaddle(rawBody);
+
+    const res = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", header)
+      .send(rawBody);
+
+    expect(res.status).toBe(204);
+    const tenant = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenant?.status).not.toBe("suspended"); // the one real tenant is untouched
+  });
+
+  it("ignores a delayed/out-of-order event instead of undoing a newer status change", async () => {
+    // Regression test for exactly the hazard Paddle's own docs warn about:
+    // webhook delivery can arrive out of order. A newer subscription.activated
+    // (occurred_at t2) is processed first; a slower subscription.past_due
+    // (occurred_at t1, earlier) for the same subscription arrives after —
+    // without checking occurred_at, this would incorrectly re-suspend an
+    // otherwise-current tenant.
+    const stores = buildStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const t1 = new Date(Date.now() - 60_000).toISOString();
+    const t2 = new Date().toISOString();
+
+    const newerBody = JSON.stringify({
+      event_type: "subscription.activated",
+      occurred_at: t2,
+      data: { id: "sub_abc123", custom_data: { tenantId: TENANT.id } },
+    });
+    const { header: newerHeader } = signPaddle(newerBody);
+    const newerRes = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", newerHeader)
+      .send(newerBody);
+    expect(newerRes.status).toBe(204);
+    expect((await stores.tenantStore.getTenant(TENANT.id))?.status).not.toBe("suspended");
+
+    const staleBody = JSON.stringify({
+      event_type: "subscription.past_due",
+      occurred_at: t1,
+      data: { id: "sub_abc123", custom_data: { tenantId: TENANT.id } },
+    });
+    const { header: staleHeader } = signPaddle(staleBody);
+    const staleRes = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", staleHeader)
+      .send(staleBody);
+
+    expect(staleRes.status).toBe(204); // still acknowledged — just not acted on
+    const tenant = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenant?.status).not.toBe("suspended"); // the stale event must not win
+  });
+
+  it("orders occurred_at via compareIsoTimestamps, not raw string comparison or Date.parse, so a later microsecond-precision event isn't misclassified as stale", async () => {
+    // Regression test: a stored paddleLastEventAt of "...972Z" (millisecond
+    // precision) and a fresh incoming occurred_at of "...972196Z" (six
+    // microseconds later, same millisecond) sort as occurredAt < lastEventAt
+    // under plain string comparison (the digit '1' sorts below 'Z' once the
+    // strings differ in length), which would wrongly drop this genuinely
+    // newer event as "stale". Date.parse() gets this wrong too — it only has
+    // millisecond resolution, so it truncates both timestamps to the same
+    // instant. compareIsoTimestamps (src/paddleVerify.ts) is what actually
+    // gets this right, by padding the fractional-second digits to equal
+    // length before comparing as strings.
+    const stores = buildStores();
+    await stores.tenantStore.updateTenant(TENANT.id, {
+      paddleSubscriptionId: "sub_abc123",
+      paddleLastEventAt: "2023-06-01T13:47:47.972Z",
+    });
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const rawBody = JSON.stringify({
+      event_type: "subscription.canceled",
+      occurred_at: "2023-06-01T13:47:47.972196Z",
+      data: { id: "sub_abc123", custom_data: { tenantId: TENANT.id } },
+    });
+    const { header } = signPaddle(rawBody);
+
+    const res = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", header)
+      .send(rawBody);
+
+    expect(res.status).toBe(204);
+    const tenant = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenant?.status).toBe("suspended"); // must be applied, not dropped as stale
+  });
+
+  it("still applies a subscription rebind (a different subscription id for the same tenant) rather than rejecting it", async () => {
+    // A tenant legitimately getting a new subscription (upgrade, cancel and
+    // resubscribe) looks identical to an operator mistake at the data layer
+    // — this codebase accepts the rebind (and only warns), since rejecting
+    // it would break the legitimate case.
+    const stores = buildStores();
+    await stores.tenantStore.updateTenant(TENANT.id, { paddleSubscriptionId: "sub_original" });
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const rawBody = JSON.stringify({
+      event_type: "subscription.canceled",
+      data: { id: "sub_replacement", custom_data: { tenantId: TENANT.id } },
+    });
+    const { header } = signPaddle(rawBody);
+
+    const res = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", header)
+      .send(rawBody);
+
+    expect(res.status).toBe(204);
+    const tenant = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenant?.status).toBe("suspended");
+    expect(tenant?.paddleSubscriptionId).toBe("sub_replacement");
+  });
+});
+
 describe("webhook: generic lead intake source validation", () => {
   it("normalizes an unrecognized source to 'other' instead of trusting client input", async () => {
     const stores = buildStores();
@@ -1494,6 +1876,27 @@ describe("tenant self-service settings", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/admin API/);
+  });
+
+  it("refuses to let a tenant set its own paddleSubscriptionId", async () => {
+    // Same reasoning as status above: a tenant setting this itself could
+    // let it get matched (and have its status flipped) by a *different*
+    // tenant's Paddle events whenever those happen to omit
+    // custom_data.tenantId — see /webhooks/paddle's fallback lookup.
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ paddleSubscriptionId: "sub_hijack" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/admin API/);
+    const tenant = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenant?.paddleSubscriptionId).toBeUndefined();
   });
 });
 

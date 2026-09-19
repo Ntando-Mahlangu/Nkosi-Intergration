@@ -194,7 +194,11 @@ audit log, if you'd rather not hand-write requests.
   auth — including inbound replies and the worker skipping them entirely —
   without deleting anything. Reactivate the same way with `{"status":
   "active"}`. A tenant cannot suspend or reactivate itself; this is
-  admin-only by design.
+  admin-only by design. If you're billing through Paddle (see "Billing
+  (Paddle)" in `DEPLOYMENT.md`), this same pause/resume happens
+  automatically on a subscription lapse/recovery — you shouldn't usually
+  need to do it by hand for a non-payment case, only for a manual hold
+  unrelated to billing.
 - **A tenant's API key leaked**: `POST /admin/tenants/<id>/rotate-key`
   issues a new key immediately (the old one stops working) without
   touching anything else — no need to delete and recreate the tenant.
