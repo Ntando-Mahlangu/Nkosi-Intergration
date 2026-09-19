@@ -214,6 +214,17 @@ export interface Tenant {
    */
   status?: "active" | "suspended";
   /**
+   * Why `status` last changed: "manual" for an admin's own PATCH
+   * /admin/tenants/:id, "billing" for an automatic change made by
+   * /webhooks/paddle. Purely informational (nothing branches on it) — it
+   * exists so the admin UI can show *why* a tenant is suspended (a
+   * deliberate hold vs. a payment lapse it might want to follow up on)
+   * instead of just the bare status. Unset for a tenant that's never had
+   * its status changed since creation (e.g. still on its original
+   * "active").
+   */
+  statusReason?: "manual" | "billing";
+  /**
    * Paddle subscription id (`sub_...`) backing this tenant's billing, if
    * any — set once, either by the agency operator or automatically by
    * /webhooks/paddle the first time a subscription event for this tenant

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createHmac } from "node:crypto";
 
 // public/admin.html manages tenants across the whole platform — connects
 // with ADMIN_API_KEY (fixed to "e2e-test-admin-key" for this run, see
@@ -8,6 +9,8 @@ import { test, expect } from "@playwright/test";
 // read-only dashboard specs, so parallel workers would race on tenant counts.
 
 const ADMIN_KEY = "e2e-test-admin-key";
+// Matches playwright.config.ts's webServer.env — fixed test-only value.
+const PADDLE_SECRET = "e2e-test-paddle-secret";
 
 function uniqueName(label: string): string {
   return `${label} ${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
@@ -84,6 +87,59 @@ test.describe("Admin UI (public/admin.html)", () => {
 
     page.once("dialog", (d) => d.accept());
     await card.getByRole("button", { name: "Delete" }).click();
+    await expect(page.locator("#tenants")).not.toContainText(name);
+  });
+
+  test("shows a distinct 'billing' tag when Paddle auto-suspends a tenant, unlike a manual suspend", async ({
+    page,
+  }) => {
+    await connect(page);
+    const name = uniqueName("E2E Billing");
+    await page.fill("#new-name", name);
+    await page.fill("#new-timezone", "UTC");
+    await page.click("#create-btn");
+    await expect(page.locator(".reveal .key")).toContainText("lr_");
+
+    const card = page.locator(`.card:has-text("${name}")`);
+    // The card's .meta text is "<id> · <timezone> · created <date>" — pull
+    // the real tenant id out so the Paddle event below actually targets it.
+    const metaText = await card.locator(".meta").innerText();
+    const tenantId = metaText.split("·")[0].trim();
+
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const rawBody = JSON.stringify({
+      event_type: "subscription.canceled",
+      occurred_at: new Date().toISOString(),
+      data: { id: `sub_e2e_${tenantId}`, custom_data: { tenantId } },
+    });
+    const hash = createHmac("sha256", PADDLE_SECRET).update(`${timestamp}:${rawBody}`).digest("hex");
+    const res = await page.request.post("/webhooks/paddle", {
+      headers: { "Content-Type": "application/json", "Paddle-Signature": `ts=${timestamp};h1=${hash}` },
+      data: rawBody,
+    });
+    expect(res.status()).toBe(204);
+
+    // admin.html only fetches the tenant list on connect/action, not on a
+    // timer, so it won't see this server-side change until asked again.
+    await page.reload();
+    await expect(page.locator("#app")).toBeVisible(); // persisted session reconnects automatically
+
+    const cardAfter = page.locator(`.card:has-text("${name}")`);
+    await expect(cardAfter.locator(".badge.suspended")).toHaveText("suspended");
+    await expect(cardAfter.locator(".badge.billing")).toHaveText("billing");
+
+    // A manual reactivate should clear the billing tag, since it's now an
+    // admin decision, not a billing-driven state. Asserting on the
+    // class-scoped locators (not a bare ".badge", which matches both the
+    // status and billing spans while suspended) avoids a Playwright
+    // strict-mode violation during the moment between the click and the
+    // card's re-render.
+    await cardAfter.getByRole("button", { name: "Reactivate" }).click();
+    await expect(cardAfter.locator(".badge.active")).toHaveText("active");
+    await expect(cardAfter.locator(".badge.billing")).toHaveCount(0);
+
+    page.once("dialog", (d) => d.accept());
+    await cardAfter.getByRole("button", { name: "Delete" }).click();
     await expect(page.locator("#tenants")).not.toContainText(name);
   });
 

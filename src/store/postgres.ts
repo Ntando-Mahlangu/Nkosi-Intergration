@@ -179,7 +179,7 @@ export class PostgresLeadStore implements LeadStore {
 }
 
 const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at,
-  notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, paddle_subscription_id, paddle_last_event_at`;
+  notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at`;
 
 /**
  * Tenant provider credentials (Twilio auth tokens, SendGrid API keys) are
@@ -244,6 +244,7 @@ export class PostgresTenantStore implements TenantStore {
       knowledgeBase: (row.knowledge_base as string | null) ?? undefined,
       autoReplyEnabled: Boolean(row.auto_reply_enabled),
       status: (row.status as Tenant["status"]) ?? "active",
+      statusReason: (row.status_reason as Tenant["statusReason"] | null) ?? undefined,
       paddleSubscriptionId: (row.paddle_subscription_id as string | null) ?? undefined,
       paddleLastEventAt: (row.paddle_last_event_at as string | null) ?? undefined,
       createdAt: new Date(row.created_at as string).toISOString(),
@@ -279,8 +280,8 @@ export class PostgresTenantStore implements TenantStore {
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, paddle_subscription_id, paddle_last_event_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [
         tenant.id,
         tenant.name,
@@ -296,6 +297,7 @@ export class PostgresTenantStore implements TenantStore {
         tenant.knowledgeBase ?? null,
         tenant.autoReplyEnabled ?? false,
         tenant.status ?? "active",
+        tenant.statusReason ?? null,
         tenant.paddleSubscriptionId ?? null,
         tenant.paddleLastEventAt ?? null,
       ]
@@ -336,6 +338,7 @@ export class PostgresTenantStore implements TenantStore {
     if ("knowledgeBase" in patch) push("knowledge_base", patch.knowledgeBase ?? null);
     if ("autoReplyEnabled" in patch) push("auto_reply_enabled", patch.autoReplyEnabled ?? false);
     if ("status" in patch) push("status", patch.status ?? "active");
+    if ("statusReason" in patch) push("status_reason", patch.statusReason ?? null);
     if ("paddleSubscriptionId" in patch) push("paddle_subscription_id", patch.paddleSubscriptionId ?? null);
     if ("paddleLastEventAt" in patch) push("paddle_last_event_at", patch.paddleLastEventAt ?? null);
     if ("createdAt" in patch) push("created_at", patch.createdAt);

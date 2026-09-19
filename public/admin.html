@@ -92,6 +92,7 @@
   .badge.suspended { background: rgba(245,166,35,0.15); color: var(--warn); }
   .badge.pending { background: rgba(245,166,35,0.15); color: var(--warn); }
   .badge.dead { background: rgba(229,72,77,0.15); color: var(--fail); }
+  .badge.billing { background: rgba(229,72,77,0.15); color: var(--fail); margin-left: 6px; }
   .empty { color: var(--muted); padding: 32px; text-align: center; }
   .error { color: var(--fail); font-size: 13px; margin-top: 8px; }
   .reveal {
@@ -318,6 +319,11 @@
         <div class="card-head">
           <span class="name">${escapeHtml(t.name)}</span>
           <span class="badge ${t.status || "active"}">${escapeHtml(t.status || "active")}</span>
+          ${
+            t.status === "suspended" && t.statusReason === "billing"
+              ? `<span class="badge billing" title="Auto-suspended by Paddle for a billing issue, not a manual admin hold">billing</span>`
+              : ""
+          }
         </div>
         <div class="meta">${escapeHtml(t.id)} &middot; ${escapeHtml(t.timezone)} &middot; created ${escapeHtml(new Date(t.createdAt).toLocaleString())}</div>
         <div class="actions">

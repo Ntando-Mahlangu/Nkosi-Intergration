@@ -54,6 +54,38 @@ anyway with those fields blank; it can run in `devMode` (console-only sends)
 until credentials are ready, so you can validate the rest of the pipeline
 immediately.
 
+### If you're billing this client through Paddle
+
+Note the tenant's **id** (not its API key) from the create response — that's
+what links a Paddle charge back to this tenant. There's no in-app "generate
+a checkout link" button; do this directly in Paddle, using whichever fits
+how you sell:
+
+- **Invoicing a client directly** (simplest, no code): in the Paddle
+  dashboard, create a manually-collected transaction/invoice for the
+  subscription price against that customer, and set its **custom data** to
+  `{"tenantId": "<the id you just noted>"}` before issuing it. When Paddle
+  creates the resulting subscription off that transaction, it copies the
+  custom data onto it — that's what makes `/webhooks/paddle` resolve future
+  events (renewals, a failed payment, a cancellation) back to this tenant
+  automatically, with no further manual step.
+- **A self-serve checkout link instead**: call Paddle's `POST
+  /transactions` API with the price, the customer, and the same
+  `custom_data: {"tenantId": "..."}`, then send the customer the resulting
+  checkout URL. This isn't wired up as a script in this repo (it needs a
+  live `PADDLE_API_KEY` this project doesn't otherwise use, and getting the
+  checkout-URL construction exactly right needs testing against a real
+  Paddle account) — see Paddle's own "Create a transaction" API reference if
+  you want to script this yourselves.
+
+Either way, the rule that actually matters: **set `custom_data.tenantId` on
+the transaction itself, at creation time** — not as an afterthought on the
+resulting subscription (dashboard editing there is limited) and not solely
+via a client-side checkout-overlay parameter, which is easy to get wrong.
+Getting this step wrong is exactly the kind of misconfiguration
+`/webhooks/paddle`'s own conflict/rebind checks (see "Billing (Paddle)" in
+`DEPLOYMENT.md`) exist to catch loudly instead of silently.
+
 ## 4. Connect their lead data
 
 Pick whichever fits what they actually have:
@@ -198,7 +230,10 @@ audit log, if you'd rather not hand-write requests.
   (Paddle)" in `DEPLOYMENT.md`), this same pause/resume happens
   automatically on a subscription lapse/recovery — you shouldn't usually
   need to do it by hand for a non-payment case, only for a manual hold
-  unrelated to billing.
+  unrelated to billing. A tenant auto-suspended this way also shows a
+  distinct "billing" tag next to its status badge in `admin.html`, and
+  triggers `OPERATOR_ALERT_WEBHOOK_URL` if you've set one (see "Alerting" in
+  `DEPLOYMENT.md`), so you don't have to notice a payment lapse by chance.
 - **A tenant's API key leaked**: `POST /admin/tenants/<id>/rotate-key`
   issues a new key immediately (the old one stops working) without
   touching anything else — no need to delete and recreate the tenant.

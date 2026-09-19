@@ -12,6 +12,7 @@ import { publicBaseUrl } from "../publicUrl.js";
 import { safeCompare } from "../security.js";
 import { substituteTemplate } from "../templateSubstitute.js";
 import { notifyHumanAttention } from "../notify.js";
+import { sendOperatorAlert } from "../operatorAlert.js";
 import { verifySendGridEventSignature } from "../sendgridVerify.js";
 import { verifyPaddleSignature, compareIsoTimestamps } from "../paddleVerify.js";
 import { recordAudit } from "../audit.js";
@@ -552,7 +553,12 @@ export function createWebhookRoutes(stores: Stores): Router {
 
       const desiredStatus = action === "suspend" ? "suspended" : "active";
       const patch: Partial<Tenant> = {};
-      if (tenant.status !== desiredStatus) patch.status = desiredStatus;
+      if (tenant.status !== desiredStatus) {
+        patch.status = desiredStatus;
+        // So the admin UI can tell this apart from a deliberate admin hold —
+        // see Tenant.statusReason's own doc comment.
+        patch.statusReason = "billing";
+      }
       // Self-heals the fallback mapping: once an event with custom_data
       // arrives, record which subscription this tenant's status is now
       // driven by, so a later event missing custom_data (or carrying the
@@ -605,6 +611,18 @@ export function createWebhookRoutes(stores: Stores): Router {
           details: { eventType, newStatus: patch.status },
         });
         logger.info("paddle_webhook_status_change", { tenantId: tenant.id, eventType, newStatus: patch.status });
+        // Unlike an "interested" reply or a chatbot escalation (notify.ts),
+        // this isn't something a tenant's own team needs to hear about via
+        // their notifyWebhookUrl — it's the agency running LeadRecovery that
+        // needs to know one of its clients just got auto-suspended (or
+        // recovered) for non-payment, so it can follow up, not just find out
+        // by noticing the audit log or a support ticket later.
+        void sendOperatorAlert(
+          patch.status === "suspended"
+            ? `Tenant "${tenant.name}" (${tenant.id}) auto-suspended by Paddle: ${eventType}`
+            : `Tenant "${tenant.name}" (${tenant.id}) reactivated by Paddle: ${eventType}`,
+          { tenantId: tenant.id, eventType, newStatus: patch.status }
+        );
       }
 
       res.status(204).send();

@@ -630,6 +630,13 @@ components:
           type: string
           enum: [active, suspended]
           description: Admin-only — rejected with 400 on PATCH /tenants/me.
+        paddleSubscriptionId:
+          type: string
+          nullable: true
+          description: >-
+            Admin-only — rejected with 400 on PATCH /tenants/me. Set null to
+            clear it. Must be unique across tenants; usually self-filled by
+            /webhooks/paddle rather than set by hand.
 
     PublicTenant:
       type: object
@@ -651,6 +658,12 @@ components:
         knowledgeBase: { type: string }
         autoReplyEnabled: { type: boolean }
         status: { type: string, enum: [active, suspended] }
+        statusReason:
+          type: string
+          enum: [manual, billing]
+          description: Why `status` last changed — an admin's own PATCH ("manual") vs. an automatic /webhooks/paddle change ("billing"). Informational only.
+        paddleSubscriptionId: { type: string, description: "Paddle subscription id (sub_...) backing this tenant's billing, if any." }
+        paddleLastEventAt: { type: string, description: "occurred_at of the most recent Paddle webhook event applied to this tenant's status, as Paddle sent it." }
         createdAt: { type: string, format: date-time }
 
     Lead:

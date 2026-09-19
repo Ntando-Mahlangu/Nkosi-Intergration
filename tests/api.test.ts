@@ -267,6 +267,30 @@ describe("tenant management routes", () => {
     delete process.env.ADMIN_API_KEY;
   });
 
+  it("tags a status change made via the admin API as statusReason: 'manual'", async () => {
+    // Distinguishes an admin's own deliberate hold from a /webhooks/paddle
+    // billing-driven suspension, so the admin dashboard can show which one
+    // it is instead of the same bare "suspended" badge for both.
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const patched = await request(app)
+      .patch(`/admin/tenants/${TENANT.id}`)
+      .set("Authorization", "Bearer admin-secret")
+      .send({ status: "suspended" });
+    expect(patched.status).toBe(200);
+    expect(patched.body.status).toBe("suspended");
+    expect(patched.body.statusReason).toBe("manual");
+
+    const tenant = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenant?.statusReason).toBe("manual");
+
+    delete process.env.ADMIN_API_KEY;
+  });
+
   it("lets an admin set and update a tenant's paddleSubscriptionId, for /webhooks/paddle's fallback lookup", async () => {
     process.env.ADMIN_API_KEY = "admin-secret";
     const stores = buildStores();
@@ -1013,6 +1037,7 @@ describe("webhook: SendGrid delivery events", () => {
 describe("webhook: Paddle billing", () => {
   const PADDLE_SECRET = "pdl_ntfset_test_secret";
   const originalPaddleSecret = process.env.PADDLE_WEBHOOK_SECRET;
+  const originalOperatorAlertUrl = process.env.OPERATOR_ALERT_WEBHOOK_URL;
 
   function signPaddle(rawBody: string): { header: string; timestamp: string } {
     const timestamp = String(Math.floor(Date.now() / 1000));
@@ -1027,6 +1052,8 @@ describe("webhook: Paddle billing", () => {
   afterEach(() => {
     if (originalPaddleSecret === undefined) delete process.env.PADDLE_WEBHOOK_SECRET;
     else process.env.PADDLE_WEBHOOK_SECRET = originalPaddleSecret;
+    if (originalOperatorAlertUrl === undefined) delete process.env.OPERATOR_ALERT_WEBHOOK_URL;
+    else process.env.OPERATOR_ALERT_WEBHOOK_URL = originalOperatorAlertUrl;
   });
 
   it("returns 503 when PADDLE_WEBHOOK_SECRET isn't configured", async () => {
@@ -1078,11 +1105,60 @@ describe("webhook: Paddle billing", () => {
     expect(tenant?.status).toBe("suspended");
     // Self-heals the fallback mapping for future events that lack custom_data.
     expect(tenant?.paddleSubscriptionId).toBe("sub_abc123");
+    // Distinguishes this from a manual admin hold in the admin dashboard.
+    expect(tenant?.statusReason).toBe("billing");
 
     const entries = await stores.auditLogStore.list({ limit: 10, offset: 0 });
     const entry = entries.find((e) => e.action === "tenant.paddle_status_change");
     expect(entry?.actor).toBe("paddle");
     expect(entry?.tenantId).toBe(TENANT.id);
+  });
+
+  it("fires an operator alert when Paddle changes a tenant's status, but not when it doesn't", async () => {
+    // The agency running LeadRecovery needs to know a client just got
+    // auto-suspended (or recovered) for non-payment without having to
+    // notice it in the audit log — unlike notify.ts, which is for a
+    // tenant's *own* team, this is OPERATOR_ALERT_WEBHOOK_URL (see
+    // src/operatorAlert.ts's own doc comment on that distinction).
+    process.env.OPERATOR_ALERT_WEBHOOK_URL = "https://hooks.example.com/alert";
+    const stores = buildStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const rawBody = JSON.stringify({
+      event_type: "subscription.canceled",
+      data: { id: "sub_abc123", custom_data: { tenantId: TENANT.id } },
+    });
+    const { header } = signPaddle(rawBody);
+
+    const res = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", header)
+      .send(rawBody);
+    expect(res.status).toBe(204);
+
+    await vi.waitFor(() => expect(httpsRequestMock).toHaveBeenCalled());
+    const body = JSON.parse(lastNotifyRequestBody);
+    expect(body.text).toContain("auto-suspended");
+    expect(body.text).toContain(TENANT.name);
+    expect(body.newStatus).toBe("suspended");
+
+    // An event that doesn't change status (already active, ignored event
+    // type) must not fire a second, redundant alert.
+    httpsRequestMock.mockClear();
+    const noopBody = JSON.stringify({
+      event_type: "subscription.created",
+      data: { id: "sub_abc123", custom_data: { tenantId: TENANT.id } },
+    });
+    const { header: noopHeader } = signPaddle(noopBody);
+    await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", noopHeader)
+      .send(noopBody);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(httpsRequestMock).not.toHaveBeenCalled();
   });
 
   it("reactivates a suspended tenant on subscription.activated", async () => {

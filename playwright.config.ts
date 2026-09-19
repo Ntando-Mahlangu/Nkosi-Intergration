@@ -33,6 +33,10 @@ export default defineConfig({
       // (create/suspend/rotate/delete, repeated across tests, all from the
       // same loopback IP) — well beyond the production default of 30/15min.
       LEADRECOVERY_ADMIN_RATE_LIMIT: "1000",
+      // Fixed test-only value, never a real secret — lets the admin.html e2e
+      // suite POST a genuinely signed request straight at /webhooks/paddle
+      // to exercise the real billing-suspend-badge wiring end to end.
+      PADDLE_WEBHOOK_SECRET: "e2e-test-paddle-secret",
     },
     timeout: 30_000,
   },

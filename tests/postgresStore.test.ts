@@ -449,6 +449,19 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect((await tenantStore.getTenantByPaddleSubscriptionId("sub_corrected"))?.id).toBe(TENANT.id);
   });
 
+  it("round-trips statusReason", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant(TENANT);
+    expect((await tenantStore.getTenant(TENANT.id))?.statusReason).toBeUndefined();
+
+    const suspended = await tenantStore.updateTenant(TENANT.id, { status: "suspended", statusReason: "billing" });
+    expect(suspended?.statusReason).toBe("billing");
+    expect((await tenantStore.getTenant(TENANT.id))?.statusReason).toBe("billing");
+
+    const reactivated = await tenantStore.updateTenant(TENANT.id, { status: "active", statusReason: "manual" });
+    expect(reactivated?.statusReason).toBe("manual");
+  });
+
   it("deleteTenant removes the tenant and, via ON DELETE CASCADE, its leads and messages", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     const leadStore = new PostgresLeadStore(pool);

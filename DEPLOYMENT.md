@@ -265,7 +265,10 @@ To wire it up:
    which tenant an event is about. It's the primary match; a tenant's
    `paddleSubscriptionId` (visible/settable via the admin API, and
    self-filled the first time a custom_data-carrying event for that tenant
-   arrives) is only a fallback for events that happen to omit it.
+   arrives) is only a fallback for events that happen to omit it. See
+   "If you're billing this client through Paddle" in `ONBOARDING.md` for the
+   concrete per-client steps — there's no in-app checkout-link generator,
+   this is done directly in Paddle.
 
 A tenant getting a *new* subscription (a plan change, or cancel-and-
 resubscribe) is expected to carry a different subscription id under the
@@ -280,6 +283,14 @@ binding one (logging a `paddle_webhook_subscription_conflict` warning and
 skipping the binding, without skipping the status change itself, if it
 would collide), and a partial unique index on the `tenants` table backs
 all of that up even if a bug ever bypassed both checks.
+
+Every status change this webhook makes also sets `statusReason: "billing"`
+on the tenant (an admin's own PATCH sets `"manual"` instead) — purely
+informational, but it's what lets `admin.html` show a distinct "billing"
+tag on a suspended tenant's card instead of the same bare "suspended" badge
+an admin's own manual hold would show, so an operator glancing at the
+dashboard can tell a payment lapse from a deliberate pause without having
+to check the audit log.
 
 ## Load testing
 
@@ -422,6 +433,10 @@ and this app pings it on:
   permanently failing after exhausting every retry — the same `dead`
   transition `GET /admin/notifications/failed` shows, surfaced proactively
   instead of only on request.
+- `/webhooks/paddle` auto-suspending or reactivating a tenant (see "Billing
+  (Paddle)" above) — this is the agency's own alert, distinct from a
+  tenant's `notifyWebhookUrl`, since it's the agency (not the client) that
+  needs to know one of its clients just lost billing coverage.
 
 This is entirely optional — unset (the default), none of it fires and
 you'd only notice via logs. It's a lightweight, dependency-free floor, not

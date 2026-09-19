@@ -157,7 +157,14 @@ function buildTenantPatch(
   // (and have its status flipped) by a *different* tenant's Paddle events
   // whenever those happen to omit custom_data.tenantId (see
   // /webhooks/paddle's fallback lookup in webhooks/index.ts).
-  if (includeStatus && body.status !== undefined) patch.status = body.status;
+  if (includeStatus && body.status !== undefined) {
+    patch.status = body.status;
+    // So the admin UI can tell a deliberate hold apart from an automatic
+    // /webhooks/paddle billing suspension — see Tenant.statusReason's own
+    // doc comment. An admin PATCH always means "manual", even if it happens
+    // to set the tenant back to the same status Paddle last set it to.
+    patch.statusReason = "manual";
+  }
   // Trimmed so incidental whitespace can't break an exact-match lookup
   // (getTenantByPaddleSubscriptionId, or the conflict check above); null
   // collapses to undefined, which is how a patch clears the field (same
