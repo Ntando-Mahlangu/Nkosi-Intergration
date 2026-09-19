@@ -92,6 +92,31 @@ function isValidStatus(status: unknown): boolean {
   return status === undefined || status === "active" || status === "suspended";
 }
 
+// A non-empty string, i.e. not "" or whitespace-only — a template that
+// substitutes to a blank message would otherwise drop the mandatory
+// "Reply STOP" opt-out line entirely, and messaging.ts's own
+// `tenant.templates?.x ?? DEFAULT` fallback only kicks in for
+// null/undefined, never for an explicitly-set "".
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isValidTemplates(templates: unknown): templates is Tenant["templates"] {
+  // null is accepted the same as undefined (not just here — every read of
+  // tenant.templates elsewhere uses `?.`, which already treats the two the
+  // same): explicitly clearing overrides back to the built-in defaults via
+  // `{"templates": null}` worked before this function existed at all, and
+  // rejecting it now would be a regression, not a new safety check.
+  if (templates === undefined || templates === null) return true;
+  if (typeof templates !== "object") return false;
+  const { initialGrounded, initialUngrounded, followUps, notInterestedCloser } = templates as Record<string, unknown>;
+  if (initialGrounded !== undefined && !isNonEmptyString(initialGrounded)) return false;
+  if (initialUngrounded !== undefined && !isNonEmptyString(initialUngrounded)) return false;
+  if (notInterestedCloser !== undefined && !isNonEmptyString(notInterestedCloser)) return false;
+  if (followUps !== undefined && (!Array.isArray(followUps) || !followUps.every(isNonEmptyString))) return false;
+  return true;
+}
+
 /**
  * Validates a tenant config patch/create body against the current (pre-merge)
  * tenant state, if any — so e.g. enabling autoReplyEnabled without touching
@@ -113,6 +138,9 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   }
   if (!isValidStatus(body.status)) {
     return 'status must be "active" or "suspended"';
+  }
+  if (!isValidTemplates(body.templates)) {
+    return "templates.initialGrounded/initialUngrounded/notInterestedCloser must be non-empty strings, and followUps (if set) an array of non-empty strings";
   }
   const mergedKnowledgeBase = body.knowledgeBase !== undefined ? body.knowledgeBase : existing?.knowledgeBase;
   const mergedAutoReplyEnabled =

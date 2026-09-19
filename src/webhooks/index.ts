@@ -430,6 +430,45 @@ export function createWebhookRoutes(stores: Stores): Router {
         return;
       }
 
+      // Reuses an existing lead for this contact info instead of always
+      // creating a new row — the same findLeadByContact lookup every other
+      // inbound handler in this file already does before touching a lead.
+      // A CRM/Zapier/Make automation retrying a delivery (or two automations
+      // both notifying LeadRecovery about the same person) is common enough
+      // that, without this, the same person ends up with two separate Lead
+      // rows sharing a phone/email — and suppression (checkSuppression,
+      // compliance.ts's SUPPRESSED_STATUSES) is tracked per lead row, so a
+      // STOP reply against one row leaves the other fully contactable.
+      //
+      // This is a check-then-act, not an atomic upsert, so it closes the
+      // common case (a retried/duplicate delivery arriving after the first
+      // one already committed) but not two deliveries landing at the exact
+      // same instant, before either has written its row — there's no
+      // unique constraint on (tenantId, phone/email) backing this. Closing
+      // that fully needs a DB-level constraint plus an atomic
+      // insert-or-update per store implementation (see pgRateLimitStore.ts's
+      // `INSERT ... ON CONFLICT` for the pattern this codebase already uses
+      // elsewhere) — a bigger, separate change than this lookup.
+      const existing = await stores.leadStore.findLeadByContact(tenant.id, {
+        phone: body.phone,
+        email: body.email,
+      });
+
+      if (existing) {
+        const updated = await stores.leadStore.updateLead(tenant.id, existing.id, {
+          name: body.name ?? existing.name,
+          requestedService: body.requestedService ?? existing.requestedService,
+          previousQuote: body.previousQuote ?? existing.previousQuote,
+          previousConversationSummary: body.previousConversationSummary ?? existing.previousConversationSummary,
+          appointmentStatus: body.appointmentStatus ?? existing.appointmentStatus,
+          notes: body.notes ?? existing.notes,
+          hadMissedCall: body.hadMissedCall ?? existing.hadMissedCall,
+          preferredChannel: body.preferredChannel ?? existing.preferredChannel,
+        });
+        res.status(200).json(updated);
+        return;
+      }
+
       const lead: Lead = {
         id: generateId("lead"),
         tenantId: tenant.id,

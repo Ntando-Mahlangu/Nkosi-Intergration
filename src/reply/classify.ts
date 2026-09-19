@@ -14,12 +14,15 @@ function escapeRegExp(s: string): string {
 // unrelated word as an opt-out/negative signal. \b doesn't work at the edges
 // of a multi-word keyword like "opt out" (no word-boundary before/after the
 // inner space), so this checks the character immediately outside the match
-// instead of relying on \b there. Precompiled once per keyword (rather than
-// rebuilding a RegExp on every classifyReplyByKeyword call, which runs once
-// per inbound SMS/WhatsApp reply) since none of these keyword lists change
-// at runtime.
+// instead of relying on \b there. Hyphens and underscores count as word
+// characters here (not boundaries) too, so "stop" inside the hyphenated
+// "non-stop" still doesn't match as a standalone word — plain \b (and an
+// [a-z0-9]-only boundary) would treat "-" as a boundary and match it.
+// Precompiled once per keyword (rather than rebuilding a RegExp on every
+// classifyReplyByKeyword call, which runs once per inbound SMS/WhatsApp
+// reply) since none of these keyword lists change at runtime.
 function keywordPattern(keyword: string): RegExp {
-  return new RegExp(`(?<![a-z0-9])${escapeRegExp(keyword)}(?![a-z0-9])`);
+  return new RegExp(`(?<![a-z0-9_-])${escapeRegExp(keyword)}(?![a-z0-9_-])`);
 }
 
 const STOP_KEYWORDS = ["stop", "unsubscribe", "cancel", "quit", "remove me", "opt out", "optout"].map(keywordPattern);

@@ -40,6 +40,14 @@ describe("classifyReplyByKeyword", () => {
     expect(classifyReplyByKeyword("we run nonstop, is that a problem?")).toBe("question");
   });
 
+  it("does not misfire a STOP keyword found only inside a hyphenated compound word", () => {
+    // Regression test: the word-boundary fix above used plain [a-z0-9] as
+    // the boundary class, which treats "-" as a boundary itself — so
+    // "stop" inside "non-stop" (hyphen on one side, space on the other)
+    // still matched as if it were the standalone word "stop".
+    expect(classifyReplyByKeyword("do you offer non-stop service on weekends?")).toBe("question");
+  });
+
   it("does not misfire a negative keyword found only as a substring of a name or word", () => {
     // Regression test: "nah" (a NEGATIVE_KEYWORDS entry) matched inside the
     // name "Hannah", misclassifying a plain introduction as "not_interested"

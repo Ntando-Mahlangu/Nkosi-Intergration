@@ -696,6 +696,38 @@ describe("webhook: generic lead intake", () => {
     expect(all.some((l) => l.phone === "+27820000000")).toBe(true);
   });
 
+  it("reuses the existing lead for a repeat delivery with the same phone, instead of creating a duplicate row", async () => {
+    // Regression test: a CRM/Zapier/Make automation retrying a delivery (or
+    // two automations both notifying LeadRecovery about the same person)
+    // used to always create a brand-new Lead row. Two separate rows sharing
+    // one phone number is a compliance problem, not just clutter: a STOP
+    // reply only ever updates the row Twilio's inbound webhook looked up by
+    // phone, leaving the other row's status stuck at "new" and fully
+    // contactable by the recovery workflow — see compliance.ts's
+    // SUPPRESSED_STATUSES, which is tracked per lead row.
+    const stores = buildStores();
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const first = await request(app)
+      .post("/webhooks/lead")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ name: "Repeat Lead", phone: "+27820000099", requestedService: "quote" });
+    expect(first.status).toBe(201);
+
+    const second = await request(app)
+      .post("/webhooks/lead")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ name: "Repeat Lead", phone: "+27820000099", requestedService: "updated quote", notes: "called back" });
+    expect(second.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
+    expect(second.body.requestedService).toBe("updated quote");
+    expect(second.body.notes).toBe("called back");
+
+    const all = await stores.leadStore.getAllLeads(TENANT.id);
+    expect(all.filter((l) => l.phone === "+27820000099")).toHaveLength(1);
+  });
+
   it("rejects a lead with neither phone nor email", async () => {
     const stores = buildStores();
     const app = express();
@@ -1319,6 +1351,92 @@ describe("tenant self-service settings", () => {
         .send({ notifyWebhookUrl: url });
       expect(res.status, `expected ${url} to be rejected`).toBe(400);
     }
+  });
+
+  it("rejects an empty-string template override instead of silently sending a blank message", async () => {
+    // Regression test: messaging.ts's own `tenant.templates?.x ?? DEFAULT`
+    // fallback only kicks in for null/undefined, never for an explicitly-set
+    // "" — an unvalidated empty template would silently send a blank
+    // SMS/WhatsApp/email with no message body and, critically, no "Reply
+    // STOP" opt-out line.
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ templates: { initialGrounded: "" } });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a non-string template override", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ templates: { notInterestedCloser: 12345 } });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a followUps entry that isn't a non-empty string", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ templates: { followUps: ["a real follow-up", ""] } });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("accepts a valid template override", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ templates: { initialGrounded: "Hi {name}, {reason}. Reply STOP to opt out." } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.templates.initialGrounded).toBe("Hi {name}, {reason}. Reply STOP to opt out.");
+  });
+
+  it("accepts templates: null as clearing overrides back to defaults, not an invalid value", async () => {
+    // Regression test: null is already treated the same as undefined by
+    // every actual read of tenant.templates (they all use `?.`), so
+    // {"templates": null} worked as a way to reset overrides before
+    // isValidTemplates existed. Rejecting it would be a new restriction
+    // this validation-only change introduced, not an intentional one.
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ templates: { initialGrounded: "custom" } });
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ templates: null });
+
+    expect(res.status).toBe(200);
   });
 
   it("lets a tenant set a knowledge base and enable auto-reply together", async () => {
