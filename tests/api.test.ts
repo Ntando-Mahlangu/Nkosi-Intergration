@@ -1288,6 +1288,42 @@ describe("webhook: Paddle billing", () => {
     expect(tenant?.status).toBe("suspended");
     expect(tenant?.paddleSubscriptionId).toBe("sub_replacement");
   });
+
+  it("does not bind a subscription id to a second tenant when it's already assigned to a different one", async () => {
+    // Regression test: unlike a same-tenant rebind (legitimate), this event
+    // names tenant B via custom_data but carries a subscription id already
+    // bound to tenant A — e.g. a checkout-link misconfiguration. Binding it
+    // to B too would let getTenantByPaddleSubscriptionId's fallback lookup
+    // return an arbitrary one of them for future events lacking custom_data.
+    const stores = buildStores();
+    await stores.tenantStore.updateTenant(TENANT.id, { paddleSubscriptionId: "sub_taken" });
+    const tenantB: Tenant = { ...TENANT, id: "tenant-2", apiKey: "test-api-key-2", paddleSubscriptionId: undefined };
+    await stores.tenantStore.createTenant(tenantB);
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const rawBody = JSON.stringify({
+      event_type: "subscription.canceled",
+      data: { id: "sub_taken", custom_data: { tenantId: tenantB.id } },
+    });
+    const { header } = signPaddle(rawBody);
+
+    const res = await request(app)
+      .post("/webhooks/paddle")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", header)
+      .send(rawBody);
+
+    expect(res.status).toBe(204);
+    // The status change (named by custom_data.tenantId) still applies...
+    const updatedB = await stores.tenantStore.getTenant(tenantB.id);
+    expect(updatedB?.status).toBe("suspended");
+    // ...but the conflicting subscription id binding must not happen, and
+    // tenant A's own binding must be untouched.
+    expect(updatedB?.paddleSubscriptionId).toBeUndefined();
+    const tenantA = await stores.tenantStore.getTenant(TENANT.id);
+    expect(tenantA?.paddleSubscriptionId).toBe("sub_taken");
+  });
 });
 
 describe("webhook: generic lead intake source validation", () => {

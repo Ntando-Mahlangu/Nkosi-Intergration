@@ -275,8 +275,11 @@ rejecting it, since there's no way to tell that apart from an operator
 mistake at checkout-link creation without a human's judgment. Two tenants
 can never end up pointing at the *same* subscription id, though: the admin
 API rejects assigning a `paddleSubscriptionId` already used by another
-tenant, and a partial unique index on the `tenants` table backs that up
-even if a bug ever bypassed the API check.
+tenant, the webhook's own self-heal write does the same check before
+binding one (logging a `paddle_webhook_subscription_conflict` warning and
+skipping the binding, without skipping the status change itself, if it
+would collide), and a partial unique index on the `tenants` table backs
+all of that up even if a bug ever bypassed both checks.
 
 ## Load testing
 

@@ -563,15 +563,34 @@ export function createWebhookRoutes(stores: Stores): Router {
       // still catch a mismatched custom_data.tenantId at checkout-link
       // creation before it does more damage.
       if (typeof subscriptionId === "string" && tenant.paddleSubscriptionId !== subscriptionId) {
-        if (tenant.paddleSubscriptionId) {
-          logger.warn("paddle_webhook_subscription_rebind", {
+        // Mirrors routes/tenants.ts's checkPaddleSubscriptionIdConflict: this
+        // subscription id must not already belong to a *different* tenant —
+        // e.g. a checkout-link misconfiguration sends custom_data.tenantId
+        // for tenant B alongside a subscription id already bound to tenant
+        // A. Binding it here too would let getTenantByPaddleSubscriptionId's
+        // fallback lookup return an arbitrary one of them for future events.
+        // The status change below still applies (custom_data named *this*
+        // tenant) — only the self-heal binding is skipped, with a warning so
+        // an operator can catch the misconfiguration.
+        const conflictingTenant = await stores.tenantStore.getTenantByPaddleSubscriptionId(subscriptionId);
+        if (conflictingTenant && conflictingTenant.id !== tenant.id) {
+          logger.warn("paddle_webhook_subscription_conflict", {
             tenantId: tenant.id,
             eventType,
-            from: tenant.paddleSubscriptionId,
-            to: subscriptionId,
+            subscriptionId,
+            conflictingTenantId: conflictingTenant.id,
           });
+        } else {
+          if (tenant.paddleSubscriptionId) {
+            logger.warn("paddle_webhook_subscription_rebind", {
+              tenantId: tenant.id,
+              eventType,
+              from: tenant.paddleSubscriptionId,
+              to: subscriptionId,
+            });
+          }
+          patch.paddleSubscriptionId = subscriptionId;
         }
-        patch.paddleSubscriptionId = subscriptionId;
       }
       if (occurredAt && occurredAt !== tenant.paddleLastEventAt) patch.paddleLastEventAt = occurredAt;
 
