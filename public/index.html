@@ -771,7 +771,11 @@
     logLine("sys", `link established — ${leads.length} lead(s) under management`, false);
     plan.plans.slice(0, 6).forEach((p, i) => {
       setTimeout(() => {
-        logLine(p.priority, `queued ${escapeHtml(p.lead.name || p.lead.id)} — ${p.priority.toLowerCase()} — ${p.priorityReasons[0] || ""}`, false);
+        logLine(
+          p.priority,
+          `queued ${escapeHtml(p.lead.name || p.lead.id)} — ${p.priority.toLowerCase()} — ${escapeHtml(p.priorityReasons[0] || "")}`,
+          false
+        );
       }, i * 900);
     });
 
