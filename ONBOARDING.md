@@ -117,10 +117,13 @@ the client and get explicit sign-off on:
 
 - Tone/wording of the templates. The built-in default wording lives in
   `src/messaging.ts`/`src/followup.ts`; a specific client can override it
-  without a code change via `PATCH /tenants/me` (or the admin API), setting
-  `templates.initialGrounded` / `templates.initialUngrounded` /
+  without a code change — either via `PATCH /tenants/me` (or the admin API)
+  setting `templates.initialGrounded` / `templates.initialUngrounded` /
   `templates.followUps[]` with `{name}`/`{businessName}`/`{reason}`/
-  `{service}` placeholders.
+  `{service}` placeholders, or by opening `public/settings.html` with the
+  tenant's API key, which is the same thing as a form — hand the client
+  this page directly if they'd rather write their own wording than dictate
+  it to you.
 - Which leads are being excluded and why (the `skipped` list) — this is
   where you catch a bad CSV import or a missing do-not-contact entry before
   it becomes a real problem.
@@ -158,7 +161,8 @@ answered automatically instead of always waiting on a human:
    person to know). Keep it factual and specific; the bot only answers from
    what's here and is instructed to escalate anything it isn't confident is
    covered.
-2. Set it and turn the feature on:
+2. Set it and turn the feature on — either through `public/settings.html`
+   (paste the knowledge base into the form, tick "Turn on auto-reply") or:
    ```bash
    curl -X PATCH https://<host>/tenants/me \
      -H "Authorization: Bearer <tenant api key>" -H "Content-Type: application/json" \

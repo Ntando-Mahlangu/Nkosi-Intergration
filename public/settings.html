@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LeadRecovery Settings</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #262b36;
+    --text: #e6e8ec;
+    --muted: #8a92a3;
+    --accent: #5b8cff;
+    --ok: #2fbf71;
+    --fail: #e5484d;
+    --warn: #f5a623;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 24px 80px; }
+  .auth-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    max-width: 480px;
+    margin: 60px auto;
+  }
+  .auth-panel h2 { margin-top: 0; font-size: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input, textarea {
+    width: 100%;
+    padding: 9px 10px;
+    background: #0c0e12;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 64px; line-height: 1.4; }
+  textarea:disabled, input:disabled { opacity: 0.5; cursor: not-allowed; }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 9px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button.secondary, a.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+  button.danger { background: transparent; border: 1px solid var(--fail); color: var(--fail); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  a.secondary { text-decoration: none; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 6px; }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    z-index: 1;
+  }
+  .toolbar .actions { display: flex; gap: 8px; }
+  .save-status { font-size: 13px; color: var(--muted); }
+  .save-status.ok { color: var(--ok); }
+  .save-status.err { color: var(--fail); }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  section h2 { font-size: 15px; margin: 0 0 6px; }
+  section > .desc { color: var(--muted); font-size: 13px; line-height: 1.5; margin-bottom: 4px; }
+  .field { margin-top: 16px; }
+  .field .field-label { display: flex; justify-content: space-between; align-items: baseline; }
+  .hint { color: var(--muted); font-size: 11.5px; margin-top: 4px; line-height: 1.4; }
+  .field .counter { color: var(--muted); font-size: 11px; }
+  .field .counter.over { color: var(--fail); }
+  .notice {
+    background: rgba(245,166,35,0.1);
+    border: 1px solid rgba(245,166,35,0.35);
+    color: #f5c877;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    margin-bottom: 4px;
+  }
+  .checkbox-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; }
+  .checkbox-row input { width: auto; margin-top: 3px; }
+  .checkbox-row label { margin: 0; color: var(--text); font-size: 13px; cursor: pointer; }
+  .checkbox-row + .hint { margin-left: 24px; }
+  .followups { display: grid; gap: 12px; }
+  .error { color: var(--fail); font-size: 13px; margin-top: 8px; }
+  .empty { color: var(--muted); padding: 32px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div id="auth" class="auth-panel">
+  <h2>LeadRecovery Settings</h2>
+  <label for="base-url">API base URL</label>
+  <input id="base-url" placeholder="http://localhost:3000" />
+  <label for="api-key">Tenant API key</label>
+  <input id="api-key" type="password" placeholder="lr_..." />
+  <div style="margin-top:16px;">
+    <button id="connect-btn">Connect</button>
+  </div>
+  <div style="text-align:center; color:var(--muted); font-size:12px; margin:14px 0;">— or —</div>
+  <button type="button" class="secondary" id="demo-btn" style="width:100%;">Explore the bundled demo</button>
+  <div id="auth-error" class="error" role="alert"></div>
+</div>
+
+<div id="app" style="display:none;">
+  <header>
+    <div>
+      <h1 id="tenant-name">LeadRecovery</h1>
+      <div class="sub" id="tenant-sub">Message &amp; auto-reply settings</div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <a class="secondary" href="index.html">Command Center</a>
+      <a class="secondary" href="dashboard.html">List view</a>
+      <button class="secondary" id="logout-btn">Disconnect</button>
+    </div>
+  </header>
+  <main>
+    <div class="toolbar">
+      <span class="save-status" id="save-status" role="status" aria-live="polite"></span>
+      <div class="actions">
+        <button type="button" class="danger" id="reset-btn">Reset wording to defaults</button>
+        <button type="button" id="save-btn">Save changes</button>
+      </div>
+    </div>
+
+    <section>
+      <h2>Outbound message templates</h2>
+      <div class="desc">
+        What LeadRecovery actually sends leads, on your behalf. Leave any
+        field blank to use LeadRecovery's built-in default wording for it —
+        you don't have to override everything at once.
+      </div>
+      <div class="notice">
+        <strong>Every message must include an opt-out instruction</strong>
+        (e.g. &ldquo;Reply STOP to opt out&rdquo;) &mdash; this is <em>not</em>
+        added automatically. If you replace the default wording, keep an
+        opt-out line in it; removing it removes your compliance safety net.
+      </div>
+      <div class="desc">
+        Placeholders: <code>{name}</code>, <code>{businessName}</code>,
+        <code>{reason}</code> (first message, when there's a specific reason
+        like a missed call or quote request), <code>{service}</code> (first
+        message, generic re-engagement). An unrecognized <code>{placeholder}</code>
+        silently becomes blank, so double-check spelling.
+      </div>
+
+      <div class="field">
+        <label for="tpl-grounded">First message — with a specific reason</label>
+        <textarea id="tpl-grounded" rows="3" placeholder="Uses the default wording if left blank"></textarea>
+        <div class="hint">Sent when we know exactly why: a missed call, a quote they requested, an abandoned booking.</div>
+      </div>
+
+      <div class="field">
+        <label for="tpl-ungrounded">First message — general re-engagement</label>
+        <textarea id="tpl-ungrounded" rows="3" placeholder="Uses the default wording if left blank"></textarea>
+        <div class="hint">Sent when there's no specific trigger — just reconnecting with an older lead.</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          <label style="margin:0;">Follow-up nudges (sent 3, 7, and 14 days after the first message if there's no reply)</label>
+        </div>
+        <div class="hint" style="margin-top:-6px; margin-bottom:8px;">
+          Either fill in all three, or leave all three blank to use the
+          built-in defaults — a partially-filled set repeats your last
+          custom message for the remaining follow-ups instead of falling
+          back to the (more varied) default wording.
+        </div>
+        <div class="followups">
+          <div>
+            <label for="tpl-fu-0" style="margin-top:0;">Follow-up 1 (day 3)</label>
+            <textarea id="tpl-fu-0" rows="2" placeholder="Uses the default wording if left blank"></textarea>
+          </div>
+          <div>
+            <label for="tpl-fu-1" style="margin-top:0;">Follow-up 2 (day 7)</label>
+            <textarea id="tpl-fu-1" rows="2" placeholder="Uses the default wording if left blank"></textarea>
+          </div>
+          <div>
+            <label for="tpl-fu-2" style="margin-top:0;">Follow-up 3 (day 14)</label>
+            <textarea id="tpl-fu-2" rows="2" placeholder="Uses the default wording if left blank"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="tpl-closer">Not-interested close-out</label>
+        <textarea id="tpl-closer" rows="2" placeholder="Uses the default wording if left blank"></textarea>
+        <div class="hint">Sent once, automatically, the moment a reply reads as "not interested" — a polite sign-off, not a sales pitch.</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Auto-reply chatbot</h2>
+      <div class="desc">
+        Answers routine inbound questions (hours, pricing, policies)
+        automatically instead of always waiting for a human. It only ever
+        answers from the text below — nothing it wasn't told — and escalates
+        anything it isn't confident is covered (price negotiation,
+        complaints, an explicit request for a person).
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          <label for="knowledge-base" style="margin:0;">Knowledge base</label>
+          <span class="counter" id="kb-counter">0 / 20,000</span>
+        </div>
+        <textarea id="knowledge-base" rows="8" placeholder="Services offered, pricing, hours, policies — whatever you'd want a front-desk person to know."></textarea>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="auto-reply-enabled" />
+        <label for="auto-reply-enabled">Turn on auto-reply</label>
+      </div>
+      <div class="hint">Requires a non-empty knowledge base above — grayed out until you've written one.</div>
+    </section>
+
+    <div id="load-error" class="error" role="alert"></div>
+  </main>
+</div>
+
+<script>
+(function () {
+  const authPanel = document.getElementById("auth");
+  const app = document.getElementById("app");
+  const authError = document.getElementById("auth-error");
+  const saveStatus = document.getElementById("save-status");
+
+  function getSession() {
+    try { return JSON.parse(localStorage.getItem("leadrecovery.session") || "null"); }
+    catch { return null; }
+  }
+  function setSession(session) {
+    try { localStorage.setItem("leadrecovery.session", JSON.stringify(session)); } catch {}
+  }
+  async function api(session, path, options) {
+    const res = await fetch(session.baseUrl + path, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options && options.headers),
+        Authorization: "Bearer " + session.apiKey,
+      },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || (res.status + " " + res.statusText));
+    }
+    return res.status === 204 ? undefined : res.json();
+  }
+
+  function val(id) { return document.getElementById(id).value.trim(); }
+
+  function fillForm(tenant) {
+    document.getElementById("tenant-name").textContent = tenant.name;
+    const t = tenant.templates || {};
+    document.getElementById("tpl-grounded").value = t.initialGrounded || "";
+    document.getElementById("tpl-ungrounded").value = t.initialUngrounded || "";
+    document.getElementById("tpl-closer").value = t.notInterestedCloser || "";
+    const fu = t.followUps || [];
+    document.getElementById("tpl-fu-0").value = fu[0] || "";
+    document.getElementById("tpl-fu-1").value = fu[1] || "";
+    document.getElementById("tpl-fu-2").value = fu[2] || "";
+    document.getElementById("knowledge-base").value = tenant.knowledgeBase || "";
+    document.getElementById("auto-reply-enabled").checked = Boolean(tenant.autoReplyEnabled);
+    updateKbCounter();
+    updateAutoReplyAvailability();
+  }
+
+  function updateKbCounter() {
+    const len = document.getElementById("knowledge-base").value.length;
+    const counter = document.getElementById("kb-counter");
+    counter.textContent = len.toLocaleString() + " / 20,000";
+    counter.classList.toggle("over", len > 20000);
+  }
+
+  // Mirrors the server's own rule (autoReplyEnabled requires a non-empty
+  // knowledgeBase) so a client sees why the checkbox is unavailable instead
+  // of hitting a 400 after the fact.
+  function updateAutoReplyAvailability() {
+    const hasKb = document.getElementById("knowledge-base").value.trim().length > 0;
+    const checkbox = document.getElementById("auto-reply-enabled");
+    checkbox.disabled = !hasKb;
+    if (!hasKb) checkbox.checked = false;
+  }
+
+  document.getElementById("knowledge-base").addEventListener("input", () => {
+    updateKbCounter();
+    updateAutoReplyAvailability();
+  });
+
+  function buildTemplatesPatch() {
+    const templates = {};
+    const grounded = val("tpl-grounded");
+    const ungrounded = val("tpl-ungrounded");
+    const closer = val("tpl-closer");
+    if (grounded) templates.initialGrounded = grounded;
+    if (ungrounded) templates.initialUngrounded = ungrounded;
+    if (closer) templates.notInterestedCloser = closer;
+
+    const fu = [val("tpl-fu-0"), val("tpl-fu-1"), val("tpl-fu-2")];
+    const filledCount = fu.filter(Boolean).length;
+    if (filledCount > 0 && filledCount < 3) {
+      throw new Error("Fill in all three follow-ups, or leave all three blank to use the defaults.");
+    }
+    if (filledCount === 3) templates.followUps = fu;
+
+    return Object.keys(templates).length > 0 ? templates : null;
+  }
+
+  async function loadSettings(session) {
+    const tenant = await api(session, "/tenants/me");
+    fillForm(tenant);
+  }
+
+  async function connect(baseUrl, apiKey) {
+    authError.textContent = "";
+    if (!apiKey) {
+      authError.textContent = "API key is required.";
+      return;
+    }
+    const session = { baseUrl: baseUrl.replace(/\/$/, ""), apiKey };
+    try {
+      await loadSettings(session);
+      setSession(session);
+      authPanel.style.display = "none";
+      app.style.display = "block";
+    } catch (err) {
+      authError.textContent = "Could not connect: " + err.message;
+    }
+  }
+
+  document.getElementById("connect-btn").addEventListener("click", () => {
+    const baseUrl = document.getElementById("base-url").value.trim() || window.location.origin;
+    const apiKey = document.getElementById("api-key").value.trim();
+    connect(baseUrl, apiKey);
+  });
+
+  document.getElementById("demo-btn").addEventListener("click", () => {
+    connect(window.location.origin, "demo-key");
+  });
+
+  document.getElementById("logout-btn").addEventListener("click", () => {
+    setSession(null);
+    app.style.display = "none";
+    authPanel.style.display = "block";
+  });
+
+  document.getElementById("save-btn").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session) return;
+    const btn = document.getElementById("save-btn");
+    saveStatus.textContent = "";
+    saveStatus.className = "save-status";
+
+    let templates;
+    try {
+      templates = buildTemplatesPatch();
+    } catch (err) {
+      saveStatus.textContent = err.message;
+      saveStatus.className = "save-status err";
+      return;
+    }
+
+    const knowledgeBase = val("knowledge-base");
+    const autoReplyEnabled = document.getElementById("auto-reply-enabled").checked;
+
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    try {
+      const updated = await api(session, "/tenants/me", {
+        method: "PATCH",
+        body: JSON.stringify({ templates, knowledgeBase, autoReplyEnabled }),
+      });
+      fillForm(updated);
+      saveStatus.textContent = "Saved.";
+      saveStatus.className = "save-status ok";
+    } catch (err) {
+      saveStatus.textContent = "Could not save: " + err.message;
+      saveStatus.className = "save-status err";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Save changes";
+    }
+  });
+
+  document.getElementById("reset-btn").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session) return;
+    if (!confirm("Reset all custom message wording to LeadRecovery's built-in defaults? This doesn't touch the chatbot's knowledge base.")) return;
+    saveStatus.textContent = "";
+    saveStatus.className = "save-status";
+    try {
+      const updated = await api(session, "/tenants/me", {
+        method: "PATCH",
+        body: JSON.stringify({ templates: null }),
+      });
+      fillForm(updated);
+      saveStatus.textContent = "Reset to defaults.";
+      saveStatus.className = "save-status ok";
+    } catch (err) {
+      saveStatus.textContent = "Could not reset: " + err.message;
+      saveStatus.className = "save-status err";
+    }
+  });
+
+  const existing = getSession();
+  if (existing) {
+    loadSettings(existing)
+      .then(() => {
+        authPanel.style.display = "none";
+        app.style.display = "block";
+      })
+      .catch(() => {
+        setSession(null);
+      });
+  }
+})();
+</script>
+</body>
+</html>

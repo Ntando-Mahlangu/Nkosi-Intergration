@@ -127,13 +127,26 @@ deployment serves many clients with fully isolated data.
   `templates` override (`tenant.templates.initialGrounded` /
   `initialUngrounded` / `followUps[]`, with `{name}`/`{businessName}`/
   `{reason}`/`{service}` placeholders) so a client can customize wording
-  without a code change — set via `PATCH /tenants/me` or the admin API.
+  without a code change — set via `PATCH /tenants/me` or the admin API, or
+  through **`public/settings.html`**, a self-service form for a client to
+  edit their own outbound templates and the chatbot's knowledge base
+  without needing to know the API exists.
 - **`public/index.html`** — the default landing page: a "Command Center"
   view (connect with a tenant API key to see live per-category lead counts
   as an animated node graph, click a node for the real leads behind it).
 - **`public/dashboard.html`** — the plain-list working view (queued plan,
   drafted messages, skipped leads, a button to trigger a run) — linked from
   the Command Center for day-to-day lead-by-lead work.
+- **`public/settings.html`** — self-service editor for a tenant's own
+  outbound message templates and the chatbot's knowledge base/auto-reply
+  toggle (the same fields `PATCH /tenants/me` accepts, as a form instead of
+  a curl command). Refuses to save a partially-filled follow-up sequence
+  (the underlying array indexing reuses the last filled entry for any
+  missing slot, rather than falling back to the built-in default for it —
+  the form enforces "all three or none" so that's never a silent surprise),
+  and mirrors the server's autoReplyEnabled-requires-a-knowledge-base rule
+  client-side so the checkbox is simply unavailable instead of erroring
+  after a round trip.
 - **`public/admin.html`** — cross-tenant platform ops: connects with
   `ADMIN_API_KEY` (not a tenant key) to list/create/suspend/reactivate/
   delete tenants and rotate a tenant's API key, plus visibility into the
@@ -147,7 +160,7 @@ deployment serves many clients with fully isolated data.
 
 ### Accessibility
 
-All three dashboards work with a keyboard and a screen reader, not just a
+All four dashboards work with a keyboard and a screen reader, not just a
 mouse:
 
 - Every form field has a real `<label for>`, every action is a real
