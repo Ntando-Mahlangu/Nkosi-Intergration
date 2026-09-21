@@ -29,6 +29,20 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
     expect(total).toBeGreaterThan(0);
   });
 
+  test("the one-click 'Explore the bundled demo' button connects without typing anything", async ({ page }) => {
+    // Regression test for a UX friction point: a first-time visitor with no
+    // account saw an empty "lr_..."-hinted API key field and had no way to
+    // tell it should be "demo-key" instead. This button removes that guess.
+    await page.goto("/");
+    await expect(page.locator("#gate")).toBeVisible();
+    await expect(page.locator("#api-key")).toHaveValue("");
+
+    await page.click("#demo-btn");
+
+    await expect(page.locator("#gate")).toBeHidden();
+    await expect(page.locator("#tenant-label")).toHaveText("NKOSI INTEGRATIONS (DEMO)");
+  });
+
   test("clicking a node opens the detail panel with its leads", async ({ page }) => {
     await page.goto("/");
     await page.fill("#api-key", "demo-key");

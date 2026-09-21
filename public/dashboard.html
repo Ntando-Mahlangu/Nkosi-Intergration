@@ -119,6 +119,8 @@
   <div style="margin-top:16px;">
     <button id="connect-btn">Connect</button>
   </div>
+  <div style="text-align:center; color:var(--muted); font-size:12px; margin:14px 0;">— or —</div>
+  <button type="button" class="secondary" id="demo-btn" style="width:100%;">Explore the bundled demo</button>
   <div id="auth-error" class="error" role="alert"></div>
 </div>
 
@@ -249,15 +251,13 @@
       plan.plans.length + " queued, " + plan.skipped.length + " skipped";
   }
 
-  document.getElementById("connect-btn").addEventListener("click", async () => {
+  async function connect(baseUrl, apiKey) {
     authError.textContent = "";
-    const baseUrl = document.getElementById("base-url").value.trim().replace(/\/$/, "") || window.location.origin;
-    const apiKey = document.getElementById("api-key").value.trim();
     if (!apiKey) {
       authError.textContent = "API key is required.";
       return;
     }
-    const session = { baseUrl, apiKey };
+    const session = { baseUrl: baseUrl.replace(/\/$/, ""), apiKey };
     try {
       await loadDashboard(session);
       setSession(session);
@@ -266,6 +266,19 @@
     } catch (err) {
       authError.textContent = "Could not connect: " + err.message;
     }
+  }
+
+  document.getElementById("connect-btn").addEventListener("click", () => {
+    const baseUrl = document.getElementById("base-url").value.trim() || window.location.origin;
+    const apiKey = document.getElementById("api-key").value.trim();
+    connect(baseUrl, apiKey);
+  });
+
+  // Same one-click path as index.html's "Explore the bundled demo" — the
+  // dev server (no DATABASE_URL) and docker-compose stack both always seed
+  // this exact tenant, so there's nothing to look up or guess.
+  document.getElementById("demo-btn").addEventListener("click", () => {
+    connect(window.location.origin, "demo-key");
   });
 
   document.getElementById("logout-btn").addEventListener("click", () => {

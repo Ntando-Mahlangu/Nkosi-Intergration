@@ -242,6 +242,8 @@
     font-family: inherit;
   }
   #gate button:hover { background: rgba(91,233,255,0.22); }
+  #gate .or-divider { text-align: center; font-size: 10px; letter-spacing: 0.15em; color: var(--cyan-dim); margin: 14px 0; }
+  #gate .demo-btn { display: block; width: 100%; margin-top: 0; text-align: center; }
   #gate .err { color: var(--red); font-size: 11px; margin-top: 12px; min-height: 14px; }
 
   /* ---------- node detail panel ---------- */
@@ -341,6 +343,8 @@
     <label for="api-key">Tenant API key</label>
     <input id="api-key" type="password" placeholder="lr_..." />
     <button id="connect-btn">Establish Link</button>
+    <div class="or-divider">— or —</div>
+    <button type="button" id="demo-btn" class="ghost demo-btn">Explore the bundled demo</button>
     <div class="err" id="gate-err" role="alert"></div>
   </div>
 </div>
@@ -366,11 +370,9 @@
   const gate = document.getElementById("gate");
   const gateErr = document.getElementById("gate-err");
 
-  document.getElementById("connect-btn").addEventListener("click", async () => {
-    const baseUrl = (document.getElementById("base-url").value.trim() || window.location.origin).replace(/\/$/, "");
-    const apiKey = document.getElementById("api-key").value.trim();
+  async function connect(baseUrl, apiKey) {
     if (!apiKey) { gateErr.textContent = "API key required."; return; }
-    const session = { baseUrl, apiKey };
+    const session = { baseUrl: baseUrl.replace(/\/$/, ""), apiKey };
     try {
       await boot(session);
       setSession(session);
@@ -378,6 +380,20 @@
     } catch (err) {
       gateErr.textContent = "Link failed: " + err.message;
     }
+  }
+
+  document.getElementById("connect-btn").addEventListener("click", () => {
+    const baseUrl = document.getElementById("base-url").value.trim() || window.location.origin;
+    const apiKey = document.getElementById("api-key").value.trim();
+    connect(baseUrl, apiKey);
+  });
+
+  // No accounts yet, just want to see it work? `npm run dev` (and the
+  // bundled docker-compose stack) always boots with this exact tenant —
+  // one click, no typing, no guessing whether "lr_..." is a format you're
+  // supposed to already have.
+  document.getElementById("demo-btn").addEventListener("click", () => {
+    connect(window.location.origin, "demo-key");
   });
 
   /* ===================== clock ===================== */

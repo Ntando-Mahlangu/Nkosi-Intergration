@@ -184,9 +184,10 @@ npm run cli          # runs the workflow once over data/sample-leads.json, print
 npm run dev           # starts the API + dashboard at http://localhost:3000 (demo tenant, key "demo-key")
 ```
 
-Open `http://localhost:3000` and connect with API key `demo-key` to see the
-dashboard against the bundled sample data — no database or provider
-credentials required.
+Open `http://localhost:3000` and click **Explore the bundled demo** to see
+the dashboard against the bundled sample data — no database, no provider
+credentials, no API key to look up. (Its own key is `demo-key`, if you want
+to type it in manually instead.)
 
 ## Running for real
 
