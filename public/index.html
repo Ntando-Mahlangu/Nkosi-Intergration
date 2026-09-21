@@ -311,6 +311,7 @@
     LEADRECOVERY <span style="color:var(--amber)">CORE</span>
     <div class="sub" id="tenant-label" aria-live="polite">NOT CONNECTED</div>
     <a class="nav-link" href="dashboard.html">&larr; list view</a>
+    <button type="button" class="ghost" id="disconnect-btn">disconnect</button>
   </div>
   <div class="clock">
     <div id="clock-time" aria-hidden="true">--:--:--</div>
@@ -394,6 +395,14 @@
   // supposed to already have.
   document.getElementById("demo-btn").addEventListener("click", () => {
     connect(window.location.origin, "demo-key");
+  });
+
+  document.getElementById("disconnect-btn").addEventListener("click", () => {
+    setSession(null);
+    gateErr.textContent = "";
+    document.getElementById("tenant-label").textContent = "NOT CONNECTED";
+    document.getElementById("clock-status").textContent = "STANDBY";
+    gate.style.display = "";
   });
 
   /* ===================== clock ===================== */

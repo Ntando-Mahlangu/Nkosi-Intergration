@@ -43,6 +43,23 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
     await expect(page.locator("#tenant-label")).toHaveText("NKOSI INTEGRATIONS (DEMO)");
   });
 
+  test("disconnect returns to the access gate and clears the persisted session", async ({ page }) => {
+    await page.goto("/");
+    await page.click("#demo-btn");
+    await expect(page.locator("#gate")).toBeHidden();
+
+    await page.click("#disconnect-btn");
+
+    await expect(page.locator("#gate")).toBeVisible();
+    await expect(page.locator("#tenant-label")).toHaveText("NOT CONNECTED");
+
+    // A reload must land back on the gate too, not silently reconnect —
+    // confirms the session was actually cleared, not just the UI hidden.
+    await page.reload();
+    await expect(page.locator("#gate")).toBeVisible();
+    await expect(page.locator("#tenant-label")).toHaveText("NOT CONNECTED");
+  });
+
   test("clicking a node opens the detail panel with its leads", async ({ page }) => {
     await page.goto("/");
     await page.fill("#api-key", "demo-key");
