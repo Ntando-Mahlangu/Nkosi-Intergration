@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LeadRecovery Reports</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #262b36;
+    --text: #e6e8ec;
+    --muted: #8a92a3;
+    --accent: #5b8cff;
+    --high: #e5484d;
+    --medium: #f5a623;
+    --low: #4a5568;
+    --ok: #2fbf71;
+    --fail: #e5484d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px; }
+  .auth-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    max-width: 480px;
+    margin: 60px auto;
+  }
+  .auth-panel h2 { margin-top: 0; font-size: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input {
+    width: 100%;
+    padding: 9px 10px;
+    background: #0c0e12;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 14px;
+  }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 9px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button.secondary, a.secondary {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 16px;
+    border-radius: 6px;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .error { color: var(--fail); font-size: 13px; margin-top: 8px; }
+  .empty { color: var(--muted); padding: 32px; text-align: center; }
+  section h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 24px 0 10px; }
+
+  .range-row { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; margin-bottom: 8px; }
+  .range-row .field { min-width: 160px; }
+  .range-row label { margin: 0 0 4px; }
+  .range-hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .stat-card .stat-value { font-size: 26px; font-weight: 700; }
+  .stat-card .stat-label { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+
+  .breakdown { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 4px 16px; }
+  .breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13.5px;
+  }
+  .breakdown-row:last-child { border-bottom: none; }
+  .breakdown-row .count { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="auth" class="auth-panel">
+  <h2>LeadRecovery Reports</h2>
+  <label for="base-url">API base URL</label>
+  <input id="base-url" placeholder="http://localhost:3000" />
+  <label for="api-key">Tenant API key</label>
+  <input id="api-key" type="password" placeholder="lr_..." />
+  <div style="margin-top:16px;">
+    <button id="connect-btn">Connect</button>
+  </div>
+  <div style="text-align:center; color:var(--muted); font-size:12px; margin:14px 0;">— or —</div>
+  <button type="button" class="secondary" id="demo-btn" style="width:100%;">Explore the bundled demo</button>
+  <div id="auth-error" class="error" role="alert"></div>
+</div>
+
+<div id="app" style="display:none;">
+  <header>
+    <div>
+      <h1 id="tenant-name">LeadRecovery</h1>
+      <div class="sub">Activity &amp; ROI report</div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <a class="secondary" href="index.html">Command Center</a>
+      <a class="secondary" href="dashboard.html">List view</a>
+      <a class="secondary" href="settings.html">Settings</a>
+      <button class="secondary" id="logout-btn">Back</button>
+    </div>
+  </header>
+  <main>
+    <section>
+      <h3>Date range</h3>
+      <div class="range-row">
+        <div class="field">
+          <label for="since">Since</label>
+          <input type="date" id="since" />
+        </div>
+        <div class="field">
+          <label for="until">Until</label>
+          <input type="date" id="until" />
+        </div>
+        <button type="button" id="apply-range-btn">Apply</button>
+        <button type="button" class="secondary" id="this-month-btn">This month</button>
+        <button type="button" class="secondary" id="all-time-btn">All time</button>
+      </div>
+      <div class="range-hint">
+        The lead pipeline snapshot below is always current; the message
+        activity is limited to this date range — that's what a billing
+        period's "what happened this month" report actually wants.
+      </div>
+      <div id="report-error" class="error" role="alert"></div>
+    </section>
+
+    <section>
+      <h3>Pipeline snapshot</h3>
+      <div class="stat-grid" id="lead-stats"></div>
+    </section>
+
+    <section>
+      <h3>Message activity in range</h3>
+      <div class="stat-grid" id="message-stats"></div>
+    </section>
+
+    <section>
+      <h3>Outbound by kind</h3>
+      <div class="breakdown" id="outbound-breakdown"></div>
+    </section>
+
+    <section>
+      <h3>Inbound replies by classification</h3>
+      <div class="breakdown" id="inbound-breakdown"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  const authPanel = document.getElementById("auth");
+  const app = document.getElementById("app");
+  const authError = document.getElementById("auth-error");
+
+  function getSession() {
+    try {
+      return JSON.parse(localStorage.getItem("leadrecovery.session") || "null");
+    } catch {
+      return null;
+    }
+  }
+
+  function setSession(session) {
+    try {
+      localStorage.setItem("leadrecovery.session", JSON.stringify(session));
+    } catch {
+      // localStorage unavailable — session just won't persist across reloads
+    }
+  }
+
+  async function api(session, path, options) {
+    const res = await fetch(session.baseUrl + path, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options && options.headers),
+        Authorization: "Bearer " + session.apiKey,
+      },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || (res.status + " " + res.statusText));
+    }
+    return res.status === 204 ? undefined : res.json();
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function statCard(value, label) {
+    return `<div class="stat-card"><div class="stat-value">${escapeHtml(value)}</div><div class="stat-label">${escapeHtml(label)}</div></div>`;
+  }
+
+  function renderBreakdown(el, byKey, emptyText) {
+    const entries = Object.entries(byKey || {});
+    if (entries.length === 0) {
+      el.innerHTML = `<div class="empty">${escapeHtml(emptyText)}</div>`;
+      return;
+    }
+    entries.sort((a, b) => b[1] - a[1]);
+    el.innerHTML = entries
+      .map(([key, count]) => `<div class="breakdown-row"><span>${escapeHtml(key)}</span><span class="count">${escapeHtml(count)}</span></div>`)
+      .join("");
+  }
+
+  function renderReport(report) {
+    const leadStats = document.getElementById("lead-stats");
+    leadStats.innerHTML = statCard(report.leads.total, "Total leads") +
+      Object.entries(report.leads.byStatus)
+        .sort((a, b) => b[1] - a[1])
+        .map(([status, count]) => statCard(count, status))
+        .join("");
+
+    const m = report.messages;
+    const replyRate = m.outboundSent > 0 ? Math.round((m.inboundReceived / m.outboundSent) * 100) + "%" : "—";
+    const interested = m.inboundByClassification.interested || 0;
+    document.getElementById("message-stats").innerHTML =
+      statCard(m.outboundSent, "Outbound sent") +
+      statCard(m.inboundReceived, "Inbound replies") +
+      statCard(replyRate, "Reply rate") +
+      statCard(interested, "Marked interested");
+
+    renderBreakdown(document.getElementById("outbound-breakdown"), m.outboundByKind, "No outbound messages in this range.");
+    renderBreakdown(document.getElementById("inbound-breakdown"), m.inboundByClassification, "No inbound replies in this range.");
+  }
+
+  async function loadReport(session) {
+    const since = document.getElementById("since").value;
+    const until = document.getElementById("until").value;
+    const params = new URLSearchParams();
+    if (since) params.set("since", new Date(since + "T00:00:00").toISOString());
+    if (until) params.set("until", new Date(until + "T23:59:59.999").toISOString());
+    const qs = params.toString();
+    const report = await api(session, "/tenants/me/report" + (qs ? "?" + qs : ""));
+    renderReport(report);
+  }
+
+  async function loadPage(session) {
+    const tenant = await api(session, "/tenants/me");
+    document.getElementById("tenant-name").textContent = tenant.name;
+    await loadReport(session);
+  }
+
+  async function connect(baseUrl, apiKey) {
+    authError.textContent = "";
+    if (!apiKey) {
+      authError.textContent = "API key is required.";
+      return;
+    }
+    const session = { baseUrl: baseUrl.replace(/\/$/, ""), apiKey };
+    try {
+      await loadPage(session);
+      setSession(session);
+      authPanel.style.display = "none";
+      app.style.display = "block";
+    } catch (err) {
+      authError.textContent = "Could not connect: " + err.message;
+    }
+  }
+
+  document.getElementById("connect-btn").addEventListener("click", () => {
+    const baseUrl = document.getElementById("base-url").value.trim() || window.location.origin;
+    const apiKey = document.getElementById("api-key").value.trim();
+    connect(baseUrl, apiKey);
+  });
+
+  document.getElementById("demo-btn").addEventListener("click", () => {
+    connect(window.location.origin, "demo-key");
+  });
+
+  document.getElementById("logout-btn").addEventListener("click", () => {
+    setSession(null);
+    app.style.display = "none";
+    authPanel.style.display = "block";
+  });
+
+  document.getElementById("apply-range-btn").addEventListener("click", () => {
+    const session = getSession();
+    if (!session) return;
+    document.getElementById("report-error").textContent = "";
+    loadReport(session).catch((err) => {
+      document.getElementById("report-error").textContent = "Could not load report: " + err.message;
+    });
+  });
+
+  function toDateInputValue(d) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  document.getElementById("this-month-btn").addEventListener("click", () => {
+    const now = new Date();
+    document.getElementById("since").value = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+    document.getElementById("until").value = toDateInputValue(now);
+    document.getElementById("apply-range-btn").click();
+  });
+
+  document.getElementById("all-time-btn").addEventListener("click", () => {
+    document.getElementById("since").value = "";
+    document.getElementById("until").value = "";
+    document.getElementById("apply-range-btn").click();
+  });
+
+  const existing = getSession();
+  if (existing) {
+    loadPage(existing)
+      .then(() => {
+        authPanel.style.display = "none";
+        app.style.display = "block";
+      })
+      .catch(() => {
+        setSession(null);
+      });
+  }
+})();
+</script>
+</body>
+</html>

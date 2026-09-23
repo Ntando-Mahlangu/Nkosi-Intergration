@@ -239,6 +239,29 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(reread?.followUpCount).toBe(0);
   });
 
+  it("round-trips appointmentAt/appointmentReminderSentAt", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant(TENANT);
+    const leadStore = new PostgresLeadStore(pool);
+    await leadStore.createLead(LEAD);
+
+    const booked = await leadStore.updateLead(TENANT.id, LEAD.id, {
+      appointmentStatus: "booked",
+      appointmentAt: new Date("2026-12-01T10:00:00.000Z").toISOString(),
+    });
+    expect(booked?.appointmentAt).toBe("2026-12-01T10:00:00.000Z");
+    expect(booked?.appointmentReminderSentAt).toBeUndefined();
+
+    const reminded = await leadStore.updateLead(TENANT.id, LEAD.id, {
+      appointmentReminderSentAt: new Date("2026-11-30T10:00:00.000Z").toISOString(),
+    });
+    expect(reminded?.appointmentReminderSentAt).toBe("2026-11-30T10:00:00.000Z");
+
+    const reread = await leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(reread?.appointmentAt).toBe("2026-12-01T10:00:00.000Z");
+    expect(reread?.appointmentReminderSentAt).toBe("2026-11-30T10:00:00.000Z");
+  });
+
   it("survives two concurrent updateLead calls patching different fields (no lost update)", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     const leadStore = new PostgresLeadStore(pool);

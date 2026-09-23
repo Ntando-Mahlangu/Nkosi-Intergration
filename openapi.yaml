@@ -355,6 +355,74 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Suspended" }
 
+  /leads/{id}:
+    patch:
+      tags: [leads]
+      summary: Update one lead's editable fields
+      description: >
+        Never accepts `status` (compliance-sensitive; only ever set by the
+        classify/workflow logic) — rejected with 400. Clearing
+        `appointmentAt` also clears `appointmentReminderSentAt`, so
+        rescheduling gets a fresh 24-hours-before reminder instead of being
+        silently blocked by the old appointment's sent-flag.
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeadPatchBody" }
+      responses:
+        "200":
+          description: The updated lead
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lead" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /leads/import:
+    post:
+      tags: [leads]
+      summary: Bulk-create leads from a CSV file
+      description: >
+        Same columns/validation as `npm run import-leads` (see
+        README.md/ONBOARDING.md): name, phone, email, source, createdAt,
+        requestedService, previousQuote, appointmentAt, notes — at least
+        phone or email is required per row, and other rows are skipped
+        (counted, not rejected). A row with a valid appointmentAt is
+        automatically marked appointmentStatus "booked". Does not dedupe
+        against existing leads.
+      security: [{ tenantAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csv]
+              properties:
+                csv: { type: string, description: "Raw CSV file contents, max 5MB." }
+      responses:
+        "201":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported: { type: integer }
+                  skipped: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+
   /leads/export:
     get:
       tags: [leads]
@@ -610,6 +678,9 @@ components:
         initialUngrounded: { type: string }
         followUps: { type: array, items: { type: string } }
         notInterestedCloser: { type: string }
+        appointmentReminder:
+          type: string
+          description: "Sent ~24 hours before a booked appointment. Supports {name}/{businessName}/{appointmentTime}."
 
     TenantConfigBody:
       type: object
@@ -695,7 +766,41 @@ components:
             ]
         requestedService: { type: string }
         previousQuote: { type: string }
+        appointmentStatus:
+          type: string
+          enum: [none, requested, abandoned, booked]
+        appointmentAt:
+          type: string
+          format: date-time
+          description: "When the booked appointment is scheduled for. Only meaningful when appointmentStatus is \"booked\"; drives the 24-hours-before reminder."
+        appointmentReminderSentAt:
+          type: string
+          format: date-time
+          description: "When the appointment reminder was actually sent — set automatically, guards against sending it twice."
+        preferredChannel:
+          type: string
+          enum: [sms, whatsapp, email]
         notes: { type: string }
+
+    LeadPatchBody:
+      type: object
+      description: Fields accepted by PATCH /leads/{id}. Never accepts status.
+      properties:
+        name: { type: string }
+        requestedService: { type: string }
+        previousQuote: { type: string }
+        notes: { type: string }
+        preferredChannel:
+          type: string
+          enum: [sms, whatsapp, email]
+        appointmentStatus:
+          type: string
+          enum: [none, requested, abandoned, booked]
+        appointmentAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set null to clear it (also clears appointmentReminderSentAt).
 
     Message:
       type: object

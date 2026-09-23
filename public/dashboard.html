@@ -106,6 +106,72 @@
   .empty { color: var(--muted); padding: 32px; text-align: center; }
   .error { color: var(--fail); font-size: 13px; margin-top: 8px; }
   section h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 24px 0 10px; }
+
+  .lead-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .lead-row:hover, .lead-row:focus-visible { background: var(--panel); border-color: var(--border); }
+  .lead-row .lead-meta { color: var(--muted); font-size: 12px; }
+  .lead-row .appt-tag {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    background: rgba(91,140,255,0.15);
+    color: var(--accent);
+    margin-left: 8px;
+  }
+
+  .import-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .import-status { font-size: 12.5px; color: var(--muted); }
+  .import-status.ok { color: var(--ok); }
+  .import-status.err { color: var(--fail); }
+
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+    padding: 20px;
+  }
+  #overlay.open { display: flex; }
+  #lead-detail {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    width: 100%;
+    max-width: 520px;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  #lead-detail h3 { margin: 0 0 4px; font-size: 16px; color: var(--text); text-transform: none; letter-spacing: normal; }
+  #lead-detail .detail-meta { color: var(--muted); font-size: 12.5px; margin-bottom: 16px; }
+  #lead-detail .close-btn { float: right; }
+  .appt-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; margin-top: 4px; }
+  .appt-form label { grid-column: span 2; }
+  .thread { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .bubble {
+    max-width: 85%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .bubble.outbound { align-self: flex-end; background: rgba(91,140,255,0.15); }
+  .bubble.inbound { align-self: flex-start; background: #0c0e12; border: 1px solid var(--border); }
+  .bubble .bubble-meta { color: var(--muted); font-size: 10.5px; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -133,6 +199,7 @@
     <div style="display:flex; gap:8px;">
       <a class="secondary" href="index.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:6px;">Command Center</a>
       <a class="secondary" href="settings.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:6px;">Settings</a>
+      <a class="secondary" href="reports.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:6px;">Reports</a>
       <button class="secondary" id="refresh-btn">Refresh</button>
       <button id="run-btn">Run recovery workflow</button>
       <button class="secondary" id="logout-btn">Back</button>
@@ -152,7 +219,58 @@
       <h3>Skipped</h3>
       <ul class="skipped-list" id="skipped"></ul>
     </section>
+
+    <section>
+      <h3>Import leads</h3>
+      <div class="import-row">
+        <input type="file" id="import-file" accept=".csv,text/csv" aria-label="CSV file to import" />
+        <button type="button" class="secondary" id="import-btn">Upload</button>
+        <span class="import-status" id="import-status" role="status" aria-live="polite"></span>
+      </div>
+      <div class="hint" style="color:var(--muted); font-size:12px; margin-top:6px;">
+        Same columns as <code>npm run import-leads</code>: name, phone, email,
+        source, createdAt, requestedService, previousQuote, appointmentAt,
+        notes. At least phone or email is required per row.
+      </div>
+    </section>
+
+    <section>
+      <h3>All leads</h3>
+      <div id="all-leads"></div>
+    </section>
   </main>
+</div>
+
+<div id="overlay" role="presentation">
+  <div id="lead-detail" role="dialog" aria-modal="true" aria-labelledby="detail-name" aria-hidden="true" inert>
+    <button type="button" class="secondary close-btn" id="detail-close-btn">Close</button>
+    <h3 id="detail-name">—</h3>
+    <div class="detail-meta" id="detail-meta"></div>
+
+    <h3 style="font-size:13px; text-transform:uppercase; color:var(--muted); margin:18px 0 6px;">Appointment</h3>
+    <div class="appt-form">
+      <div>
+        <label for="detail-appt-status">Status</label>
+        <select id="detail-appt-status">
+          <option value="none">none</option>
+          <option value="requested">requested</option>
+          <option value="abandoned">abandoned</option>
+          <option value="booked">booked</option>
+        </select>
+      </div>
+      <div>
+        <label for="detail-appt-at">Date/time</label>
+        <input type="datetime-local" id="detail-appt-at" />
+      </div>
+    </div>
+    <div style="margin-top:10px;">
+      <button type="button" id="detail-appt-save">Save appointment</button>
+      <span class="import-status" id="detail-appt-status-msg" role="status" aria-live="polite"></span>
+    </div>
+
+    <h3 style="font-size:13px; text-transform:uppercase; color:var(--muted); margin:20px 0 6px;">Conversation</h3>
+    <div class="thread" id="detail-thread"></div>
+  </div>
 </div>
 
 <script>
@@ -181,6 +299,7 @@
     const res = await fetch(session.baseUrl + path, {
       ...options,
       headers: {
+        "Content-Type": "application/json",
         ...(options && options.headers),
         Authorization: "Bearer " + session.apiKey,
       },
@@ -239,6 +358,181 @@
     return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  /* ===================== all leads + lead detail (conversation + appointment) ===================== */
+
+  let allLeadsCache = [];
+
+  function renderAllLeads(leads) {
+    const el = document.getElementById("all-leads");
+    if (leads.length === 0) {
+      el.innerHTML = '<div class="empty">No leads yet — import some above.</div>';
+      return;
+    }
+    el.innerHTML = leads
+      .map((l, i) => {
+        const apptTag =
+          l.appointmentStatus === "booked" && l.appointmentAt
+            ? `<span class="appt-tag">appt ${escapeHtml(new Date(l.appointmentAt).toLocaleString())}</span>`
+            : "";
+        return `
+      <div class="lead-row" data-index="${i}" tabindex="0" role="button" aria-haspopup="dialog">
+        <span class="name">${escapeHtml(l.name || l.id)}</span>
+        <span class="lead-meta">${escapeHtml(l.status)}${apptTag}</span>
+      </div>`;
+      })
+      .join("");
+  }
+
+  const overlay = document.getElementById("overlay");
+  const leadDetail = document.getElementById("lead-detail");
+  let detailTrigger = null;
+  let detailLeadId = null;
+
+  function renderThread(messages) {
+    const el = document.getElementById("detail-thread");
+    if (messages.length === 0) {
+      el.innerHTML = '<div class="empty">No messages yet.</div>';
+      return;
+    }
+    el.innerHTML = messages
+      .map((m) => {
+        const when = new Date(m.at).toLocaleString();
+        return `
+      <div class="bubble ${m.direction}">
+        ${escapeHtml(m.body)}
+        <div class="bubble-meta">${escapeHtml(m.channel)} &middot; ${m.direction} &middot; ${escapeHtml(when)}</div>
+      </div>`;
+      })
+      .join("");
+  }
+
+  // "YYYY-MM-DDTHH:mm" in the browser's local time — <input type="datetime-local">'s
+  // own value format, which has no timezone of its own; this is a per-viewer
+  // UI convenience, not a per-tenant-timezone conversion (the reminder itself
+  // is formatted in the tenant's timezone server-side, see
+  // src/appointmentReminder.ts).
+  function toDatetimeLocalValue(isoString) {
+    if (!isoString) return "";
+    const d = new Date(isoString);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  async function openLeadDetail(session, lead) {
+    detailLeadId = lead.id;
+    detailTrigger = document.activeElement;
+
+    document.getElementById("detail-name").textContent = lead.name || lead.id;
+    document.getElementById("detail-meta").textContent =
+      [lead.phone, lead.email, lead.source].filter(Boolean).join(" · ");
+    document.getElementById("detail-appt-status").value = lead.appointmentStatus || "none";
+    document.getElementById("detail-appt-at").value = toDatetimeLocalValue(lead.appointmentAt);
+    document.getElementById("detail-appt-status-msg").textContent = "";
+    document.getElementById("detail-thread").innerHTML = '<div class="empty">Loading…</div>';
+
+    overlay.classList.add("open");
+    leadDetail.removeAttribute("inert");
+    leadDetail.setAttribute("aria-hidden", "false");
+    document.getElementById("detail-close-btn").focus();
+
+    try {
+      const messages = await api(session, `/leads/${encodeURIComponent(lead.id)}/messages`);
+      renderThread(messages);
+    } catch (err) {
+      document.getElementById("detail-thread").innerHTML =
+        '<div class="empty">Could not load messages: ' + escapeHtml(err.message) + "</div>";
+    }
+  }
+
+  function closeLeadDetail() {
+    overlay.classList.remove("open");
+    leadDetail.setAttribute("inert", "");
+    leadDetail.setAttribute("aria-hidden", "true");
+    detailLeadId = null;
+    if (detailTrigger) detailTrigger.focus();
+    detailTrigger = null;
+  }
+
+  document.getElementById("detail-close-btn").addEventListener("click", closeLeadDetail);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeLeadDetail();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && overlay.classList.contains("open")) closeLeadDetail();
+  });
+
+  document.getElementById("all-leads").addEventListener("click", (e) => {
+    const row = e.target.closest(".lead-row");
+    if (!row) return;
+    const session = getSession();
+    if (!session) return;
+    openLeadDetail(session, allLeadsCache[Number(row.dataset.index)]);
+  });
+  document.getElementById("all-leads").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const row = e.target.closest(".lead-row");
+    if (!row) return;
+    e.preventDefault();
+    row.click();
+  });
+
+  document.getElementById("detail-appt-save").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session || !detailLeadId) return;
+    const statusMsg = document.getElementById("detail-appt-status-msg");
+    const status = document.getElementById("detail-appt-status").value;
+    const atLocal = document.getElementById("detail-appt-at").value;
+
+    statusMsg.textContent = "";
+    statusMsg.className = "import-status";
+    try {
+      const updated = await api(session, `/leads/${encodeURIComponent(detailLeadId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          appointmentStatus: status, // always a real value now: none/requested/abandoned/booked
+          // datetime-local has no timezone of its own — `new Date(...)` parses
+          // it as the browser's own local time, which is what the person
+          // filling in the form actually meant.
+          appointmentAt: atLocal ? new Date(atLocal).toISOString() : null,
+        }),
+      });
+      statusMsg.textContent = "Saved.";
+      statusMsg.className = "import-status ok";
+      const idx = allLeadsCache.findIndex((l) => l.id === updated.id);
+      if (idx >= 0) allLeadsCache[idx] = updated;
+      renderAllLeads(allLeadsCache);
+    } catch (err) {
+      statusMsg.textContent = "Could not save: " + err.message;
+      statusMsg.className = "import-status err";
+    }
+  });
+
+  document.getElementById("import-btn").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session) return;
+    const fileInput = document.getElementById("import-file");
+    const status = document.getElementById("import-status");
+    const file = fileInput.files[0];
+    if (!file) {
+      status.textContent = "Choose a CSV file first.";
+      status.className = "import-status err";
+      return;
+    }
+    status.textContent = "Uploading…";
+    status.className = "import-status";
+    try {
+      const csv = await file.text();
+      const result = await api(session, "/leads/import", { method: "POST", body: JSON.stringify({ csv }) });
+      status.textContent = `Imported ${result.imported}${result.skipped ? `, skipped ${result.skipped}` : ""}.`;
+      status.className = "import-status ok";
+      fileInput.value = "";
+      await loadDashboard(session);
+    } catch (err) {
+      status.textContent = "Import failed: " + err.message;
+      status.className = "import-status err";
+    }
+  });
+
   async function loadDashboard(session) {
     const tenant = await api(session, "/tenants/me");
     document.getElementById("tenant-name").textContent = tenant.name;
@@ -250,6 +544,9 @@
     renderSkipped(plan.skipped);
     document.getElementById("summary").textContent =
       plan.plans.length + " queued, " + plan.skipped.length + " skipped";
+
+    allLeadsCache = await api(session, "/leads");
+    renderAllLeads(allLeadsCache);
   }
 
   async function connect(baseUrl, apiKey) {

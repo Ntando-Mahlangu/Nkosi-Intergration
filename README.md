@@ -101,6 +101,24 @@ deployment serves many clients with fully isolated data.
 - **`src/workflow.ts`** — orchestrates the whole pipeline per tenant, and
   generates each message's id up front so Twilio/SendGrid delivery-status
   callbacks can correlate back to it.
+- **`src/appointmentReminder.ts`** — sends a reminder 24 hours before a
+  lead's booked appointment (`lead.appointmentStatus === "booked"` +
+  `lead.appointmentAt` set, via `PATCH /leads/:id` or CSV import).
+  `appointmentReminderSentAt` is stamped on send so a later worker tick
+  never sends the same reminder twice; deliberately does *not* reuse
+  `compliance.ts`'s suppression check, since that treats a `"booked"`
+  lead **status** as "stop recovery outreach" — exactly backwards for a
+  feature that only exists to message booked leads. Runs alongside (not
+  merged into) `sendPlans` in `runRecoveryWorkflow`/the worker/`npm run
+  cli`, since the post-send bookkeeping is different enough (a reminder
+  never touches `status`/`followUpCount`) to not share one function.
+  Template: `tenant.templates.appointmentReminder`, with a
+  `{appointmentTime}` placeholder formatted in the tenant's own timezone
+  alongside the usual `{name}`/`{businessName}`.
+- **`src/leadImport.ts`** — shared CSV parsing/column-mapping for both
+  `npm run import-leads` and `POST /leads/import`, so the CLI script and
+  the web upload form (`public/dashboard.html`) can never drift in what
+  counts as a valid row.
 - **`src/worker.ts`** — cron loop that runs the workflow for every tenant,
   skipping suspended ones, with bounded per-tick concurrency across tenants
   (`src/concurrency.ts`, `LEADRECOVERY_WORKER_CONCURRENCY`). Run exactly one
@@ -136,7 +154,20 @@ deployment serves many clients with fully isolated data.
   as an animated node graph, click a node for the real leads behind it).
 - **`public/dashboard.html`** — the plain-list working view (queued plan,
   drafted messages, skipped leads, a button to trigger a run) — linked from
-  the Command Center for day-to-day lead-by-lead work.
+  the Command Center for day-to-day lead-by-lead work. Also has a CSV
+  import form (same columns as `npm run import-leads`, via `POST
+  /leads/import`) and an "All leads" list — clicking a lead opens a
+  focus-managed dialog showing its full conversation history
+  (`GET /leads/:id/messages`) and an appointment status/date form
+  (`PATCH /leads/:id`) for booking or rescheduling the lead's appointment,
+  which is what drives the 24-hour reminder below.
+- **`public/reports.html`** — a client-facing activity/ROI report: the
+  current lead pipeline snapshot plus message activity (outbound sent by
+  kind, inbound replies by classification, reply rate, leads marked
+  interested) over a `since`/`until` date range, with "This month"/"All
+  time" shortcuts. Reads the same `GET /tenants/me/report` endpoint a
+  billing-period report would otherwise require hand-computing from
+  `/leads` and message history.
 - **`public/settings.html`** — self-service editor for a tenant's own
   outbound message templates and the chatbot's knowledge base/auto-reply
   toggle (the same fields `PATCH /tenants/me` accepts, as a form instead of
@@ -160,7 +191,7 @@ deployment serves many clients with fully isolated data.
 
 ### Accessibility
 
-All four dashboards work with a keyboard and a screen reader, not just a
+All dashboards work with a keyboard and a screen reader, not just a
 mouse:
 
 - Every form field has a real `<label for>`, every action is a real
@@ -228,8 +259,10 @@ to type it in manually instead.)
    catches a typo'd/revoked credential now instead of it failing silently
    on a real customer's first message.
 7. **Import existing leads**: `npm run import-leads -- --tenant <id> --file leads.csv`,
-   or point the client's CRM's outgoing webhook / a Zapier automation at
-   `POST /webhooks/lead` with `Authorization: Bearer <tenant api key>`.
+   upload the same CSV from `public/dashboard.html`'s "Import leads" form
+   (`POST /leads/import`), or point the client's CRM's outgoing webhook /
+   a Zapier automation at `POST /webhooks/lead` with `Authorization:
+   Bearer <tenant api key>`.
 8. **Run the API**: `npm start` (after `npm run build`) or `npm run dev`.
 9. **Run the worker** (sends initial outreach + follow-ups on a schedule):
    `npm run worker`. Set `LEADRECOVERY_CRON_SCHEDULE` (cron syntax, default
@@ -300,6 +333,8 @@ All routes except `/health` and the webhooks require `Authorization: Bearer
 | GET | `/leads` | List the tenant's leads. Optional `?limit=&offset=`; always sets `X-Total-Count` |
 | GET | `/leads/plan` | Dry run: scored + composed plans, nothing sent. Same optional pagination |
 | GET | `/leads/:id/messages` | Conversation history for one lead (includes delivery status) |
+| PATCH | `/leads/:id` | Update one lead's `name`/`requestedService`/`previousQuote`/`notes`/`preferredChannel`/`appointmentStatus`/`appointmentAt`. Never accepts `status` — that's compliance-sensitive and only ever set by the classify/workflow logic. Clearing `appointmentAt` also clears `appointmentReminderSentAt`, so rescheduling gets a fresh reminder instead of being silently blocked by the old one |
+| POST | `/leads/import` | Bulk-create leads from a CSV body (`{"csv": "..."}`), same columns/validation as `npm run import-leads`; returns `{imported, skipped}`. Does not dedupe against existing leads, matching the CLI script |
 | GET | `/leads/export` | Full-fidelity export of every lead field, as CSV (default) or `?format=json` — for a client's own records or a data right-of-access request |
 | GET | `/tenants/me/report` | Activity summary for reporting/billing: lead status counts (current snapshot) + message activity (sent/replied, by kind/classification) over an optional `?since=&until=` window |
 | POST | `/workflow/run` | Sends initial outreach + due follow-ups. Serialized per tenant against the worker's own cron tick (see `workflowLock.ts`) so a manual run can never race the worker and double-send the same lead |
@@ -400,9 +435,9 @@ ever required it:
   confidently place — an opt-out phrased in another language and not
   caught by the English keyword list could go unrecognized until the LLM
   pass (if enabled) or a human catches it.
-- **The three dashboards' own UI chrome** (`public/index.html`,
-  `dashboard.html`, `admin.html`) — labels, buttons, and status text are
-  hardcoded English. These are operator/tenant-staff tooling, not
+- **The dashboards' own UI chrome** (`public/index.html`, `dashboard.html`,
+  `settings.html`, `admin.html`, `reports.html`) — labels, buttons, and
+  status text are hardcoded English. These are operator/tenant-staff tooling, not
   end-customer-facing, so they're out of scope for a customer-language
   requirement, but a tenant's own staff working in another language would
   need these translated by hand.
@@ -438,7 +473,7 @@ npm run typecheck  # tsc over src/ (tsconfig.json) AND tests/ (tsconfig.test.jso
 npm run lint         # eslint . (typed-linting; see eslint.config.js)
 npm run format:check # prettier --check .
 npm test        # fast unit/integration suite (vitest)
-npm run test:e2e  # browser end-to-end tests against both dashboards (Playwright)
+npm run test:e2e  # browser end-to-end tests across the dashboards (Playwright)
 ```
 
 `npm run typecheck` runs two passes — `tsconfig.json` (the build config,
@@ -479,13 +514,23 @@ the HTTP auth/webhook/rate-limiting routes — including the full
 question→auto-reply and question→escalate flows, tenant
 suspend/reactivate/delete/key-rotation, admin audit log and failed-
 notification visibility, admin listing pagination, and real SendGrid Event
-Webhook ECDSA signature verification — via `supertest`.
+Webhook ECDSA signature verification — via `supertest`; the appointment
+reminder window/dedup/timezone-formatting logic
+(`tests/appointmentReminder.test.ts`) and its wiring into
+`runRecoveryWorkflow` (never sends twice across runs, defers during quiet
+hours without marking `appointmentReminderSentAt`); CSV import parsing and
+validation (`tests/leadImport.test.ts`); and `PATCH /leads/:id`/`POST
+/leads/import` (auth, validation, that `status` is never accepted, that
+clearing `appointmentAt` also clears `appointmentReminderSentAt`).
 
 `npm run test:e2e` drives `public/index.html` (Command Center),
-`public/dashboard.html`, and `public/admin.html` in a real headless browser
-via [Playwright](https://playwright.dev): connecting with a valid/invalid
-API/admin key, live category counts and the lead-detail panel, session
-persistence across a reload, disconnecting, and — for admin.html —
+`public/dashboard.html`, `public/reports.html`, and `public/admin.html` in
+a real headless browser via [Playwright](https://playwright.dev):
+connecting with a valid/invalid API/admin key, live category counts and
+the lead-detail panel, session persistence across a reload, disconnecting,
+the all-leads list/appointment/CSV-import flows and their keyboard
+accessibility on `dashboard.html`, the activity report's date-range
+shortcuts on `reports.html`, and — for admin.html —
 creating/suspending/reactivating/rotating/deleting a tenant and seeing it
 reflected in the audit log. It starts its own server instance
 (`playwright.config.ts`, with `ADMIN_API_KEY` set for the admin tests)

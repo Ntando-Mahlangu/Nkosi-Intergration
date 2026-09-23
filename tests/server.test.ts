@@ -137,7 +137,7 @@ describe("GET /leads/export", () => {
     expect(lines[0]).toBe(
       "id,name,phone,email,source,status,createdAt,firstOutreachSentAt,lastContactedAt,followUpCount," +
         "nextFollowUpAt,requestedService,previousQuote,previousConversationSummary,appointmentStatus," +
-        "preferredChannel,hadMissedCall,respondedAfterContact,notes"
+        "appointmentAt,appointmentReminderSentAt,preferredChannel,hadMissedCall,respondedAfterContact,notes"
     );
     expect(lines).toHaveLength(1 + leads.body.length); // header + one row per lead
   });
@@ -156,5 +156,131 @@ describe("GET /leads/export", () => {
     expect(res.body.map((l: { id: string }) => l.id).sort()).toEqual(
       leads.body.map((l: { id: string }) => l.id).sort()
     );
+  });
+});
+
+describe("PATCH /leads/:id", () => {
+  const DEMO_API_KEY = "demo-key";
+
+  it("requires tenant auth", async () => {
+    const res = await request(createApp()).patch("/leads/some-id").send({ notes: "x" });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 for a lead that doesn't belong to this tenant", async () => {
+    const res = await request(createApp())
+      .patch("/leads/no-such-lead")
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ notes: "x" });
+    expect(res.status).toBe(404);
+  });
+
+  it("sets appointmentAt/appointmentStatus, which is what the 24h reminder keys off", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ appointmentStatus: "booked", appointmentAt: "2026-12-01T10:00:00.000Z" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.appointmentStatus).toBe("booked");
+    expect(res.body.appointmentAt).toBe("2026-12-01T10:00:00.000Z");
+  });
+
+  it("rejects an invalid appointmentAt or appointmentStatus", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const badDate = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ appointmentAt: "not-a-date" });
+    expect(badDate.status).toBe(400);
+
+    const badStatus = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ appointmentStatus: "not-a-real-status" });
+    expect(badStatus.status).toBe(400);
+  });
+
+  it("clearing appointmentAt to null also clears appointmentReminderSentAt", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ appointmentStatus: "booked", appointmentAt: "2026-12-01T10:00:00.000Z" });
+
+    const cleared = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ appointmentAt: null });
+
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.appointmentAt).toBeUndefined();
+    expect(cleared.body.appointmentReminderSentAt).toBeUndefined();
+  });
+
+  it("never accepts a status change through this route (compliance-sensitive, admin/workflow-owned only)", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ status: "opted_out", notes: "trying to sneak a status change in" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).not.toBe("opted_out");
+    expect(res.body.notes).toBe("trying to sneak a status change in"); // the field this route does own still applies
+  });
+});
+
+describe("POST /leads/import", () => {
+  const DEMO_API_KEY = "demo-key";
+
+  it("requires tenant auth", async () => {
+    const res = await request(createApp()).post("/leads/import").send({ csv: "phone\n+27821234567\n" });
+    expect(res.status).toBe(401);
+  });
+
+  it("imports leads from CSV text and reports counts", async () => {
+    const app = createApp();
+    const before = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+
+    const res = await request(app)
+      .post("/leads/import")
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({
+        csv:
+          "name,phone,appointmentAt\n" +
+          "Web Import One,+27821110001,\n" +
+          "Web Import Two,+27821110002,2026-12-01T10:00:00Z\n" +
+          "No Contact Info,,\n",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ imported: 2, skipped: 1 });
+
+    const after = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(after.body.length).toBe(before.body.length + 2);
+    const imported = after.body.find((l: { name?: string }) => l.name === "Web Import Two");
+    expect(imported.appointmentStatus).toBe("booked");
+  });
+
+  it("rejects a request with no csv field", async () => {
+    const res = await request(createApp())
+      .post("/leads/import")
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({});
+    expect(res.status).toBe(400);
   });
 });

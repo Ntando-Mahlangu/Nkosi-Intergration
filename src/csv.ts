@@ -22,6 +22,8 @@ const LEAD_EXPORT_COLUMNS: (keyof Lead)[] = [
   "previousQuote",
   "previousConversationSummary",
   "appointmentStatus",
+  "appointmentAt",
+  "appointmentReminderSentAt",
   "preferredChannel",
   "hadMissedCall",
   "respondedAfterContact",

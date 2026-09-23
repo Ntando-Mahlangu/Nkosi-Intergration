@@ -7,6 +7,11 @@ import { composeInitialMessage } from "./messaging.js";
 import { safeSend, selectChannel, type SendResult } from "./channels/index.js";
 import { isWithinQuietHours } from "./quietHours.js";
 import { composeFollowUpMessage, followUpReason, getLeadsDueForFollowUp } from "./followup.js";
+import {
+  appointmentReminderReason,
+  composeAppointmentReminderMessage,
+  getLeadsDueForAppointmentReminder,
+} from "./appointmentReminder.js";
 import { generateId } from "./idgen.js";
 
 /**
@@ -72,10 +77,37 @@ export function buildFollowUpPlans(tenant: Tenant, leads: Lead[], now: Date = ne
   return { plans, skipped };
 }
 
+/** Builds reminder plans for leads with a booked appointment coming up within 24 hours. */
+export function buildAppointmentReminderPlans(tenant: Tenant, leads: Lead[], now: Date = new Date()): WorkflowResult {
+  const skipped: SkippedLead[] = [];
+  const due = getLeadsDueForAppointmentReminder(leads, now);
+  const plans: RecoveryPlan[] = [];
+
+  for (const lead of due) {
+    const channel = selectChannel(tenant, lead);
+    if (!channel) {
+      skipped.push({ lead, reason: "no usable contact channel for appointment reminder" });
+      continue;
+    }
+    const message = composeAppointmentReminderMessage(lead, channel, tenant);
+    plans.push({
+      lead,
+      priority: "HIGH", // time-sensitive — the appointment is <24h away regardless of how the lead otherwise scores
+      priorityReasons: ["Appointment reminder — within 24 hours"],
+      reason: appointmentReminderReason(),
+      message,
+    });
+  }
+
+  return { plans, skipped };
+}
+
 export interface SentPlan {
   plan: RecoveryPlan;
   result: SendResult;
   isFollowUp: boolean;
+  /** True for an appointment reminder — always false alongside isFollowUp:true (they're mutually exclusive send kinds). */
+  isReminder?: boolean;
 }
 
 export interface RecoveryRunResult extends WorkflowResult {
@@ -149,10 +181,64 @@ async function sendPlans(
 }
 
 /**
+ * Sends appointment reminders — kept separate from sendPlans rather than
+ * folded in as a third branch, since the post-send bookkeeping is genuinely
+ * different (a bookkeeping flag, not a status/follow-up-count transition)
+ * and reusing sendPlans's initial/follow-up-shaped patch logic for this
+ * would need its own branch there anyway. Still mirrors sendPlans's quiet-
+ * hours deferral and safeSend resilience exactly.
+ */
+async function sendAppointmentReminders(
+  tenant: Tenant,
+  store: LeadStore,
+  messages: MessageStore | undefined,
+  plans: RecoveryPlan[],
+  now: Date
+): Promise<{ sent: SentPlan[]; deferred: SkippedLead[] }> {
+  const sent: SentPlan[] = [];
+  const deferred: SkippedLead[] = [];
+
+  if (isWithinQuietHours(tenant, now)) {
+    for (const plan of plans) {
+      deferred.push({ lead: plan.lead, reason: "deferred: within tenant quiet hours, will retry next run" });
+    }
+    return { sent, deferred };
+  }
+
+  for (const plan of plans) {
+    const messageId = generateId("msg");
+    const result = await safeSend(plan.message.channel, tenant, plan.lead, plan.message, messageId);
+    sent.push({ plan, result, isFollowUp: false, isReminder: true });
+
+    if (result.ok) {
+      await messages?.logMessage({
+        id: messageId,
+        tenantId: tenant.id,
+        leadId: plan.lead.id,
+        channel: plan.message.channel,
+        direction: "outbound",
+        body: plan.message.body,
+        at: now.toISOString(),
+        providerMessageId: result.providerMessageId,
+        kind: "appointment_reminder",
+      });
+      // Bookkeeping only — deliberately doesn't touch status/lastContactedAt/
+      // followUpCount, unlike sendPlans's patch, since a reminder isn't part
+      // of the initial-outreach/follow-up sequence and shouldn't reset it
+      // (e.g. it must never zero out an in-progress follow-up count).
+      await store.updateLead(tenant.id, plan.lead.id, { appointmentReminderSentAt: now.toISOString() });
+    }
+  }
+
+  return { sent, deferred };
+}
+
+/**
  * Runs the full recovery workflow for one tenant: identify, filter
  * (compliance), score, determine reason, compose, send (respecting quiet
- * hours), and log/update status back to the store. Covers both brand-new
- * leads (initial outreach) and leads due for a follow-up nudge.
+ * hours), and log/update status back to the store. Covers brand-new leads
+ * (initial outreach), leads due for a follow-up nudge, and leads with a
+ * booked appointment coming up within 24 hours.
  */
 export async function runRecoveryWorkflow(
   tenant: Tenant,
@@ -164,15 +250,17 @@ export async function runRecoveryWorkflow(
 
   const initial = buildRecoveryPlans(tenant, leads, now);
   const followUps = buildFollowUpPlans(tenant, leads, now);
+  const reminders = buildAppointmentReminderPlans(tenant, leads, now);
 
   const initialResult = await sendPlans(tenant, store, messages, initial.plans, false, now);
   const followUpResult = await sendPlans(tenant, store, messages, followUps.plans, true, now);
+  const reminderResult = await sendAppointmentReminders(tenant, store, messages, reminders.plans, now);
 
   return {
-    plans: [...initial.plans, ...followUps.plans],
-    skipped: [...initial.skipped, ...followUps.skipped],
-    sent: [...initialResult.sent, ...followUpResult.sent],
-    deferred: [...initialResult.deferred, ...followUpResult.deferred],
+    plans: [...initial.plans, ...followUps.plans, ...reminders.plans],
+    skipped: [...initial.skipped, ...followUps.skipped, ...reminders.skipped],
+    sent: [...initialResult.sent, ...followUpResult.sent, ...reminderResult.sent],
+    deferred: [...initialResult.deferred, ...followUpResult.deferred, ...reminderResult.deferred],
   };
 }
 

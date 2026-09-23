@@ -219,4 +219,81 @@ describe("runRecoveryWorkflow", () => {
 
     sendSpy.mockRestore();
   });
+
+  it("sends an appointment reminder, marks appointmentReminderSentAt, and doesn't touch follow-up bookkeeping", async () => {
+    const lead: Lead = {
+      id: "booked-lead",
+      tenantId: TENANT.id,
+      name: "Priya Naidoo",
+      phone: "+27821119999",
+      source: "booking_software",
+      createdAt: new Date("2026-09-01T00:00:00.000Z").toISOString(),
+      status: "booked",
+      appointmentStatus: "booked",
+      appointmentAt: new Date(NOW.getTime() + 12 * 60 * 60 * 1000).toISOString(), // 12h out
+      followUpCount: 3, // must survive untouched — a reminder isn't a follow-up
+    };
+    const store = new InMemoryLeadStore([lead]);
+    const messages = new InMemoryMessageStore();
+    const result = await runRecoveryWorkflow(TENANT, store, messages, NOW);
+
+    expect(result.sent).toHaveLength(1);
+    expect(result.sent[0].result.ok).toBe(true);
+    expect(result.sent[0].isReminder).toBe(true);
+    expect(result.sent[0].isFollowUp).toBe(false);
+
+    const updated = await store.getLeadById(TENANT.id, "booked-lead");
+    expect(updated?.appointmentReminderSentAt).toBe(NOW.toISOString());
+    expect(updated?.status).toBe("booked"); // untouched — reminders don't drive the recovery status machine
+    expect(updated?.followUpCount).toBe(3); // untouched
+
+    const logged = await messages.getMessagesForLead(TENANT.id, "booked-lead");
+    expect(logged).toHaveLength(1);
+    expect(logged[0].kind).toBe("appointment_reminder");
+  });
+
+  it("never sends the same appointment reminder twice across runs", async () => {
+    const lead: Lead = {
+      id: "booked-lead",
+      tenantId: TENANT.id,
+      name: "Priya Naidoo",
+      phone: "+27821119999",
+      source: "booking_software",
+      createdAt: new Date("2026-09-01T00:00:00.000Z").toISOString(),
+      status: "booked",
+      appointmentStatus: "booked",
+      appointmentAt: new Date(NOW.getTime() + 12 * 60 * 60 * 1000).toISOString(),
+    };
+    const store = new InMemoryLeadStore([lead]);
+
+    const first = await runRecoveryWorkflow(TENANT, store, undefined, NOW);
+    expect(first.sent).toHaveLength(1);
+
+    const later = new Date(NOW.getTime() + 60 * 60 * 1000); // an hour later, still well before the appointment
+    const second = await runRecoveryWorkflow(TENANT, store, undefined, later);
+    expect(second.sent).toHaveLength(0);
+  });
+
+  it("defers an appointment reminder during quiet hours instead of sending it", async () => {
+    const quietTenant: Tenant = { ...TENANT, quietHours: { startHour: 0, endHour: 24 } };
+    const lead: Lead = {
+      id: "booked-lead",
+      tenantId: TENANT.id,
+      name: "Priya Naidoo",
+      phone: "+27821119999",
+      source: "booking_software",
+      createdAt: new Date("2026-09-01T00:00:00.000Z").toISOString(),
+      status: "booked",
+      appointmentStatus: "booked",
+      appointmentAt: new Date(NOW.getTime() + 12 * 60 * 60 * 1000).toISOString(),
+    };
+    const store = new InMemoryLeadStore([lead]);
+    const result = await runRecoveryWorkflow(quietTenant, store, undefined, NOW);
+
+    expect(result.sent).toHaveLength(0);
+    expect(result.deferred.some((d) => d.lead.id === "booked-lead")).toBe(true);
+
+    const updated = await store.getLeadById(TENANT.id, "booked-lead");
+    expect(updated?.appointmentReminderSentAt).toBeUndefined();
+  });
 });

@@ -91,9 +91,16 @@ Getting this step wrong is exactly the kind of misconfiguration
 Pick whichever fits what they actually have:
 
 - **One-time CSV import** (most common for a first cut of historical
-  leads): `npm run import-leads -- --tenant <id> --file leads.csv`. Expected
-  headers (case-insensitive): `name, phone, email, source, createdAt,
-  requestedService, previousQuote, notes`.
+  leads): `npm run import-leads -- --tenant <id> --file leads.csv`, or have
+  the client upload the same file themselves from the "Import leads" form
+  on `public/dashboard.html` (`POST /leads/import`) — no CLI access
+  needed. Expected headers (case-insensitive): `name, phone, email,
+  source, createdAt, requestedService, previousQuote, appointmentAt,
+  notes`. A row with a valid `appointmentAt` is automatically marked
+  `appointmentStatus: "booked"`, which is what makes it eligible for the
+  24-hour-before appointment reminder (`src/appointmentReminder.ts` in
+  `README.md`'s Architecture section) — wording is editable per tenant from
+  `public/settings.html`.
 - **Live CRM connection**: point the CRM's outgoing webhook (most CRMs —
   HubSpot, Pipedrive, GoHighLevel, Salesforce — support this natively) or a
   Zapier/Make/n8n automation at `POST /webhooks/lead` with `Authorization:
@@ -111,7 +118,10 @@ GET /leads/plan
 (`public/dashboard.html`) and connect with the tenant's API key — the
 Command Center landing page (`public/index.html`) is the impressive
 overview, but this plain list is where you actually review exact message
-wording per lead. This shows the exact priority, reason, and drafted
+wording per lead, click into a lead's own conversation history, and set
+its appointment status/date — booking one (`appointmentStatus: "booked"`
++ `appointmentAt`) is what makes a lead eligible for the automatic
+24-hour-before reminder. This shows the exact priority, reason, and drafted
 message for every lead **without sending anything**. Walk through this with
 the client and get explicit sign-off on:
 
@@ -206,7 +216,11 @@ reply — see step 8 below for setting that up.
   for the numbers a monthly retainer report needs — lead status counts
   (a current pipeline snapshot) and message activity (outbound sends by
   kind, inbound replies by classification) for that window — instead of
-  hand-computing them from `GET /leads` and message history.
+  hand-computing them from `GET /leads` and message history. Or open
+  `public/reports.html` with the tenant's API key for the same numbers as
+  a page — reply rate, leads marked interested, and "This month"/"All
+  time" range shortcuts — worth handing directly to a client who wants to
+  check in on their own.
 - Review the `skipped`/`deferred` lists periodically — a growing "no usable
   contact channel" count usually means a data-quality problem upstream.
   `GET /leads/plan` is the quickest health check.

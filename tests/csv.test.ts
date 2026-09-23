@@ -23,11 +23,11 @@ describe("leadsToCsv", () => {
     expect(header).toBe(
       "id,name,phone,email,source,status,createdAt,firstOutreachSentAt,lastContactedAt,followUpCount," +
         "nextFollowUpAt,requestedService,previousQuote,previousConversationSummary,appointmentStatus," +
-        "preferredChannel,hadMissedCall,respondedAfterContact,notes"
+        "appointmentAt,appointmentReminderSentAt,preferredChannel,hadMissedCall,respondedAfterContact,notes"
     );
     expect(row).toBe(
       "lead-1,Jordan Smith,+27821234567,jordan@example.com,crm,contacted_no_response,2026-08-01T00:00:00.000Z" +
-        ",,,1,,fencing,,,,,true,,"
+        ",,,1,,fencing,,,,,,,true,,"
     );
   });
 

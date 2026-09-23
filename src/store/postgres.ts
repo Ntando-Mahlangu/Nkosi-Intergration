@@ -27,6 +27,10 @@ function leadFromRow(row: Record<string, unknown>): Lead {
     requestedService: (row.requested_service as string | null) ?? undefined,
     previousQuote: (row.previous_quote as string | null) ?? undefined,
     appointmentStatus: (row.appointment_status as Lead["appointmentStatus"]) ?? undefined,
+    appointmentAt: row.appointment_at ? new Date(row.appointment_at as string).toISOString() : undefined,
+    appointmentReminderSentAt: row.appointment_reminder_sent_at
+      ? new Date(row.appointment_reminder_sent_at as string).toISOString()
+      : undefined,
     notes: (row.notes as string | null) ?? undefined,
     status: row.status as Lead["status"],
     preferredChannel: (row.preferred_channel as Lead["preferredChannel"]) ?? undefined,
@@ -41,7 +45,8 @@ function leadFromRow(row: Record<string, unknown>): Lead {
 }
 
 const LEAD_COLUMNS = `id, tenant_id, name, phone, email, source, created_at, last_contacted_at,
-  previous_conversation_summary, requested_service, previous_quote, appointment_status, notes,
+  previous_conversation_summary, requested_service, previous_quote, appointment_status,
+  appointment_at, appointment_reminder_sent_at, notes,
   status, preferred_channel, had_missed_call, responded_after_contact, follow_up_count,
   next_follow_up_at, first_outreach_sent_at`;
 
@@ -57,6 +62,8 @@ const LEAD_PATCH_COLUMNS: Partial<Record<keyof Lead, string>> = {
   requestedService: "requested_service",
   previousQuote: "previous_quote",
   appointmentStatus: "appointment_status",
+  appointmentAt: "appointment_at",
+  appointmentReminderSentAt: "appointment_reminder_sent_at",
   notes: "notes",
   status: "status",
   preferredChannel: "preferred_channel",
@@ -101,10 +108,11 @@ export class PostgresLeadStore implements LeadStore {
     await this.pool.query(
       `INSERT INTO leads (
         id, tenant_id, name, phone, email, source, created_at, last_contacted_at,
-        previous_conversation_summary, requested_service, previous_quote, appointment_status, notes,
+        previous_conversation_summary, requested_service, previous_quote, appointment_status,
+        appointment_at, appointment_reminder_sent_at, notes,
         status, preferred_channel, had_missed_call, responded_after_contact, follow_up_count,
         next_follow_up_at, first_outreach_sent_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
       [
         lead.id,
         lead.tenantId,
@@ -118,6 +126,8 @@ export class PostgresLeadStore implements LeadStore {
         lead.requestedService ?? null,
         lead.previousQuote ?? null,
         lead.appointmentStatus ?? null,
+        lead.appointmentAt ?? null,
+        lead.appointmentReminderSentAt ?? null,
         lead.notes ?? null,
         lead.status,
         lead.preferredChannel ?? null,

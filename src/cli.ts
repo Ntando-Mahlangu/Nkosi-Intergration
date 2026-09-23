@@ -17,9 +17,10 @@ async function main() {
     `\n=== LeadRecovery run: ${result.sent.length} contacted, ${result.skipped.length} skipped, ${result.deferred.length} deferred ===\n`
   );
 
-  for (const { plan, result: sendResult, isFollowUp } of result.sent) {
+  for (const { plan, result: sendResult, isFollowUp, isReminder } of result.sent) {
+    const tag = isReminder ? " REMINDER" : isFollowUp ? " FOLLOW-UP" : "";
     console.log(
-      `[${plan.priority}${isFollowUp ? " FOLLOW-UP" : ""}] ${plan.lead.name ?? plan.lead.id} via ${plan.message.channel} ` +
+      `[${plan.priority}${tag}] ${plan.lead.name ?? plan.lead.id} via ${plan.message.channel} ` +
         `(${sendResult.ok ? "sent" : `failed: ${sendResult.detail}`})`
     );
     console.log(`  reasons: ${plan.priorityReasons.join("; ")}`);

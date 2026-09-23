@@ -68,6 +68,10 @@ export interface Lead {
   requestedService?: string;
   previousQuote?: string;
   appointmentStatus?: "none" | "requested" | "abandoned" | "booked";
+  /** When the booked appointment is scheduled for (ISO date) — drives the 24-hours-before reminder. Only meaningful when `appointmentStatus` is "booked". */
+  appointmentAt?: string;
+  /** When the appointment reminder was actually sent (ISO date) — guards against sending it twice across worker runs. */
+  appointmentReminderSentAt?: string;
   notes?: string;
   status: LeadStatus;
   /** Channel the business has configured for this lead/business, if any. */
@@ -163,8 +167,9 @@ export interface QuietHours {
 /**
  * Optional per-tenant overrides for outreach copy. Each string is run
  * through substituteTemplate with placeholders {name}, {businessName},
- * {reason} (initialGrounded only), {service} (initialUngrounded only).
- * Unset fields fall back to the built-in default wording.
+ * {reason} (initialGrounded only), {service} (initialUngrounded only),
+ * {appointmentTime} (appointmentReminder only, formatted in the tenant's
+ * own timezone). Unset fields fall back to the built-in default wording.
  */
 export interface MessageTemplates {
   initialGrounded?: string;
@@ -173,6 +178,8 @@ export interface MessageTemplates {
   followUps?: string[];
   /** Sent when a reply classifies as not_interested — a fixed, no-LLM-needed polite close-out. */
   notInterestedCloser?: string;
+  /** Sent ~24 hours before a lead's booked appointment (see src/appointmentReminder.ts). */
+  appointmentReminder?: string;
 }
 
 export interface Tenant {
@@ -287,7 +294,9 @@ export interface Message {
    * What produced an outbound message: unset/"campaign" = the scheduled
    * recovery workflow (initial outreach or a follow-up nudge), "auto_reply"
    * = the knowledge-base-grounded chatbot, "closer" = the fixed
-   * not-interested acknowledgment. Inbound messages leave this unset.
+   * not-interested acknowledgment, "appointment_reminder" = the 24-hours-
+   * before nudge (see src/appointmentReminder.ts). Inbound messages leave
+   * this unset.
    */
-  kind?: "campaign" | "auto_reply" | "closer";
+  kind?: "campaign" | "auto_reply" | "closer" | "appointment_reminder";
 }

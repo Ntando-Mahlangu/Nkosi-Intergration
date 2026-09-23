@@ -147,6 +147,7 @@
     <div style="display:flex; gap:8px;">
       <a class="secondary" href="index.html">Command Center</a>
       <a class="secondary" href="dashboard.html">List view</a>
+      <a class="secondary" href="reports.html">Reports</a>
       <button class="secondary" id="logout-btn">Back</button>
     </div>
   </header>
@@ -223,6 +224,18 @@
         <textarea id="tpl-closer" rows="2" placeholder="Uses the default wording if left blank"></textarea>
         <div class="hint">Sent once, automatically, the moment a reply reads as "not interested" — a polite sign-off, not a sales pitch.</div>
       </div>
+
+      <div class="field">
+        <label for="tpl-reminder">Appointment reminder</label>
+        <textarea id="tpl-reminder" rows="2" placeholder="Uses the default wording if left blank"></textarea>
+        <div class="hint">
+          Sent automatically ~24 hours before a lead's booked appointment.
+          Also supports <code>{appointmentTime}</code> (formatted in your
+          own timezone) alongside <code>{name}</code>/<code>{businessName}</code>.
+          Set the appointment itself from a lead's detail view in the list
+          dashboard.
+        </div>
+      </div>
     </section>
 
     <section>
@@ -292,6 +305,7 @@
     document.getElementById("tpl-grounded").value = t.initialGrounded || "";
     document.getElementById("tpl-ungrounded").value = t.initialUngrounded || "";
     document.getElementById("tpl-closer").value = t.notInterestedCloser || "";
+    document.getElementById("tpl-reminder").value = t.appointmentReminder || "";
     const fu = t.followUps || [];
     document.getElementById("tpl-fu-0").value = fu[0] || "";
     document.getElementById("tpl-fu-1").value = fu[1] || "";
@@ -329,9 +343,11 @@
     const grounded = val("tpl-grounded");
     const ungrounded = val("tpl-ungrounded");
     const closer = val("tpl-closer");
+    const reminder = val("tpl-reminder");
     if (grounded) templates.initialGrounded = grounded;
     if (ungrounded) templates.initialUngrounded = ungrounded;
     if (closer) templates.notInterestedCloser = closer;
+    if (reminder) templates.appointmentReminder = reminder;
 
     const fu = [val("tpl-fu-0"), val("tpl-fu-1"), val("tpl-fu-2")];
     const filledCount = fu.filter(Boolean).length;
