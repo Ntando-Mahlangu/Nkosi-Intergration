@@ -6,26 +6,45 @@
 <title>LeadRecovery Dashboard</title>
 <style>
   :root {
-    --bg: #0f1115;
-    --panel: #171a21;
-    --border: #262b36;
-    --text: #e6e8ec;
-    --muted: #8a92a3;
-    --accent: #5b8cff;
-    --high: #e5484d;
-    --medium: #f5a623;
-    --low: #4a5568;
-    --ok: #2fbf71;
-    --fail: #e5484d;
+    --bg: #04060b;
+    --panel: rgba(91, 233, 255, 0.05);
+    --border: rgba(91, 233, 255, 0.28);
+    --text: #5be9ff;
+    --muted: #1e6b7a;
+    --accent: #5be9ff;
+    --high: #ff5c5c;
+    --medium: #ffb454;
+    --low: #1e6b7a;
+    --ok: #5bffb0;
+    --fail: #ff5c5c;
   }
   * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
     background: var(--bg);
     color: var(--text);
   }
+
+  /* ---------- ambient HUD backdrop (same as index.html's Command Center) ---------- */
+  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.5; pointer-events: none; }
+  #vignette {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(0,4,10,0.75) 100%);
+  }
+  .bracket { position: fixed; width: 34px; height: 34px; border-color: var(--text); opacity: 0.55; z-index: 5; pointer-events: none; }
+  .bracket.tl { top: 14px; left: 14px; border-top: 2px solid; border-left: 2px solid; }
+  .bracket.tr { top: 14px; right: 14px; border-top: 2px solid; border-right: 2px solid; }
+  .bracket.bl { bottom: 14px; left: 14px; border-bottom: 2px solid; border-left: 2px solid; }
+  .bracket.br { bottom: 14px; right: 14px; border-bottom: 2px solid; border-right: 2px solid; }
+
   header {
+    position: relative;
+    z-index: 5;
     padding: 16px 24px;
     border-bottom: 1px solid var(--border);
     display: flex;
@@ -33,79 +52,102 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 12px;
+    background: rgba(4,6,11,0.7);
+    backdrop-filter: blur(4px);
   }
-  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  main { max-width: 960px; margin: 0 auto; padding: 24px; }
+  header h1 { font-size: 13px; letter-spacing: 0.25em; text-transform: uppercase; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
+  main { position: relative; z-index: 5; max-width: 960px; margin: 0 auto; padding: 24px; }
   .auth-panel {
+    position: relative;
+    z-index: 5;
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 20px;
+    border-radius: 6px;
+    box-shadow: 0 0 40px rgba(91,233,255,0.12), inset 0 0 40px rgba(91,233,255,0.04);
+    padding: 28px;
     max-width: 480px;
     margin: 60px auto;
   }
-  .auth-panel h2 { margin-top: 0; font-size: 16px; }
-  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
-  input {
+  .auth-panel h2 { margin-top: 0; font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; }
+  label { display: block; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
+  input, select {
     width: 100%;
     padding: 9px 10px;
-    background: #0c0e12;
+    background: rgba(0,0,0,0.4);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 3px;
     color: var(--text);
-    font-size: 14px;
+    font-family: inherit;
+    font-size: 13px;
   }
+  select { color-scheme: dark; }
+  input:focus, select:focus { outline: none; box-shadow: 0 0 10px rgba(91,233,255,0.4); }
   button {
-    background: var(--accent);
-    color: white;
-    border: none;
-    border-radius: 6px;
+    background: rgba(91,233,255,0.12);
+    border: 1px solid var(--text);
+    color: var(--text);
+    border-radius: 3px;
     padding: 9px 16px;
-    font-size: 14px;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
     cursor: pointer;
     font-weight: 600;
+    font-family: inherit;
+    transition: background 0.2s, box-shadow 0.2s;
   }
-  button.secondary, a.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+  button:hover { background: rgba(91,233,255,0.22); box-shadow: 0 0 12px rgba(91,233,255,0.35); }
+  button.secondary, a.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  button.secondary:hover, a.secondary:hover { background: rgba(91,233,255,0.08); box-shadow: 0 0 12px rgba(91,233,255,0.35); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
-  .stat { font-size: 13px; color: var(--muted); }
+  .stat { font-size: 12px; letter-spacing: 0.05em; color: var(--muted); }
   .card {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 6px;
+    box-shadow: 0 0 24px rgba(91,233,255,0.06), inset 0 0 24px rgba(91,233,255,0.03);
     padding: 14px 16px;
     margin-bottom: 10px;
   }
   .card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .name { font-weight: 600; }
+  .name { font-weight: 600; color: var(--text); }
   .badge {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     padding: 2px 8px;
-    border-radius: 999px;
+    border-radius: 3px;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.1em;
   }
-  .badge.HIGH { background: rgba(229,72,77,0.15); color: var(--high); }
-  .badge.MEDIUM { background: rgba(245,166,35,0.15); color: var(--medium); }
-  .badge.LOW { background: rgba(74,85,104,0.25); color: #b6bfd0; }
-  .reasons { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+  .badge.HIGH { background: rgba(255,92,92,0.12); color: var(--high); border: 1px solid rgba(255,92,92,0.4); }
+  .badge.MEDIUM { background: rgba(255,180,84,0.12); color: var(--medium); border: 1px solid rgba(255,180,84,0.4); }
+  .badge.LOW { background: rgba(30,107,122,0.25); color: var(--muted); border: 1px solid var(--border); }
+  .reasons { color: var(--muted); font-size: 12px; margin-top: 6px; }
   .message {
     margin-top: 10px;
-    background: #0c0e12;
+    background: rgba(0,0,0,0.35);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 4px;
     padding: 10px 12px;
     font-size: 13px;
     line-height: 1.4;
   }
-  .message .chan { color: var(--accent); font-weight: 600; text-transform: uppercase; font-size: 11px; margin-bottom: 4px; }
+  .message .chan { color: var(--accent); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.1em; margin-bottom: 4px; }
   .skipped-list { color: var(--muted); font-size: 13px; }
   .skipped-list li { margin-bottom: 4px; }
   .empty { color: var(--muted); padding: 32px; text-align: center; }
   .error { color: var(--fail); font-size: 13px; margin-top: 8px; }
-  section h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 24px 0 10px; }
+  section h3 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.2em; margin: 28px 0 10px; }
 
   .lead-row {
     display: flex;
@@ -113,32 +155,34 @@
     align-items: center;
     gap: 8px;
     padding: 10px 12px;
-    border-radius: 8px;
+    border-radius: 4px;
     cursor: pointer;
     border: 1px solid transparent;
   }
-  .lead-row:hover, .lead-row:focus-visible { background: var(--panel); border-color: var(--border); }
-  .lead-row .lead-meta { color: var(--muted); font-size: 12px; }
+  .lead-row:hover, .lead-row:focus-visible { background: rgba(91,233,255,0.06); border-color: var(--border); }
+  .lead-row .lead-meta { color: var(--muted); font-size: 11px; letter-spacing: 0.05em; }
   .lead-row .appt-tag {
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 700;
     padding: 2px 7px;
-    border-radius: 999px;
+    border-radius: 3px;
     text-transform: uppercase;
-    background: rgba(91,140,255,0.15);
-    color: var(--accent);
+    letter-spacing: 0.05em;
+    background: rgba(255,180,84,0.12);
+    color: var(--medium);
+    border: 1px solid rgba(255,180,84,0.4);
     margin-left: 8px;
   }
 
   .import-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .import-status { font-size: 12.5px; color: var(--muted); }
+  .import-status { font-size: 12px; color: var(--muted); }
   .import-status.ok { color: var(--ok); }
   .import-status.err { color: var(--fail); }
 
   #overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.6);
+    background: rgba(0,4,10,0.75);
     display: none;
     align-items: center;
     justify-content: center;
@@ -147,17 +191,18 @@
   }
   #overlay.open { display: flex; }
   #lead-detail {
-    background: var(--panel);
+    background: #050a12;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 6px;
+    box-shadow: 0 0 40px rgba(91,233,255,0.15), inset 0 0 40px rgba(91,233,255,0.04);
     padding: 20px;
     width: 100%;
     max-width: 520px;
     max-height: 85vh;
     overflow-y: auto;
   }
-  #lead-detail h3 { margin: 0 0 4px; font-size: 16px; color: var(--text); text-transform: none; letter-spacing: normal; }
-  #lead-detail .detail-meta { color: var(--muted); font-size: 12.5px; margin-bottom: 16px; }
+  #lead-detail h3 { margin: 0 0 4px; font-size: 14px; color: var(--amber, #ffb454); text-transform: uppercase; letter-spacing: 0.1em; }
+  #lead-detail .detail-meta { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
   #lead-detail .close-btn { float: right; }
   .appt-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; margin-top: 4px; }
   .appt-form label { grid-column: span 2; }
@@ -165,16 +210,23 @@
   .bubble {
     max-width: 85%;
     padding: 8px 10px;
-    border-radius: 8px;
+    border-radius: 4px;
     font-size: 13px;
     line-height: 1.4;
   }
-  .bubble.outbound { align-self: flex-end; background: rgba(91,140,255,0.15); }
-  .bubble.inbound { align-self: flex-start; background: #0c0e12; border: 1px solid var(--border); }
-  .bubble .bubble-meta { color: var(--muted); font-size: 10.5px; margin-top: 4px; }
+  .bubble.outbound { align-self: flex-end; background: rgba(91,233,255,0.1); border: 1px solid var(--border); }
+  .bubble.inbound { align-self: flex-start; background: rgba(0,0,0,0.35); border: 1px solid var(--border); }
+  .bubble .bubble-meta { color: var(--muted); font-size: 10px; margin-top: 4px; }
 </style>
 </head>
 <body>
+
+<div id="stars"></div>
+<div id="vignette"></div>
+<div class="bracket tl"></div>
+<div class="bracket tr"></div>
+<div class="bracket bl"></div>
+<div class="bracket br"></div>
 
 <div id="auth" class="auth-panel">
   <h2>LeadRecovery Dashboard</h2>
@@ -197,9 +249,9 @@
       <div class="sub" id="tenant-sub"></div>
     </div>
     <div style="display:flex; gap:8px;">
-      <a class="secondary" href="index.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:6px;">Command Center</a>
-      <a class="secondary" href="settings.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:6px;">Settings</a>
-      <a class="secondary" href="reports.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:6px;">Reports</a>
+      <a class="secondary" href="index.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:3px;">Command Center</a>
+      <a class="secondary" href="settings.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:3px;">Settings</a>
+      <a class="secondary" href="reports.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:3px;">Reports</a>
       <button class="secondary" id="refresh-btn">Refresh</button>
       <button id="run-btn">Run recovery workflow</button>
       <button class="secondary" id="logout-btn">Back</button>
@@ -275,6 +327,22 @@
 
 <script>
 (function () {
+  /* ===================== ambient starfield (matches index.html's Command Center) ===================== */
+  (function buildStars() {
+    const el = document.getElementById("stars");
+    let svg = "<svg width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>";
+    for (let i = 0; i < 140; i++) {
+      const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 1.1 + 0.2;
+      const op = Math.random() * 0.6 + 0.1;
+      const dur = (Math.random() * 4 + 3).toFixed(2);
+      svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#8fe8ff" opacity="${op}">
+        <animate attributeName="opacity" values="${op};${op * 0.15};${op}" dur="${dur}s" repeatCount="indefinite" />
+      </circle>`;
+    }
+    svg += "</svg>";
+    el.innerHTML = svg;
+  })();
+
   const authPanel = document.getElementById("auth");
   const app = document.getElementById("app");
   const authError = document.getElementById("auth-error");
