@@ -60,6 +60,62 @@ test.describe("Admin UI (public/admin.html)", () => {
     await expect(page.locator("#tenants")).not.toContainText(name);
   });
 
+  test("creating a tenant reveals a magic link, and the friendly contact fields show up in the tenant list", async ({
+    page,
+  }) => {
+    await connect(page);
+    const name = uniqueName("E2E Magic Link");
+
+    await page.fill("#new-name", name);
+    await page.fill("#new-timezone", "UTC");
+    await page.fill("#new-phone", "(555) 123-4567");
+    await page.fill("#new-email", "owner@example.com");
+    await page.fill("#new-website", "https://example.com");
+    await page.click("#create-btn");
+
+    await expect(page.locator(".reveal .key")).toContainText("lr_");
+    const magicLink = await page.locator(".reveal .magic-link-value").textContent();
+    expect(magicLink).toMatch(/\/index\.html\?key=lr_/);
+
+    const card = page.locator(`.card:has-text("${name}")`);
+    await expect(card).toContainText("(555) 123-4567");
+    await expect(card).toContainText("owner@example.com");
+    await expect(card).toContainText("https://example.com");
+
+    page.once("dialog", (d) => d.accept());
+    await card.getByRole("button", { name: "Delete" }).click();
+    await expect(page.locator("#tenants")).not.toContainText(name);
+  });
+
+  test("skips provider setup by default (test mode) — the Twilio/SendGrid fields only appear once unchecked", async ({
+    page,
+  }) => {
+    await connect(page);
+    await expect(page.locator("#new-skip-channels")).toBeChecked();
+    await expect(page.locator("#channel-fields")).toBeHidden();
+
+    await page.click("#new-skip-channels");
+    await expect(page.locator("#channel-fields")).toBeVisible();
+
+    await page.click("#new-skip-channels");
+    await expect(page.locator("#channel-fields")).toBeHidden();
+  });
+
+  test("rejects a partially-filled Twilio section instead of silently dropping it", async ({ page }) => {
+    await connect(page);
+    const name = uniqueName("E2E Partial Twilio");
+
+    await page.fill("#new-name", name);
+    await page.fill("#new-timezone", "UTC");
+    await page.click("#new-skip-channels"); // uncheck: show channel fields
+    await page.fill("#new-twilio-sid", "AC123");
+    // authToken and fromNumber left blank on purpose
+    await page.click("#create-btn");
+
+    await expect(page.locator("#create-error")).toContainText("Fill in all three Twilio fields");
+    await expect(page.locator("#tenants")).not.toContainText(name);
+  });
+
   test("rejects creating a tenant with no name/timezone", async ({ page }) => {
     await connect(page);
     await page.fill("#new-name", "");

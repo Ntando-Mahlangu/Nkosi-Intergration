@@ -811,11 +811,24 @@
 
   render();
 
-  const existing = getSession();
-  if (existing) {
-    boot(existing)
-      .then(() => { gate.style.display = "none"; })
-      .catch(() => { setSession(null); });
+  // A link like "index.html?key=lr_..." auto-fills and auto-connects the
+  // gate — sent by an operator instead of asking a client to copy/paste a
+  // raw API key into two fields. The key is stripped back out of the
+  // visible URL/history immediately, before it's ever used, so it doesn't
+  // sit there any longer than the single moment it takes to connect.
+  const linkParams = new URLSearchParams(window.location.search);
+  const linkKey = linkParams.get("key");
+  if (linkKey) {
+    const linkBase = linkParams.get("base") || window.location.origin;
+    history.replaceState(null, "", window.location.pathname);
+    connect(linkBase, linkKey);
+  } else {
+    const existing = getSession();
+    if (existing) {
+      boot(existing)
+        .then(() => { gate.style.display = "none"; })
+        .catch(() => { setSession(null); });
+    }
   }
 })();
 </script>

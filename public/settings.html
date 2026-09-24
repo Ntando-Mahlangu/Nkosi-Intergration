@@ -455,16 +455,28 @@
     }
   });
 
-  const existing = getSession();
-  if (existing) {
-    loadSettings(existing)
-      .then(() => {
-        authPanel.style.display = "none";
-        app.style.display = "block";
-      })
-      .catch(() => {
-        setSession(null);
-      });
+  // See index.html's own comment on this same pattern — a magic link
+  // ("settings.html?key=lr_...") auto-connects instead of a client having
+  // to copy/paste a raw API key, and the key is stripped from the visible
+  // URL/history immediately.
+  const linkParams = new URLSearchParams(window.location.search);
+  const linkKey = linkParams.get("key");
+  if (linkKey) {
+    const linkBase = linkParams.get("base") || window.location.origin;
+    history.replaceState(null, "", window.location.pathname);
+    connect(linkBase, linkKey);
+  } else {
+    const existing = getSession();
+    if (existing) {
+      loadSettings(existing)
+        .then(() => {
+          authPanel.style.display = "none";
+          app.style.display = "block";
+        })
+        .catch(() => {
+          setSession(null);
+        });
+    }
   }
 })();
 </script>

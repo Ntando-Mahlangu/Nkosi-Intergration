@@ -23,7 +23,12 @@ interface TenantConfigBody {
   autoReplyEnabled?: boolean;
   status?: Tenant["status"];
   paddleSubscriptionId?: string | null;
+  contactPhone?: string;
+  contactEmail?: string;
+  website?: string;
 }
+
+const MAX_CONTACT_FIELD_LENGTH = 320;
 
 /** True if `timezone` is a real IANA zone Intl can resolve — an invalid one throws at quiet-hours-check time otherwise. */
 function isValidTimezone(timezone: string): boolean {
@@ -33,6 +38,18 @@ function isValidTimezone(timezone: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Reference-only contact info (contactPhone/contactEmail/website) is
+ * deliberately not format-validated — a real business's phone/email/site
+ * comes in too many shapes ("call the shop, ask for John", a WhatsApp-only
+ * number, no website yet) to reject without being unhelpful. Only a
+ * sane length cap, same purpose as knowledgeBase's own cap above.
+ */
+function isValidContactField(value: unknown): boolean {
+  if (value === undefined) return true;
+  return typeof value === "string" && value.length <= MAX_CONTACT_FIELD_LENGTH;
 }
 
 function isValidQuietHours(quietHours: unknown): quietHours is Tenant["quietHours"] {
@@ -120,6 +137,13 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   if (!isValidTemplates(body.templates)) {
     return "templates.initialGrounded/initialUngrounded/notInterestedCloser must be non-empty strings, and followUps (if set) an array of non-empty strings";
   }
+  if (
+    !isValidContactField(body.contactPhone) ||
+    !isValidContactField(body.contactEmail) ||
+    !isValidContactField(body.website)
+  ) {
+    return `contactPhone/contactEmail/website must be strings up to ${MAX_CONTACT_FIELD_LENGTH} characters`;
+  }
   // null is allowed through (same precedent as templates above) so the
   // admin API has a way to explicitly clear a tenant's subscription link.
   if (
@@ -151,6 +175,9 @@ function buildTenantPatch(
   if (body.templates !== undefined) patch.templates = body.templates;
   if (body.knowledgeBase !== undefined) patch.knowledgeBase = body.knowledgeBase;
   if (body.autoReplyEnabled !== undefined) patch.autoReplyEnabled = body.autoReplyEnabled;
+  if (body.contactPhone !== undefined) patch.contactPhone = body.contactPhone;
+  if (body.contactEmail !== undefined) patch.contactEmail = body.contactEmail;
+  if (body.website !== undefined) patch.website = body.website;
   // Gated the same as status: both are billing/access-control state that
   // only an admin sets, never the tenant itself via PATCH /tenants/me — a
   // tenant setting its own paddleSubscriptionId could let it get matched
@@ -363,6 +390,9 @@ export function createTenantRoutes({
         status: "active",
         paddleSubscriptionId:
           typeof body.paddleSubscriptionId === "string" ? body.paddleSubscriptionId.trim() : undefined,
+        contactPhone: body.contactPhone,
+        contactEmail: body.contactEmail,
+        website: body.website,
         createdAt: new Date().toISOString(),
       };
 

@@ -708,6 +708,18 @@ components:
             Admin-only — rejected with 400 on PATCH /tenants/me. Set null to
             clear it. Must be unique across tenants; usually self-filled by
             /webhooks/paddle rather than set by hand.
+        contactPhone:
+          type: string
+          maxLength: 320
+          description: Reference-only business contact phone, for the agency's own records — never used to send/receive messages.
+        contactEmail:
+          type: string
+          maxLength: 320
+          description: Reference-only business contact email, for the agency's own records — never used to send email.
+        website:
+          type: string
+          maxLength: 320
+          description: Reference-only business website, for the agency's own records.
 
     PublicTenant:
       type: object
@@ -735,6 +747,9 @@ components:
           description: Why `status` last changed — an admin's own PATCH ("manual") vs. an automatic /webhooks/paddle change ("billing"). Informational only.
         paddleSubscriptionId: { type: string, description: "Paddle subscription id (sub_...) backing this tenant's billing, if any." }
         paddleLastEventAt: { type: string, description: "occurred_at of the most recent Paddle webhook event applied to this tenant's status, as Paddle sent it." }
+        contactPhone: { type: string, description: "Reference-only business contact phone, if set at onboarding." }
+        contactEmail: { type: string, description: "Reference-only business contact email, if set at onboarding." }
+        website: { type: string, description: "Reference-only business website, if set at onboarding." }
         createdAt: { type: string, format: date-time }
 
     Lead:

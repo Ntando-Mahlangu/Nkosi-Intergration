@@ -267,6 +267,36 @@ describe("tenant management routes", () => {
     delete process.env.ADMIN_API_KEY;
   });
 
+  it("accepts reference-only contactPhone/contactEmail/website on create and PATCH — never used to send/receive, just displayed", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app).post("/admin/tenants").set("Authorization", "Bearer admin-secret").send({
+      name: "Acme Plumbing",
+      timezone: "America/New_York",
+      contactPhone: "(555) 123-4567",
+      contactEmail: "owner@acmeplumbing.com",
+      website: "https://acmeplumbing.com",
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.contactPhone).toBe("(555) 123-4567");
+    expect(created.body.contactEmail).toBe("owner@acmeplumbing.com");
+    expect(created.body.website).toBe("https://acmeplumbing.com");
+
+    const patched = await request(app)
+      .patch(`/admin/tenants/${created.body.id}`)
+      .set("Authorization", "Bearer admin-secret")
+      .send({ contactPhone: "(555) 999-0000" });
+    expect(patched.status).toBe(200);
+    expect(patched.body.contactPhone).toBe("(555) 999-0000");
+    expect(patched.body.contactEmail).toBe("owner@acmeplumbing.com"); // untouched
+
+    delete process.env.ADMIN_API_KEY;
+  });
+
   it("tags a status change made via the admin API as statusReason: 'manual'", async () => {
     // Distinguishes an admin's own deliberate hold from a /webhooks/paddle
     // billing-driven suspension, so the admin dashboard can show which one
@@ -2026,6 +2056,23 @@ describe("admin tenant creation validation", () => {
       .send({ name: "Bad TZ Co", timezone: "Not/A_Zone" });
 
     expect(res.status).toBe(400);
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("rejects a contactPhone/contactEmail/website over the length cap", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Too Long Co", timezone: "UTC", website: "https://example.com/" + "a".repeat(400) });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/contactPhone.*contactEmail.*website/);
     delete process.env.ADMIN_API_KEY;
   });
 });

@@ -43,6 +43,26 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
     await expect(page.locator("#tenant-label")).toHaveText("NKOSI INTEGRATIONS (DEMO)");
   });
 
+  test("a magic link (?key=...) auto-connects without typing anything, and the key disappears from the address bar", async ({
+    page,
+  }) => {
+    // Simulates the link public/admin.html hands an operator after creating
+    // a tenant — sent to a client instead of asking them to copy/paste a
+    // raw API key into two fields.
+    await page.goto("/index.html?key=demo-key");
+
+    await expect(page.locator("#gate")).toBeHidden();
+    await expect(page.locator("#tenant-label")).toHaveText("NKOSI INTEGRATIONS (DEMO)");
+
+    // The key must not linger in the visible URL/history once it's been used.
+    await expect(page).toHaveURL(/\/index\.html$/);
+    expect(page.url()).not.toContain("key=");
+
+    // A plain reload (no ?key= this time) must still work via the persisted session.
+    await page.reload();
+    await expect(page.locator("#gate")).toBeHidden();
+  });
+
   test("disconnect returns to the access gate and clears the persisted session", async ({ page }) => {
     await page.goto("/");
     await page.click("#demo-btn");

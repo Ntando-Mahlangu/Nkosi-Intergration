@@ -185,9 +185,26 @@ deployment serves many clients with fully isolated data.
   linked from the tenant-facing dashboards — it's a separate credential
   for the platform operator, not something a tenant should see. The tenant
   list and audit log are paginated (20 per page, Prev/Next, backed by the
-  same `?limit=&offset=`/`X-Total-Count` the API already exposed) so a
+  same `?limit=&offset=`/`X-Total-Count` the API already exposes) so a
   platform with hundreds of tenants or a long-running audit trail doesn't
   render everything in one unbounded page.
+  - Its "Add new client" form leads with the fields that are just plain
+    text entry (business name, timezone, and optional contact
+    phone/email/website — stored as reference info on the tenant, see
+    `Tenant.contactPhone`/`contactEmail`/`website` in `src/types.ts`, never
+    used to actually send/receive messages) before the real provider
+    credentials (Twilio Account SID/Auth Token/number, SendGrid API
+    key/from address), which stay collapsed behind a "Skip provider setup
+    for now (test mode)" checkbox — checked by default, so a client can be
+    created and reviewed before its Twilio/SendGrid accounts exist. On
+    success it shows a one-time **magic link**
+    (`index.html?key=<apiKey>`) alongside the raw API key: send that one
+    link to the client instead of asking them to copy/paste a key into
+    the "API base URL"/"Tenant API key" fields — every dashboard
+    (`index.html`/`dashboard.html`/`settings.html`/`reports.html`)
+    auto-fills and auto-connects from a `?key=` query param on load, then
+    strips it back out of the visible URL/history (`history.replaceState`)
+    before the connection even completes, so the key never lingers there.
 
 ### Accessibility
 
@@ -252,8 +269,11 @@ to type it in manually instead.)
 5. **Set `PUBLIC_BASE_URL`** to this app's own public HTTPS URL — required
    for correct Twilio webhook signature verification behind a proxy/load
    balancer, and for delivery-status callback URLs.
-6. **Onboard a tenant**: `npm run onboard` (interactive CLI) or `POST
-   /admin/tenants` — see `ONBOARDING.md`. Then run `npm run check-providers
+6. **Onboard a tenant**: `npm run onboard` (interactive CLI), `POST
+   /admin/tenants`, or `public/admin.html`'s "Add new client" form (business
+   basics up front, Twilio/SendGrid credentials collapsed below a "skip for
+   now" checkbox, ending in a one-time magic link to hand the client) —
+   see `ONBOARDING.md`. Then run `npm run check-providers
    -- --tenant <id>` to verify every configured provider credential
    (Twilio/SendGrid/Anthropic) actually authenticates before going live —
    catches a typo'd/revoked credential now instead of it failing silently

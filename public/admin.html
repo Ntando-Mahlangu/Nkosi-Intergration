@@ -103,11 +103,17 @@
     margin-bottom: 14px;
     font-size: 13px;
   }
-  .reveal .key { font-family: ui-monospace, monospace; word-break: break-all; user-select: all; }
+  .reveal .key, .reveal .magic-link-value { font-family: ui-monospace, monospace; word-break: break-all; user-select: all; }
   .reveal .warn { color: var(--warn); font-size: 12px; margin-top: 6px; }
   section h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 28px 0 10px; }
-  .create-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; }
-  .create-form label { margin: 0 0 4px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .form-grid label { margin: 0 0 4px; }
+  .span-2 { grid-column: span 2; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); margin: 14px 0; }
+  .checkbox-row input { width: auto; }
+  .hint { color: var(--muted); font-size: 12px; margin: 2px 0 8px; }
+  .channel-section h4 { font-size: 13px; color: var(--text); margin: 18px 0 2px; }
+  .channel-section { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
@@ -143,18 +149,98 @@
     <div id="reveal-panel" role="alert" aria-live="assertive"></div>
 
     <section>
-      <h3>Create tenant</h3>
+      <h3>Add new client</h3>
       <div class="card">
-        <div class="create-form">
+        <div class="form-grid">
           <div>
-            <label for="new-name">Name</label>
-            <input id="new-name" placeholder="Acme Co" />
+            <label for="new-name">Business name</label>
+            <input id="new-name" placeholder="Acme Plumbing" />
           </div>
           <div>
             <label for="new-timezone">Timezone (IANA)</label>
-            <input id="new-timezone" placeholder="Africa/Johannesburg" />
+            <input id="new-timezone" placeholder="America/New_York" />
           </div>
-          <button id="create-btn">Create</button>
+          <div>
+            <label for="new-phone">Contact phone (optional)</label>
+            <input id="new-phone" placeholder="(555) 123-4567" />
+          </div>
+          <div>
+            <label for="new-email">Contact email (optional)</label>
+            <input id="new-email" placeholder="owner@acmeplumbing.com" />
+          </div>
+          <div class="span-2">
+            <label for="new-website">Business website (optional)</label>
+            <input id="new-website" placeholder="https://acmeplumbing.com" />
+          </div>
+        </div>
+        <div class="hint">
+          The fields above are just for your own reference — they don't
+          connect to anything automatically. Texting/emailing this client's
+          leads still needs a real Twilio/SendGrid account below.
+        </div>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="new-skip-channels" checked />
+          Skip provider setup for now (test mode — messages log to the
+          console instead of sending; add real credentials later)
+        </label>
+
+        <div id="channel-fields" style="display:none;">
+          <div class="channel-section">
+            <h4>Text messages (Twilio)</h4>
+            <div class="hint">
+              Create a <a href="https://www.twilio.com/console" target="_blank" rel="noopener" style="color:var(--accent);">Twilio</a>
+              account, buy a phone number, then copy these three values from
+              the console. Leave all three blank to skip just this channel.
+            </div>
+            <div class="form-grid">
+              <div>
+                <label for="new-twilio-sid">Account SID</label>
+                <input id="new-twilio-sid" placeholder="AC..." />
+              </div>
+              <div>
+                <label for="new-twilio-token">Auth token</label>
+                <input id="new-twilio-token" type="password" />
+              </div>
+              <div>
+                <label for="new-twilio-number">Twilio phone number</label>
+                <input id="new-twilio-number" placeholder="+15551234567" />
+              </div>
+              <div style="display:flex; align-items:end; padding-bottom:9px;">
+                <label class="checkbox-row" style="margin:0;">
+                  <input type="checkbox" id="new-twilio-whatsapp" />
+                  Also enable WhatsApp on this number
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="channel-section">
+            <h4>Email (SendGrid)</h4>
+            <div class="hint">
+              Create a <a href="https://app.sendgrid.com" target="_blank" rel="noopener" style="color:var(--accent);">SendGrid</a>
+              account, verify a sender, then copy an API key. Leave both
+              blank to skip just this channel.
+            </div>
+            <div class="form-grid">
+              <div>
+                <label for="new-sendgrid-key">API key</label>
+                <input id="new-sendgrid-key" type="password" placeholder="SG...." />
+              </div>
+              <div>
+                <label for="new-sendgrid-from">From email</label>
+                <input id="new-sendgrid-from" placeholder="hello@acmeplumbing.com" />
+              </div>
+              <div class="span-2">
+                <label for="new-sendgrid-fromname">From name (optional)</label>
+                <input id="new-sendgrid-fromname" placeholder="Acme Plumbing" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;">
+          <button id="create-btn">Create client</button>
         </div>
         <div id="create-error" class="error" role="alert"></div>
       </div>
@@ -286,13 +372,47 @@
     return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  function showReveal(title, key) {
+  // "index.html?key=..." auto-fills and auto-connects the Command Center's
+  // access gate with this key, then strips it back out of the visible URL —
+  // one link to send a client instead of asking them to copy/paste a raw
+  // API key into two separate fields. Built from whatever base URL this
+  // admin session itself connected with (usually the same public
+  // deployment), never from a hardcoded origin.
+  function buildMagicLink(apiKey) {
+    const base = (document.getElementById("base-url").value.trim() || window.location.origin).replace(/\/$/, "");
+    return `${base}/index.html?key=${encodeURIComponent(apiKey)}`;
+  }
+
+  function showReveal(title, key, magicLink) {
     document.getElementById("reveal-panel").innerHTML = `
       <div class="reveal">
         <strong>${escapeHtml(title)}</strong><br />
         <span class="key">${escapeHtml(key)}</span>
         <div class="warn">Shown once — copy it now. It cannot be retrieved again.</div>
+        ${
+          magicLink
+            ? `<div style="margin-top:10px;">
+                 Send this link to the client instead — it logs them in
+                 automatically, nothing to type or paste:
+                 <div class="magic-link-value">${escapeHtml(magicLink)}</div>
+                 <button type="button" class="secondary" id="reveal-copy-btn" style="margin-top:6px;">Copy link</button>
+               </div>`
+            : ""
+        }
       </div>`;
+    if (!magicLink) return;
+    document.getElementById("reveal-copy-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("reveal-copy-btn");
+      try {
+        await navigator.clipboard.writeText(magicLink);
+        btn.textContent = "Copied!";
+      } catch {
+        // Clipboard API unavailable (e.g. an insecure context) — the link
+        // text itself is still selectable (user-select:all via .key), so
+        // this button is a convenience, not the only way to get it.
+        btn.textContent = "Select the link above to copy";
+      }
+    });
   }
 
   function clearReveal() {
@@ -326,6 +446,11 @@
           }
         </div>
         <div class="meta">${escapeHtml(t.id)} &middot; ${escapeHtml(t.timezone)} &middot; created ${escapeHtml(new Date(t.createdAt).toLocaleString())}</div>
+        ${
+          t.contactPhone || t.contactEmail || t.website
+            ? `<div class="meta">${[t.contactPhone, t.contactEmail, t.website].filter(Boolean).map(escapeHtml).join(" &middot; ")}</div>`
+            : ""
+        }
         <div class="actions">
           ${
             t.status === "suspended"
@@ -478,6 +603,27 @@
     loadAll(session).catch((err) => alert(err.message));
   });
 
+  const skipChannelsCheckbox = document.getElementById("new-skip-channels");
+  const channelFields = document.getElementById("channel-fields");
+  function updateChannelFieldsVisibility() {
+    channelFields.style.display = skipChannelsCheckbox.checked ? "none" : "block";
+  }
+  skipChannelsCheckbox.addEventListener("change", updateChannelFieldsVisibility);
+
+  const NEW_CLIENT_FIELD_IDS = [
+    "new-name",
+    "new-timezone",
+    "new-phone",
+    "new-email",
+    "new-website",
+    "new-twilio-sid",
+    "new-twilio-token",
+    "new-twilio-number",
+    "new-sendgrid-key",
+    "new-sendgrid-from",
+    "new-sendgrid-fromname",
+  ];
+
   document.getElementById("create-btn").addEventListener("click", async () => {
     const session = getSession();
     if (!session) return;
@@ -486,18 +632,70 @@
     const name = document.getElementById("new-name").value.trim();
     const timezone = document.getElementById("new-timezone").value.trim();
     if (!name || !timezone) {
-      createError.textContent = "Name and timezone are required.";
+      createError.textContent = "Business name and timezone are required.";
       return;
     }
+
+    const body = { name, timezone };
+    const contactPhone = document.getElementById("new-phone").value.trim();
+    const contactEmail = document.getElementById("new-email").value.trim();
+    const website = document.getElementById("new-website").value.trim();
+    if (contactPhone) body.contactPhone = contactPhone;
+    if (contactEmail) body.contactEmail = contactEmail;
+    if (website) body.website = website;
+
+    if (skipChannelsCheckbox.checked) {
+      body.devMode = true;
+    } else {
+      const sid = document.getElementById("new-twilio-sid").value.trim();
+      const token = document.getElementById("new-twilio-token").value.trim();
+      const number = document.getElementById("new-twilio-number").value.trim();
+      const twilioFilled = [sid, token, number].filter(Boolean).length;
+      if (twilioFilled > 0 && twilioFilled < 3) {
+        createError.textContent =
+          "Fill in all three Twilio fields (Account SID, Auth token, phone number), or leave all three blank to skip it.";
+        return;
+      }
+
+      const sgKey = document.getElementById("new-sendgrid-key").value.trim();
+      const sgFrom = document.getElementById("new-sendgrid-from").value.trim();
+      const sgFromName = document.getElementById("new-sendgrid-fromname").value.trim();
+      const sendgridFilled = [sgKey, sgFrom].filter(Boolean).length;
+      if (sendgridFilled > 0 && sendgridFilled < 2) {
+        createError.textContent = "Fill in both SendGrid fields (API key and from email), or leave both blank to skip it.";
+        return;
+      }
+
+      if (twilioFilled === 0 && sendgridFilled === 0) {
+        createError.textContent =
+          'Add at least one channel\'s credentials below, or check "Skip provider setup for now".';
+        return;
+      }
+
+      const channels = {};
+      if (twilioFilled === 3) {
+        const creds = { accountSid: sid, authToken: token, fromNumber: number };
+        channels.sms = creds;
+        if (document.getElementById("new-twilio-whatsapp").checked) channels.whatsapp = creds;
+      }
+      if (sendgridFilled === 2) {
+        channels.email = sgFromName ? { apiKey: sgKey, fromEmail: sgFrom, fromName: sgFromName } : { apiKey: sgKey, fromEmail: sgFrom };
+      }
+      body.channels = channels;
+      body.devMode = false;
+    }
+
     try {
       const created = await api(session, "/admin/tenants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, timezone }),
+        body: JSON.stringify(body),
       });
-      document.getElementById("new-name").value = "";
-      document.getElementById("new-timezone").value = "";
-      showReveal(`API key for "${created.name}"`, created.apiKey);
+      for (const id of NEW_CLIENT_FIELD_IDS) document.getElementById(id).value = "";
+      document.getElementById("new-twilio-whatsapp").checked = false;
+      skipChannelsCheckbox.checked = true;
+      updateChannelFieldsVisibility();
+      showReveal(`"${created.name}" is ready`, created.apiKey, buildMagicLink(created.apiKey));
       await loadAll(session);
     } catch (err) {
       createError.textContent = err.message;
@@ -524,7 +722,7 @@
       } else if (action === "rotate-key") {
         if (!confirm("Rotate this tenant's API key? The old key stops working immediately.")) return;
         const updated = await api(session, `/admin/tenants/${tenantId}/rotate-key`, { method: "POST" });
-        showReveal(`New API key for "${updated.name}"`, updated.apiKey);
+        showReveal(`New API key for "${updated.name}"`, updated.apiKey, buildMagicLink(updated.apiKey));
       } else if (action === "delete") {
         if (!confirm("Permanently delete this tenant? This cascades to its leads/messages and cannot be undone.")) return;
         await api(session, `/admin/tenants/${tenantId}`, { method: "DELETE" });

@@ -39,20 +39,37 @@ and (optionally) Twilio/SendGrid credentials. It prints:
 - The tenant's **API key** — save it immediately, it is shown only once.
 - Webhook URLs to configure with each provider.
 
-Prefer automation? `POST /admin/tenants` (with `Authorization: Bearer
-<ADMIN_API_KEY>`) does the same thing programmatically — see `README.md`.
-`public/admin.html` wraps this in a clickable form (and shows the API key
-in a copyable "shown once" panel) if you'd rather not run a CLI or curl.
+Prefer a form over a CLI or curl? `public/admin.html`'s "Add new client"
+form does the same thing (`POST /admin/tenants` under the hood — see
+`README.md` if you want to script it instead). It's ordered for a call
+with the client sitting in front of you: business name, timezone, and
+their contact phone/email/website first (plain text, just for your own
+reference — none of it connects to anything by itself), then the real
+Twilio/SendGrid credentials collapsed behind a "Skip provider setup for
+now (test mode)" checkbox, checked by default. Skip it if those provider
+accounts don't exist yet — the tenant is created in `devMode` (console-only
+sends) so you can still validate the rest of the pipeline immediately —
+and come back to it (`PATCH /admin/tenants/:id` or the same form's fields)
+once they do.
+
+Either way you create it, the response — or the form's "reveal" panel —
+gives you two things:
+
+- The tenant's **API key**, shown only once. Save it immediately.
+- A **magic link** (`.../index.html?key=<the key>`) that logs the client
+  straight in — send them that instead of asking them to copy/paste the
+  raw key into the "API base URL"/"Tenant API key" fields. Every
+  dashboard auto-connects from a `?key=` link like this and strips the
+  key back out of the visible URL immediately after. If a key is ever
+  rotated (`POST /admin/tenants/:id/rotate-key`), the old magic link
+  stops working — the rotate response/reveal panel gives you a fresh one
+  to send instead.
+
 If more than one person runs the admin side of the agency, set
 `ADMIN_API_KEYS` (a `name:key` list) instead of a single shared
 `ADMIN_API_KEY` so the audit log (`GET /admin/audit-log`) records *who*
 provisioned/suspended/deleted a tenant, not just an indistinguishable
 "admin" for everyone.
-
-If the client doesn't have Twilio/SendGrid accounts yet, create the tenant
-anyway with those fields blank; it can run in `devMode` (console-only sends)
-until credentials are ready, so you can validate the rest of the pipeline
-immediately.
 
 ### If you're billing this client through Paddle
 

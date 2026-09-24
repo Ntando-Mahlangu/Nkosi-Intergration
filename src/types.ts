@@ -253,6 +253,16 @@ export interface Tenant {
    * re-suspend an otherwise-current tenant.
    */
   paddleLastEventAt?: string;
+  /**
+   * Reference-only business contact info, captured during onboarding to
+   * make the tenant list human-readable — none of these are used to
+   * actually send/receive messages (that's channels.sms/whatsapp's
+   * fromNumber and channels.email's fromEmail, which are real provider
+   * credentials, not just a phone number or address typed in here).
+   */
+  contactPhone?: string;
+  contactEmail?: string;
+  website?: string;
   createdAt: string;
 }
 

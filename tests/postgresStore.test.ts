@@ -262,6 +262,25 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(reread?.appointmentReminderSentAt).toBe("2026-11-30T10:00:00.000Z");
   });
 
+  it("round-trips a tenant's reference-only contactPhone/contactEmail/website", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant({
+      ...TENANT,
+      contactPhone: "(555) 123-4567",
+      contactEmail: "owner@acmeplumbing.com",
+      website: "https://acmeplumbing.com",
+    });
+
+    const fetched = await tenantStore.getTenant(TENANT.id);
+    expect(fetched?.contactPhone).toBe("(555) 123-4567");
+    expect(fetched?.contactEmail).toBe("owner@acmeplumbing.com");
+    expect(fetched?.website).toBe("https://acmeplumbing.com");
+
+    const updated = await tenantStore.updateTenant(TENANT.id, { contactPhone: "(555) 999-0000" });
+    expect(updated?.contactPhone).toBe("(555) 999-0000");
+    expect(updated?.contactEmail).toBe("owner@acmeplumbing.com"); // untouched
+  });
+
   it("survives two concurrent updateLead calls patching different fields (no lost update)", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     const leadStore = new PostgresLeadStore(pool);
