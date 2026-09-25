@@ -65,6 +65,25 @@ paths:
                   database: { type: string, example: "unreachable" }
                   error: { type: string }
 
+  /terms-version:
+    get:
+      tags: [tenant-self-service]
+      summary: The current Terms of Service/Privacy Policy version
+      description: >
+        Public, no auth required. Returns the exact version string a
+        client must send back to POST /tenants/me/accept-terms — lets
+        every client-facing page fetch it instead of hardcoding it.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string, example: "2026-09-25" }
+
   /tenants/me:
     get:
       tags: [tenant-self-service]
@@ -99,6 +118,37 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Suspended" }
+
+  /tenants/me/accept-terms:
+    post:
+      tags: [tenant-self-service]
+      summary: Record the tenant's acceptance of the current Terms of Service/Privacy Policy
+      description: >
+        Required before anything actually sends on this tenant's behalf —
+        the worker, every inbound webhook's auto-reply, and
+        POST /workflow/run all refuse to send for a tenant that hasn't
+        accepted (a brand-new tenant starts unaccepted; pre-existing
+        tenants were grandfathered by migration 0013). Only the exact
+        current version (GET /terms-version) is accepted, so a client
+        can't accept a version this deployment doesn't currently offer.
+      security: [{ tenantAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: string, example: "2026-09-25" }
+      responses:
+        "200":
+          description: The updated tenant
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicTenant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /tenants/me/report:
     get:
@@ -750,6 +800,8 @@ components:
         contactPhone: { type: string, description: "Reference-only business contact phone, if set at onboarding." }
         contactEmail: { type: string, description: "Reference-only business contact email, if set at onboarding." }
         website: { type: string, description: "Reference-only business website, if set at onboarding." }
+        termsAcceptedAt: { type: string, format: date-time, description: "When this tenant accepted the Terms of Service/Privacy Policy. Unset blocks all outbound sending." }
+        termsVersion: { type: string, description: "Which CURRENT_TERMS_VERSION was accepted, or \"grandfathered\" for a tenant that predates this field." }
         createdAt: { type: string, format: date-time }
 
     Lead:

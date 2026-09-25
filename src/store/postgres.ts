@@ -190,7 +190,7 @@ export class PostgresLeadStore implements LeadStore {
 
 const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at,
   notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at,
-  contact_phone, contact_email, website`;
+  contact_phone, contact_email, website, terms_accepted_at, terms_version`;
 
 /**
  * Tenant provider credentials (Twilio auth tokens, SendGrid API keys) are
@@ -261,6 +261,10 @@ export class PostgresTenantStore implements TenantStore {
       contactPhone: (row.contact_phone as string | null) ?? undefined,
       contactEmail: (row.contact_email as string | null) ?? undefined,
       website: (row.website as string | null) ?? undefined,
+      termsAcceptedAt: (row.terms_accepted_at as string | null)
+        ? new Date(row.terms_accepted_at as string).toISOString()
+        : undefined,
+      termsVersion: (row.terms_version as string | null) ?? undefined,
       createdAt: new Date(row.created_at as string).toISOString(),
     };
   }
@@ -294,8 +298,8 @@ export class PostgresTenantStore implements TenantStore {
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
       [
         tenant.id,
         tenant.name,
@@ -317,6 +321,8 @@ export class PostgresTenantStore implements TenantStore {
         tenant.contactPhone ?? null,
         tenant.contactEmail ?? null,
         tenant.website ?? null,
+        tenant.termsAcceptedAt ?? null,
+        tenant.termsVersion ?? null,
       ]
     );
     return tenant;
@@ -361,6 +367,8 @@ export class PostgresTenantStore implements TenantStore {
     if ("contactPhone" in patch) push("contact_phone", patch.contactPhone ?? null);
     if ("contactEmail" in patch) push("contact_email", patch.contactEmail ?? null);
     if ("website" in patch) push("website", patch.website ?? null);
+    if ("termsAcceptedAt" in patch) push("terms_accepted_at", patch.termsAcceptedAt ?? null);
+    if ("termsVersion" in patch) push("terms_version", patch.termsVersion ?? null);
     if ("createdAt" in patch) push("created_at", patch.createdAt);
 
     if (setClauses.length === 0) return this.getTenant(id);

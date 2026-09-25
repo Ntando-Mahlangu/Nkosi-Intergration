@@ -101,18 +101,36 @@ test.describe("Admin UI (public/admin.html)", () => {
     await expect(page.locator("#channel-fields")).toBeHidden();
   });
 
-  test("rejects a partially-filled Twilio section instead of silently dropping it", async ({ page }) => {
+  test("rejects a partially-filled 'own Twilio account' override instead of silently dropping it", async ({ page }) => {
     await connect(page);
     const name = uniqueName("E2E Partial Twilio");
 
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
     await page.click("#new-skip-channels"); // uncheck: show channel fields
+    await page.fill("#new-twilio-number", "+15551234567");
+    await page.click("#new-twilio-advanced");
     await page.fill("#new-twilio-sid", "AC123");
-    // authToken and fromNumber left blank on purpose
+    // authToken left blank on purpose
     await page.click("#create-btn");
 
-    await expect(page.locator("#create-error")).toContainText("Fill in all three Twilio fields");
+    await expect(page.locator("#create-error")).toContainText("Fill in both Account SID and Auth Token");
+    await expect(page.locator("#tenants")).not.toContainText(name);
+  });
+
+  test("rejects a Twilio number with no shared default configured and no override provided", async ({ page }) => {
+    await connect(page);
+    const name = uniqueName("E2E No Default Twilio");
+
+    await page.fill("#new-name", name);
+    await page.fill("#new-timezone", "UTC");
+    await page.click("#new-skip-channels"); // uncheck: show channel fields
+    await page.fill("#new-twilio-number", "+15551234567");
+    // No DEFAULT_TWILIO_ACCOUNT_SID/DEFAULT_TWILIO_AUTH_TOKEN configured for this test server,
+    // and the "own account" override was never checked.
+    await page.click("#create-btn");
+
+    await expect(page.locator("#create-error")).toContainText("no default Twilio account is configured");
     await expect(page.locator("#tenants")).not.toContainText(name);
   });
 

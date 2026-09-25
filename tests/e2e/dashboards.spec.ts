@@ -4,6 +4,23 @@ import { test, expect } from "@playwright/test";
 // current origin) + tenant API key, stored in localStorage as
 // "leadrecovery.session". The demo server (no DATABASE_URL) seeds a "demo"
 // tenant with API key "demo-key" over data/sample-leads.json (16 leads).
+// It's grandfathered (see migration 0013) — already terms-accepted, so the
+// Terms of Service gate below never triggers for it, unlike a fresh tenant.
+
+// Matches playwright.config.ts's webServer.env — fixed test-only value.
+const ADMIN_KEY = "e2e-test-admin-key";
+// Matches playwright.config.ts's use.baseURL.
+const BASE_URL = "http://127.0.0.1:4173";
+
+async function createUnacceptedTenant(name: string): Promise<string> {
+  const res = await fetch(`${BASE_URL}/admin/tenants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${ADMIN_KEY}` },
+    body: JSON.stringify({ name, timezone: "UTC" }),
+  });
+  const body = (await res.json()) as { apiKey: string };
+  return body.apiKey;
+}
 
 test.describe("Command Center (public/index.html, the default landing page)", () => {
   test("connects with a valid API key and renders live category nodes", async ({ page }) => {
@@ -166,9 +183,61 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
     await expect(page.locator("#gate")).toBeHidden();
     await expect(page.locator("#tenant-label")).toHaveText("NKOSI INTEGRATIONS (DEMO)");
   });
+
+  test("a brand-new tenant sees the Terms of Service gate, and accepting it reveals the Command Center", async ({
+    page,
+  }) => {
+    const apiKey = await createUnacceptedTenant("E2E Terms Gate Co");
+
+    await page.goto(`/?key=${encodeURIComponent(apiKey)}`);
+
+    // The regular gate is gone (connected), but the scene stays covered by
+    // the Terms of Service gate instead of the Command Center revealing.
+    await expect(page.locator("#gate")).toBeHidden();
+    await expect(page.locator("#terms-gate")).toBeVisible();
+
+    await page.click("#terms-gate-accept");
+    await expect(page.locator("#terms-gate")).toBeHidden();
+
+    // Persists — a reload doesn't show the gate again.
+    await page.reload();
+    await expect(page.locator("#terms-gate")).toBeHidden();
+    await expect(page.locator("#gate")).toBeHidden();
+  });
+
+  test("logging out from the Terms of Service gate returns to the access gate", async ({ page }) => {
+    const apiKey = await createUnacceptedTenant("E2E Terms Logout Co");
+
+    await page.goto(`/?key=${encodeURIComponent(apiKey)}`);
+    await expect(page.locator("#terms-gate")).toBeVisible();
+
+    await page.click("#terms-gate-logout");
+    await expect(page.locator("#terms-gate")).toBeHidden();
+    await expect(page.locator("#gate")).toBeVisible();
+
+    // Session was actually cleared, not just the UI hidden.
+    await page.reload();
+    await expect(page.locator("#gate")).toBeVisible();
+  });
 });
 
 test.describe("List dashboard (public/dashboard.html, secondary working view)", () => {
+  test("a brand-new tenant sees the Terms of Service gate here too, and accepting it reveals the dashboard", async ({
+    page,
+  }) => {
+    const apiKey = await createUnacceptedTenant("E2E Dashboard Terms Gate Co");
+
+    await page.goto(`/dashboard.html?key=${encodeURIComponent(apiKey)}`);
+
+    await expect(page.locator("#auth")).toBeHidden();
+    await expect(page.locator("#app")).toBeHidden();
+    await expect(page.locator("#terms-gate")).toBeVisible();
+
+    await page.click("#terms-gate-accept");
+    await expect(page.locator("#terms-gate")).toBeHidden();
+    await expect(page.locator("#app")).toBeVisible();
+  });
+
   test("connects and renders the recovery plan and skipped leads", async ({ page }) => {
     await page.goto("/dashboard.html");
 

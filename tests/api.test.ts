@@ -14,6 +14,7 @@ import {
 import { requireAdminAuth, requireTenantAuth } from "../src/middleware/auth.js";
 import { createTenantRoutes } from "../src/routes/tenants.js";
 import { createWebhookRoutes } from "../src/webhooks/index.js";
+import { CURRENT_TERMS_VERSION } from "../src/terms.js";
 import type { Lead, Tenant } from "../src/types.js";
 import type { Stores } from "../src/store/index.js";
 
@@ -90,6 +91,8 @@ const TENANT: Tenant = {
   timezone: "UTC",
   devMode: true,
   channels: {},
+  termsAcceptedAt: new Date().toISOString(),
+  termsVersion: "grandfathered",
   createdAt: new Date().toISOString(),
 };
 
@@ -1731,6 +1734,69 @@ describe("webhook: a suspended tenant is fully paused, not just blocked from the
   });
 });
 
+describe("webhook: a tenant that hasn't accepted the Terms of Service is fully paused, same as suspended", () => {
+  // Same production code path as the "suspended tenant" describe block
+  // above (both conditions are checked together: `status === "suspended"
+  // || !termsAcceptedAt`) — covering one Twilio-family and one
+  // SendGrid-family route here is enough to prove the *other* half of that
+  // shared condition also actually gates, without re-duplicating all five
+  // route-specific assertions already covered there.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function unacceptedTenant(overrides: Partial<Tenant> = {}): Tenant {
+    return { ...TENANT, termsAcceptedAt: undefined, termsVersion: undefined, ...overrides };
+  }
+
+  it("twilio/sms: does not classify, reply to, or opt out a lead", async () => {
+    vi.spyOn(twilio, "validateRequest").mockReturnValue(true);
+    const tenant = unacceptedTenant({ channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+1" } } });
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/twilio/sms`)
+      .type("form")
+      .send({ From: LEAD.phone, Body: "STOP" });
+
+    expect(res.status).toBe(200); // still a clean TwiML response
+    const updated = await stores.leadStore.getLeadById(tenant.id, LEAD.id);
+    expect(updated?.status).toBe(LEAD.status); // untouched
+    expect(await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id)).toHaveLength(0);
+  });
+
+  it("sendgrid/email: does not classify or auto-reply", async () => {
+    const tenant = unacceptedTenant();
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/sendgrid/email?token=${tenant.apiKey}`)
+      .field("from", "Jordan <jordan@example.com>")
+      .field("text", "please STOP emailing me");
+
+    expect(res.status).toBe(204);
+    const updated = await stores.leadStore.getLeadById(tenant.id, LEAD.id);
+    expect(updated?.status).toBe(LEAD.status);
+    expect(await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id)).toHaveLength(0);
+  });
+});
+
 describe("notify on interested reply", () => {
   it("POSTs to the tenant's notifyWebhookUrl when a reply classifies as interested", async () => {
     const tenantWithHook: Tenant = { ...TENANT, notifyWebhookUrl: "https://hooks.example.com/notify" };
@@ -1785,6 +1851,53 @@ describe("notify on interested reply", () => {
     expect(res.status).toBe(204);
     const lead = await stores.leadStore.getLeadById(TENANT.id, LEAD.id);
     expect(lead?.status).toBe("responded");
+  });
+});
+
+describe("POST /tenants/me/accept-terms", () => {
+  it("records acceptance of the current terms version", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app)
+      .post("/tenants/me/accept-terms")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ version: CURRENT_TERMS_VERSION });
+
+    expect(res.status).toBe(200);
+    expect(res.body.termsVersion).toBe(CURRENT_TERMS_VERSION);
+    expect(res.body.termsAcceptedAt).toBeTruthy();
+
+    const stored = await stores.tenantStore.getTenant(TENANT.id);
+    expect(stored?.termsVersion).toBe(CURRENT_TERMS_VERSION);
+  });
+
+  it("rejects any version other than the current one", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app)
+      .post("/tenants/me/accept-terms")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ version: "some-old-version" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(CURRENT_TERMS_VERSION);
+  });
+
+  it("requires tenant authentication", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app).post("/tenants/me/accept-terms").send({ version: CURRENT_TERMS_VERSION });
+
+    expect(res.status).toBe(401);
   });
 });
 
@@ -2056,6 +2169,59 @@ describe("admin tenant creation validation", () => {
       .send({ name: "Bad TZ Co", timezone: "Not/A_Zone" });
 
     expect(res.status).toBe(400);
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("creates a tenant's channels from the shared default Twilio/SendGrid account when only the per-client fields are given", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    process.env.DEFAULT_TWILIO_ACCOUNT_SID = "AC_shared";
+    process.env.DEFAULT_TWILIO_AUTH_TOKEN = "shared-token";
+    process.env.DEFAULT_SENDGRID_API_KEY = "SG.shared";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({
+        name: "Acme Plumbing",
+        timezone: "UTC",
+        channels: { sms: { fromNumber: "+15551234567" }, email: { fromEmail: "hello@acmeplumbing.com" } },
+      });
+    expect(created.status).toBe(201);
+
+    const stored = await stores.tenantStore.getTenant(created.body.id);
+    expect(stored?.channels.sms).toEqual({
+      fromNumber: "+15551234567",
+      accountSid: "AC_shared",
+      authToken: "shared-token",
+    });
+    expect(stored?.channels.email).toEqual({ fromEmail: "hello@acmeplumbing.com", apiKey: "SG.shared" });
+
+    delete process.env.ADMIN_API_KEY;
+    delete process.env.DEFAULT_TWILIO_ACCOUNT_SID;
+    delete process.env.DEFAULT_TWILIO_AUTH_TOKEN;
+    delete process.env.DEFAULT_SENDGRID_API_KEY;
+  });
+
+  it("rejects a channel with only the per-client field when no shared default is configured", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    delete process.env.DEFAULT_TWILIO_ACCOUNT_SID;
+    delete process.env.DEFAULT_TWILIO_AUTH_TOKEN;
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Acme Plumbing", timezone: "UTC", channels: { sms: { fromNumber: "+15551234567" } } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/no default Twilio account is configured/);
     delete process.env.ADMIN_API_KEY;
   });
 

@@ -222,12 +222,15 @@ export function createWebhookRoutes(stores: Stores): Router {
         return;
       }
 
-      // A suspended tenant (see PATCH /admin/tenants/:id) must be fully
-      // paused — no classification, no auto-reply/closer sends, no
-      // notifications — not just blocked from the authenticated tenant API.
-      // Responds exactly like "no lead matched" so this isn't distinguishable
-      // from ordinary traffic and Twilio doesn't retry it as an error.
-      if (tenant.status === "suspended") {
+      // A suspended tenant (see PATCH /admin/tenants/:id), or one that
+      // hasn't accepted LeadRecovery's own Terms of Service/Privacy Policy
+      // yet (a brand-new tenant starts unaccepted — see migration 0013),
+      // must be fully paused — no classification, no auto-reply/closer
+      // sends, no notifications — not just blocked from the authenticated
+      // tenant API. Responds exactly like "no lead matched" so this isn't
+      // distinguishable from ordinary traffic and Twilio doesn't retry it
+      // as an error.
+      if (tenant.status === "suspended" || !tenant.termsAcceptedAt) {
         res.type("text/xml").send("<Response></Response>");
         return;
       }
@@ -269,8 +272,8 @@ export function createWebhookRoutes(stores: Stores): Router {
         return;
       }
 
-      // See the identical suspended-tenant check in the /twilio/sms route above.
-      if (tenant.status === "suspended") {
+      // See the identical suspended/terms-unaccepted check in the /twilio/sms route above.
+      if (tenant.status === "suspended" || !tenant.termsAcceptedAt) {
         res.status(204).send();
         return;
       }
@@ -319,8 +322,8 @@ export function createWebhookRoutes(stores: Stores): Router {
         return;
       }
 
-      // See the identical suspended-tenant check in the /twilio/sms route above.
-      if (tenant.status === "suspended") {
+      // See the identical suspended/terms-unaccepted check in the /twilio/sms route above.
+      if (tenant.status === "suspended" || !tenant.termsAcceptedAt) {
         res.status(204).send();
         return;
       }
@@ -355,8 +358,8 @@ export function createWebhookRoutes(stores: Stores): Router {
         return;
       }
 
-      // See the identical suspended-tenant check in the /twilio/sms route above.
-      if (tenant.status === "suspended") {
+      // See the identical suspended/terms-unaccepted check in the /twilio/sms route above.
+      if (tenant.status === "suspended" || !tenant.termsAcceptedAt) {
         res.status(204).send();
         return;
       }
@@ -419,8 +422,8 @@ export function createWebhookRoutes(stores: Stores): Router {
         }
       }
 
-      // See the identical suspended-tenant check in the /twilio/sms route above.
-      if (tenant.status === "suspended") {
+      // See the identical suspended/terms-unaccepted check in the /twilio/sms route above.
+      if (tenant.status === "suspended" || !tenant.termsAcceptedAt) {
         res.status(204).send();
         return;
       }

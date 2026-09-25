@@ -13,5 +13,10 @@ export const DEMO_TENANT: Tenant = {
   timezone: "Africa/Johannesburg",
   devMode: true,
   channels: {},
+  // Grandfathered — see migration 0013's own comment: a brand-new tenant
+  // must accept the Terms of Service before anything actually sends, but
+  // the bundled demo should work out of the box with no extra click.
+  termsAcceptedAt: new Date(0).toISOString(),
+  termsVersion: "grandfathered",
   createdAt: new Date(0).toISOString(),
 };

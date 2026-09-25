@@ -9,6 +9,29 @@ their jurisdiction and industry; rules differ meaningfully between, e.g.,
 the US (TCPA), the EU/UK (GDPR + PECR), and South Africa (POPIA), and this
 document is not a substitute for that review.
 
+## Your own Terms of Service / Privacy Policy
+
+Distinct from lead consent below: this is the agreement between your
+agency and the business client using LeadRecovery, not between the client
+and their own leads.
+
+- `public/terms.html`/`public/privacy.html` are a starting-point draft
+  (see the notice at the top of each) — replace every bracketed
+  placeholder and have a lawyer review both before onboarding real
+  clients. They cover service description, the client's own responsibility
+  for lawful outbound messaging, liability limits, and data handling.
+- The client accepts these themselves, on their own first login (a
+  blocking gate on every dashboard) — not something you tick on their
+  behalf during onboarding. `POST /workflow/run`, the worker, and every
+  inbound webhook's auto-reply all refuse to send for a tenant that
+  hasn't accepted, so this isn't just a UI formality.
+- A pre-existing tenant (from before this consent step existed) is
+  grandfathered rather than retroactively blocked — see migration 0013.
+- Bump `CURRENT_TERMS_VERSION` (`src/terms.ts`) and update both pages
+  whenever a change is material enough that existing acceptances
+  shouldn't silently carry over — every tenant is then prompted to accept
+  again before their next send.
+
 ## Consent basis
 
 - Confirm *why* the business is allowed to contact each imported lead (an

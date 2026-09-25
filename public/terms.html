@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Terms of Service</title>
+<style>
+  :root {
+    --bg: #04060b;
+    --panel: rgba(91, 233, 255, 0.05);
+    --border: rgba(91, 233, 255, 0.28);
+    --text: #5be9ff;
+    --muted: #1e6b7a;
+    --accent: #5be9ff;
+    --warn: #ffb454;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+    background: var(--bg);
+    color: #cdeaf2;
+    line-height: 1.6;
+  }
+  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.4; pointer-events: none; }
+  #vignette {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(0,4,10,0.75) 100%);
+  }
+  main { position: relative; z-index: 5; max-width: 760px; margin: 0 auto; padding: 40px 24px 100px; }
+  header { margin-bottom: 32px; }
+  header h1 { font-size: 20px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); margin: 0 0 6px; }
+  header .meta { color: var(--muted); font-size: 12px; letter-spacing: 0.05em; }
+  a { color: var(--accent); }
+  a.back { display: inline-block; margin-bottom: 20px; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .draft-notice {
+    background: rgba(255,180,84,0.08);
+    border: 1px solid rgba(255,180,84,0.4);
+    color: var(--warn);
+    border-radius: 4px;
+    padding: 14px 16px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    margin-bottom: 32px;
+  }
+  section { margin-bottom: 28px; }
+  h2 { font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 12px; }
+  p, li { font-size: 13.5px; color: #cdeaf2; }
+  ul { padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  strong { color: var(--text); }
+  .placeholder { color: var(--warn); }
+</style>
+</head>
+<body>
+
+<div id="stars"></div>
+<div id="vignette"></div>
+
+<main>
+  <a class="back" href="index.html">&larr; Back to Command Center</a>
+
+  <div class="draft-notice">
+    <strong>Draft — not legal advice.</strong> This is a starting-point template
+    generated to cover the ground a lead-recovery messaging service typically
+    needs (service description, client responsibilities, liability limits,
+    data handling). Replace every <span class="placeholder">[bracketed
+    placeholder]</span> and have a qualified lawyer review the final text —
+    especially the sections on messaging compliance (TCPA/CAN-SPAM/CASL) and
+    liability — before relying on this with real clients.
+  </div>
+
+  <header>
+    <h1>Terms of Service</h1>
+    <div class="meta">Effective date: <span class="placeholder">[effective date]</span> &middot; Version 2026-09-25</div>
+  </header>
+
+  <section>
+    <h2>1. Acceptance of these terms</h2>
+    <p>
+      These Terms of Service ("Terms") govern access to and use of the
+      LeadRecovery lead-recovery and messaging platform ("Service"),
+      operated by <span class="placeholder">[Your Agency Name]</span>
+      ("we", "us", "our"). By creating or using an account, you ("Client",
+      "you") agree to be bound by these Terms and by our
+      <a href="privacy.html">Privacy Policy</a>. If you do not agree, do not
+      use the Service.
+    </p>
+  </section>
+
+  <section>
+    <h2>2. Description of the Service</h2>
+    <p>
+      The Service helps you follow up with your own business leads by
+      composing and sending SMS, WhatsApp, and/or email messages on your
+      behalf, classifying inbound replies, and (where you enable it)
+      answering routine questions with an automated assistant grounded in
+      information you provide. The Service is a tool you configure and
+      direct — you remain responsible for the leads you upload, the
+      messages sent under your account, and how you use any reply data.
+    </p>
+  </section>
+
+  <section>
+    <h2>3. Your responsibilities</h2>
+    <p>You are solely responsible for:</p>
+    <ul>
+      <li>
+        Having a lawful basis and, where required, prior express consent to
+        contact each lead you upload or connect via SMS, WhatsApp, or email,
+        and for complying with all applicable telemarketing and
+        anti-spam laws (including the U.S. Telephone Consumer Protection Act
+        (TCPA), CAN-SPAM Act, Canada's CASL, and any equivalent law in your
+        jurisdiction).
+      </li>
+      <li>
+        The accuracy of lead data you import, and promptly honoring any
+        opt-out/STOP request (the Service automatically suppresses further
+        outreach on a STOP-type reply, but you remain responsible for your
+        own compliance obligations beyond that automated safeguard).
+      </li>
+      <li>
+        The accuracy of any knowledge-base text you configure for the
+        automated reply assistant, and for reviewing its behavior — the
+        Service is designed to escalate anything it is not confident about
+        to a human, but it is not infallible.
+      </li>
+      <li>
+        Keeping your API key(s) confidential and promptly telling us if one
+        is compromised, so we can rotate it.
+      </li>
+      <li>
+        Not using the Service to send unlawful, deceptive, harassing, or
+        fraudulent messages, or to contact anyone who has not provided the
+        contact information you're using in a lawful manner.
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>4. Accounts and access</h2>
+    <p>
+      We provision your account and issue API keys. You may not share
+      credentials with anyone outside your organization without our
+      knowledge. We may suspend an account for non-payment, a suspected
+      security issue, or a reasonable belief that the Service is being used
+      in violation of these Terms — suspension pauses all outbound sending
+      and automated replies until resolved.
+    </p>
+  </section>
+
+  <section>
+    <h2>5. Fees and billing</h2>
+    <p>
+      Fees are as agreed between you and <span class="placeholder">[Your
+      Agency Name]</span> separately (invoice, subscription, or another
+      arrangement). Non-payment may result in suspension or termination of
+      the Service. <span class="placeholder">[Add your specific pricing,
+      billing cycle, and refund policy here.]</span>
+    </p>
+  </section>
+
+  <section>
+    <h2>6. Third-party services</h2>
+    <p>
+      Sending and receiving messages relies on third-party providers you
+      connect (for example Twilio for SMS/WhatsApp and SendGrid for email),
+      and — if you enable the automated reply assistant — Anthropic's
+      Claude API to compose grounded answers from your own knowledge base
+      text. Your use of the Service means you authorize us to transmit lead
+      contact information and message content to these providers as
+      necessary to operate the Service. Their own terms and privacy
+      practices apply to their processing.
+    </p>
+  </section>
+
+  <section>
+    <h2>7. Service availability</h2>
+    <p>
+      The Service is provided "as is" and "as available." We do not
+      guarantee uninterrupted or error-free operation. We are not liable
+      for a provider outage (Twilio, SendGrid, or otherwise) outside our
+      reasonable control.
+    </p>
+  </section>
+
+  <section>
+    <h2>8. Limitation of liability</h2>
+    <p>
+      To the maximum extent permitted by law, <span class="placeholder">
+      [Your Agency Name]</span> will not be liable for indirect, incidental,
+      special, consequential, or punitive damages, or for any loss of
+      profits, revenue, or data, arising from your use of the Service. Our
+      total liability for any claim arising from these Terms is limited to
+      the fees you paid us in the
+      <span class="placeholder">[3/6/12]</span> months before the claim
+      arose. Nothing in these Terms limits liability that cannot be limited
+      under applicable law.
+    </p>
+  </section>
+
+  <section>
+    <h2>9. Indemnification</h2>
+    <p>
+      You agree to indemnify and hold us harmless from any claim, penalty,
+      or damages (including reasonable legal fees) arising from your
+      violation of these Terms, your violation of any messaging/anti-spam
+      law in connection with your use of the Service, or your lead data.
+    </p>
+  </section>
+
+  <section>
+    <h2>10. Termination</h2>
+    <p>
+      Either party may terminate at any time with notice as agreed
+      separately between you and us. Upon termination, your API key is
+      deactivated; we retain or delete your data per our
+      <a href="privacy.html">Privacy Policy</a> and any separate agreement.
+    </p>
+  </section>
+
+  <section>
+    <h2>11. Changes to these Terms</h2>
+    <p>
+      We may update these Terms from time to time. A material change
+      requires you to accept the new version again before continuing to
+      use the Service. The version you most recently accepted is recorded
+      on your account.
+    </p>
+  </section>
+
+  <section>
+    <h2>12. Governing law</h2>
+    <p>
+      These Terms are governed by the laws of
+      <span class="placeholder">[your jurisdiction]</span>, without regard
+      to its conflict-of-laws principles.
+    </p>
+  </section>
+
+  <section>
+    <h2>13. Contact</h2>
+    <p>Questions about these Terms: <span class="placeholder">[contact email]</span>.</p>
+  </section>
+</main>
+
+<script>
+(function () {
+  const el = document.getElementById("stars");
+  let svg = "<svg width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>";
+  for (let i = 0; i < 100; i++) {
+    const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 1.1 + 0.2;
+    const op = Math.random() * 0.5 + 0.1;
+    const dur = (Math.random() * 4 + 3).toFixed(2);
+    svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#8fe8ff" opacity="${op}">
+      <animate attributeName="opacity" values="${op};${op * 0.15};${op}" dur="${dur}s" repeatCount="indefinite" />
+    </circle>`;
+  }
+  svg += "</svg>";
+  el.innerHTML = svg;
+})();
+</script>
+</body>
+</html>

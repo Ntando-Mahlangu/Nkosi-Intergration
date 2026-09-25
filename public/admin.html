@@ -234,20 +234,8 @@
         <div id="channel-fields" style="display:none;">
           <div class="channel-section">
             <h4>Text messages (Twilio)</h4>
-            <div class="hint">
-              Create a <a href="https://www.twilio.com/console" target="_blank" rel="noopener" style="color:var(--accent);">Twilio</a>
-              account, buy a phone number, then copy these three values from
-              the console. Leave all three blank to skip just this channel.
-            </div>
+            <div class="hint">Uses your shared Twilio account by default — just assign this client a number. Leave blank to skip this channel.</div>
             <div class="form-grid">
-              <div>
-                <label for="new-twilio-sid">Account SID</label>
-                <input id="new-twilio-sid" placeholder="AC..." />
-              </div>
-              <div>
-                <label for="new-twilio-token">Auth token</label>
-                <input id="new-twilio-token" type="password" />
-              </div>
               <div>
                 <label for="new-twilio-number">Twilio phone number</label>
                 <input id="new-twilio-number" placeholder="+15551234567" />
@@ -259,27 +247,55 @@
                 </label>
               </div>
             </div>
+            <label class="checkbox-row">
+              <input type="checkbox" id="new-twilio-advanced" />
+              This client uses their own Twilio account (not your shared one)
+            </label>
+            <div id="twilio-advanced-fields" style="display:none;">
+              <div class="hint">
+                Create a <a href="https://www.twilio.com/console" target="_blank" rel="noopener" style="color:var(--accent);">Twilio</a>
+                account, buy a phone number, then copy these from the console.
+              </div>
+              <div class="form-grid">
+                <div>
+                  <label for="new-twilio-sid">Account SID</label>
+                  <input id="new-twilio-sid" placeholder="AC..." />
+                </div>
+                <div>
+                  <label for="new-twilio-token">Auth token</label>
+                  <input id="new-twilio-token" type="password" />
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="channel-section">
             <h4>Email (SendGrid)</h4>
-            <div class="hint">
-              Create a <a href="https://app.sendgrid.com" target="_blank" rel="noopener" style="color:var(--accent);">SendGrid</a>
-              account, verify a sender, then copy an API key. Leave both
-              blank to skip just this channel.
-            </div>
+            <div class="hint">Uses your shared SendGrid account by default — just set this client's from-address. Leave blank to skip this channel.</div>
             <div class="form-grid">
-              <div>
-                <label for="new-sendgrid-key">API key</label>
-                <input id="new-sendgrid-key" type="password" placeholder="SG...." />
-              </div>
               <div>
                 <label for="new-sendgrid-from">From email</label>
                 <input id="new-sendgrid-from" placeholder="hello@acmeplumbing.com" />
               </div>
-              <div class="span-2">
+              <div>
                 <label for="new-sendgrid-fromname">From name (optional)</label>
                 <input id="new-sendgrid-fromname" placeholder="Acme Plumbing" />
+              </div>
+            </div>
+            <label class="checkbox-row">
+              <input type="checkbox" id="new-sendgrid-advanced" />
+              This client uses their own SendGrid account (not your shared one)
+            </label>
+            <div id="sendgrid-advanced-fields" style="display:none;">
+              <div class="hint">
+                Create a <a href="https://app.sendgrid.com" target="_blank" rel="noopener" style="color:var(--accent);">SendGrid</a>
+                account, verify a sender, then copy an API key.
+              </div>
+              <div class="form-grid">
+                <div class="span-2">
+                  <label for="new-sendgrid-key">API key</label>
+                  <input id="new-sendgrid-key" type="password" placeholder="SG...." />
+                </div>
               </div>
             </div>
           </div>
@@ -672,18 +688,33 @@
   }
   skipChannelsCheckbox.addEventListener("change", updateChannelFieldsVisibility);
 
+  // Each "own account" checkbox reveals its own accountSid/authToken/apiKey
+  // fields — hidden by default because most clients use the shared account
+  // set once via DEFAULT_TWILIO_ACCOUNT_SID/DEFAULT_TWILIO_AUTH_TOKEN/
+  // DEFAULT_SENDGRID_API_KEY (see src/channelDefaults.ts), not their own.
+  const twilioAdvancedCheckbox = document.getElementById("new-twilio-advanced");
+  const twilioAdvancedFields = document.getElementById("twilio-advanced-fields");
+  twilioAdvancedCheckbox.addEventListener("change", () => {
+    twilioAdvancedFields.style.display = twilioAdvancedCheckbox.checked ? "block" : "none";
+  });
+  const sendgridAdvancedCheckbox = document.getElementById("new-sendgrid-advanced");
+  const sendgridAdvancedFields = document.getElementById("sendgrid-advanced-fields");
+  sendgridAdvancedCheckbox.addEventListener("change", () => {
+    sendgridAdvancedFields.style.display = sendgridAdvancedCheckbox.checked ? "block" : "none";
+  });
+
   const NEW_CLIENT_FIELD_IDS = [
     "new-name",
     "new-timezone",
     "new-phone",
     "new-email",
     "new-website",
+    "new-twilio-number",
     "new-twilio-sid",
     "new-twilio-token",
-    "new-twilio-number",
-    "new-sendgrid-key",
     "new-sendgrid-from",
     "new-sendgrid-fromname",
+    "new-sendgrid-key",
   ];
 
   document.getElementById("create-btn").addEventListener("click", async () => {
@@ -709,39 +740,40 @@
     if (skipChannelsCheckbox.checked) {
       body.devMode = true;
     } else {
+      const number = document.getElementById("new-twilio-number").value.trim();
       const sid = document.getElementById("new-twilio-sid").value.trim();
       const token = document.getElementById("new-twilio-token").value.trim();
-      const number = document.getElementById("new-twilio-number").value.trim();
-      const twilioFilled = [sid, token, number].filter(Boolean).length;
-      if (twilioFilled > 0 && twilioFilled < 3) {
-        createError.textContent =
-          "Fill in all three Twilio fields (Account SID, Auth token, phone number), or leave all three blank to skip it.";
+      if (twilioAdvancedCheckbox.checked && number && (!sid || !token)) {
+        createError.textContent = "Fill in both Account SID and Auth Token for this client's own Twilio account.";
         return;
       }
 
-      const sgKey = document.getElementById("new-sendgrid-key").value.trim();
       const sgFrom = document.getElementById("new-sendgrid-from").value.trim();
       const sgFromName = document.getElementById("new-sendgrid-fromname").value.trim();
-      const sendgridFilled = [sgKey, sgFrom].filter(Boolean).length;
-      if (sendgridFilled > 0 && sendgridFilled < 2) {
-        createError.textContent = "Fill in both SendGrid fields (API key and from email), or leave both blank to skip it.";
+      const sgKey = document.getElementById("new-sendgrid-key").value.trim();
+      if (sendgridAdvancedCheckbox.checked && sgFrom && !sgKey) {
+        createError.textContent = "Fill in an API key for this client's own SendGrid account.";
         return;
       }
 
-      if (twilioFilled === 0 && sendgridFilled === 0) {
+      if (!number && !sgFrom) {
         createError.textContent =
-          'Add at least one channel\'s credentials below, or check "Skip provider setup for now".';
+          'Add a Twilio number or a SendGrid from-email below, or check "Skip provider setup for now".';
         return;
       }
 
       const channels = {};
-      if (twilioFilled === 3) {
-        const creds = { accountSid: sid, authToken: token, fromNumber: number };
+      if (number) {
+        const creds =
+          twilioAdvancedCheckbox.checked && sid && token
+            ? { fromNumber: number, accountSid: sid, authToken: token }
+            : { fromNumber: number };
         channels.sms = creds;
         if (document.getElementById("new-twilio-whatsapp").checked) channels.whatsapp = creds;
       }
-      if (sendgridFilled === 2) {
-        channels.email = sgFromName ? { apiKey: sgKey, fromEmail: sgFrom, fromName: sgFromName } : { apiKey: sgKey, fromEmail: sgFrom };
+      if (sgFrom) {
+        const base = sgFromName ? { fromEmail: sgFrom, fromName: sgFromName } : { fromEmail: sgFrom };
+        channels.email = sendgridAdvancedCheckbox.checked && sgKey ? { ...base, apiKey: sgKey } : base;
       }
       body.channels = channels;
       body.devMode = false;
@@ -755,6 +787,10 @@
       });
       for (const id of NEW_CLIENT_FIELD_IDS) document.getElementById(id).value = "";
       document.getElementById("new-twilio-whatsapp").checked = false;
+      twilioAdvancedCheckbox.checked = false;
+      twilioAdvancedFields.style.display = "none";
+      sendgridAdvancedCheckbox.checked = false;
+      sendgridAdvancedFields.style.display = "none";
       skipChannelsCheckbox.checked = true;
       updateChannelFieldsVisibility();
       showReveal(`"${created.name}" is ready`, created.apiKey, buildMagicLink(created.apiKey));

@@ -17,6 +17,7 @@ import { logger } from "./logger.js";
 import { installFatalErrorHandlers } from "./fatalErrorHandlers.js";
 import { leadsToCsv } from "./csv.js";
 import { parseLeadsCsv } from "./leadImport.js";
+import { CURRENT_TERMS_VERSION } from "./terms.js";
 import type { Lead } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -99,6 +100,13 @@ export function createApp() {
   // make things worse. Always 200 as long as the event loop is responsive.
   app.get("/health", (_req: Request, res: Response) => {
     res.json({ ok: true });
+  });
+
+  // Public (no auth) — lets every client-facing page fetch the exact
+  // version string it must send back to POST /tenants/me/accept-terms,
+  // rather than hardcoding it separately in each of the five static pages.
+  app.get("/terms-version", (_req: Request, res: Response) => {
+    res.json({ version: CURRENT_TERMS_VERSION });
   });
 
   // Readiness: safe to receive traffic. Checks DB connectivity when
@@ -301,6 +309,14 @@ export function createApp() {
     ...auth,
     asyncHandler(async (req: Request, res: Response) => {
       const tenant = req.tenant!;
+      // Unlike a suspended tenant, requireTenantAuth lets a tenant that
+      // hasn't accepted the Terms of Service through (it still needs to
+      // authenticate to see/accept them) — so sending has to be blocked
+      // here explicitly instead of relying on auth to have already 403'd.
+      if (!tenant.termsAcceptedAt) {
+        res.status(403).json({ error: "this tenant must accept the Terms of Service before running the workflow" });
+        return;
+      }
       const result = await withTenantWorkflowLock(tenant.id, () =>
         runRecoveryWorkflow(tenant, stores.leadStore, stores.messageStore)
       );

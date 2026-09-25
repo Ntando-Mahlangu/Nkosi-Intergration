@@ -325,6 +325,24 @@
   </div>
 </div>
 
+<div id="terms-gate" role="dialog" aria-modal="true" aria-labelledby="terms-gate-title" style="display:none; position:fixed; inset:0; z-index:50; align-items:center; justify-content:center; background:rgba(0,4,10,0.85); padding:20px;">
+  <div style="max-width:480px; width:100%; padding:28px; background:var(--panel); border:1px solid var(--border); border-radius:6px; box-shadow:0 0 40px rgba(91,233,255,0.15), inset 0 0 40px rgba(91,233,255,0.04);">
+    <h2 id="terms-gate-title" style="margin-top:0; font-size:13px; letter-spacing:0.2em; text-transform:uppercase;">Before you continue</h2>
+    <p style="color:var(--muted); font-size:13px; line-height:1.6;">
+      Please review and accept LeadRecovery's
+      <a href="terms.html" target="_blank" rel="noopener" style="color:var(--accent);">Terms of Service</a>
+      and
+      <a href="privacy.html" target="_blank" rel="noopener" style="color:var(--accent);">Privacy Policy</a>
+      before using this dashboard.
+    </p>
+    <div id="terms-gate-error" class="error" role="alert"></div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button type="button" id="terms-gate-accept">I agree — continue</button>
+      <button type="button" class="secondary" id="terms-gate-logout">Log out</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   /* ===================== ambient starfield (matches index.html's Command Center) ===================== */
@@ -615,6 +633,7 @@
 
     allLeadsCache = await api(session, "/leads");
     renderAllLeads(allLeadsCache);
+    return tenant;
   }
 
   async function connect(baseUrl, apiKey) {
@@ -625,10 +644,14 @@
     }
     const session = { baseUrl: baseUrl.replace(/\/$/, ""), apiKey };
     try {
-      await loadDashboard(session);
+      const tenant = await loadDashboard(session);
       setSession(session);
       authPanel.style.display = "none";
-      app.style.display = "block";
+      if (tenant.termsAcceptedAt) {
+        app.style.display = "block";
+      } else {
+        showTermsGate();
+      }
     } catch (err) {
       authError.textContent = "Could not connect: " + err.message;
     }
@@ -649,6 +672,48 @@
 
   document.getElementById("logout-btn").addEventListener("click", () => {
     setSession(null);
+    app.style.display = "none";
+    authPanel.style.display = "block";
+  });
+
+  /* ===================== Terms of Service / Privacy Policy gate ===================== */
+  // A brand-new tenant starts unaccepted (see migration 0013) — nothing
+  // actually sends until the tenant accepts, both here (client-side, so
+  // there's nothing to click past) and server-side (worker.ts,
+  // webhooks/index.ts, POST /workflow/run all refuse to send for one).
+  let cachedTermsVersion = null;
+  async function currentTermsVersion() {
+    if (cachedTermsVersion) return cachedTermsVersion;
+    const res = await fetch((getSession()?.baseUrl || window.location.origin) + "/terms-version");
+    const data = await res.json();
+    cachedTermsVersion = data.version;
+    return cachedTermsVersion;
+  }
+
+  function showTermsGate() {
+    document.getElementById("terms-gate-error").textContent = "";
+    document.getElementById("terms-gate").style.display = "flex";
+    document.getElementById("terms-gate-accept").focus();
+  }
+
+  document.getElementById("terms-gate-accept").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session) return;
+    const errEl = document.getElementById("terms-gate-error");
+    errEl.textContent = "";
+    try {
+      const version = await currentTermsVersion();
+      await api(session, "/tenants/me/accept-terms", { method: "POST", body: JSON.stringify({ version }) });
+      document.getElementById("terms-gate").style.display = "none";
+      app.style.display = "block";
+    } catch (err) {
+      errEl.textContent = "Could not save: " + err.message;
+    }
+  });
+
+  document.getElementById("terms-gate-logout").addEventListener("click", () => {
+    setSession(null);
+    document.getElementById("terms-gate").style.display = "none";
     app.style.display = "none";
     authPanel.style.display = "block";
   });
@@ -694,9 +759,13 @@
     const existing = getSession();
     if (existing) {
       loadDashboard(existing)
-        .then(() => {
+        .then((tenant) => {
           authPanel.style.display = "none";
-          app.style.display = "block";
+          if (tenant.termsAcceptedAt) {
+            app.style.display = "block";
+          } else {
+            showTermsGate();
+          }
         })
         .catch(() => {
           setSession(null);

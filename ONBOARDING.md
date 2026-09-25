@@ -45,12 +45,19 @@ form does the same thing (`POST /admin/tenants` under the hood — see
 with the client sitting in front of you: business name, timezone, and
 their contact phone/email/website first (plain text, just for your own
 reference — none of it connects to anything by itself), then the real
-Twilio/SendGrid credentials collapsed behind a "Skip provider setup for
-now (test mode)" checkbox, checked by default. Skip it if those provider
+Twilio/SendGrid setup collapsed behind a "Skip provider setup for now
+(test mode)" checkbox, checked by default. Skip it if those provider
 accounts don't exist yet — the tenant is created in `devMode` (console-only
 sends) so you can still validate the rest of the pipeline immediately —
 and come back to it (`PATCH /admin/tenants/:id` or the same form's fields)
-once they do.
+once they do. If you've set `DEFAULT_TWILIO_ACCOUNT_SID`/
+`DEFAULT_TWILIO_AUTH_TOKEN`/`DEFAULT_SENDGRID_API_KEY` (the common setup —
+one shared Twilio/SendGrid account across all your clients, see
+`README.md`'s `src/channelDefaults.ts` section), unchecking "skip" only
+ever asks for this client's own phone number/from-email — the actual
+credentials come from your shared account automatically. Only check
+"this client uses their own Twilio/SendGrid account" if they're bringing
+one.
 
 Either way you create it, the response — or the form's "reveal" panel —
 gives you two things:
@@ -127,6 +134,16 @@ Pick whichever fits what they actually have:
   processes SMS/WhatsApp replies automatically.
 
 ## 5. Dry run — review before anything sends
+
+The first time the client opens any dashboard with their own key (or your
+magic link), they'll see a "Before you continue" gate asking them to
+accept LeadRecovery's Terms of Service/Privacy Policy — this is the
+client's own acceptance, not something you tick on their behalf during
+onboarding. It's not just a UI formality: the worker, every inbound
+webhook auto-reply, and `POST /workflow/run` all refuse to actually send
+anything for a tenant that hasn't accepted, so nothing can go out before
+they've agreed, even if you're the one clicking around in the dashboard
+for them during this review step.
 
 ```
 GET /leads/plan

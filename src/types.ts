@@ -263,6 +263,16 @@ export interface Tenant {
   contactPhone?: string;
   contactEmail?: string;
   website?: string;
+  /**
+   * When the tenant (the business client, not a lead) accepted LeadRecovery's
+   * own Terms of Service/Privacy Policy — required before any outbound
+   * message actually sends (see src/terms.ts). Unset for a brand-new tenant;
+   * pre-existing tenants from before this field existed are grandfathered
+   * (backfilled by migration 0013) rather than retroactively blocked.
+   */
+  termsAcceptedAt?: string;
+  /** Which CURRENT_TERMS_VERSION (src/terms.ts) was accepted — lets a future material change require re-acceptance instead of silently carrying over an old agreement. */
+  termsVersion?: string;
   createdAt: string;
 }
 

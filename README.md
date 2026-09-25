@@ -130,6 +130,25 @@ deployment serves many clients with fully isolated data.
   auth (rejecting a suspended tenant), tenant self-service (`PATCH
   /tenants/me`), and admin tenant management (admin-key protected),
   including suspending/reactivating and permanently deleting a tenant.
+- **`src/terms.ts`** / `POST /tenants/me/accept-terms` — a brand-new tenant
+  must accept LeadRecovery's own Terms of Service/Privacy Policy
+  (`public/terms.html` / `public/privacy.html`) before anything actually
+  sends on its behalf. Every client-facing page shows a blocking "Before
+  you continue" gate until it's accepted; enforced server-side too (not
+  just a UI nicety) at every place a suspended tenant is already paused —
+  the worker's tick, all five inbound webhook routes, and
+  `POST /workflow/run` — so there's no way around it by calling the API
+  directly. Pre-existing tenants are grandfathered (migration 0013) rather
+  than retroactively blocked.
+- **`src/channelDefaults.ts`** — an agency running multiple clients
+  typically owns one shared Twilio account and one shared SendGrid
+  account, not one per client. Setting `DEFAULT_TWILIO_ACCOUNT_SID`/
+  `DEFAULT_TWILIO_AUTH_TOKEN`/`DEFAULT_SENDGRID_API_KEY` once lets
+  `POST /admin/tenants` (and `public/admin.html`'s form) create a new
+  client's channels from just the per-client piece — a phone number or
+  from-email — instead of re-entering the same credentials every time. A
+  client bringing their own account still works: supply that channel's
+  full credentials directly and the shared default is never consulted.
 - **`src/security.ts`**, **`src/crypto.ts`** — constant-time secret
   comparison and AES-256-GCM encryption for tenant provider credentials at
   rest (required in Postgres mode — see Environment variables below).
@@ -192,11 +211,15 @@ deployment serves many clients with fully isolated data.
     text entry (business name, timezone, and optional contact
     phone/email/website — stored as reference info on the tenant, see
     `Tenant.contactPhone`/`contactEmail`/`website` in `src/types.ts`, never
-    used to actually send/receive messages) before the real provider
-    credentials (Twilio Account SID/Auth Token/number, SendGrid API
-    key/from address), which stay collapsed behind a "Skip provider setup
-    for now (test mode)" checkbox — checked by default, so a client can be
-    created and reviewed before its Twilio/SendGrid accounts exist. On
+    used to actually send/receive messages), all collapsed behind a "Skip
+    provider setup for now (test mode)" checkbox — checked by default, so
+    a client can be created and reviewed before its Twilio/SendGrid setup
+    is even started. Unchecking it only ever asks for the genuinely
+    per-client piece (a phone number, a from-email) — the actual
+    credentials come from the shared `DEFAULT_TWILIO_*`/
+    `DEFAULT_SENDGRID_*` account (see `src/channelDefaults.ts` above)
+    unless "this client uses their own account" is checked, which reveals
+    the Account SID/Auth Token/API key fields for that override. On
     success it shows a one-time **magic link**
     (`index.html?key=<apiKey>`) alongside the raw API key: send that one
     link to the client instead of asking them to copy/paste a key into
@@ -205,6 +228,9 @@ deployment serves many clients with fully isolated data.
     auto-fills and auto-connects from a `?key=` query param on load, then
     strips it back out of the visible URL/history (`history.replaceState`)
     before the connection even completes, so the key never lingers there.
+    The client's own first visit is where they see and accept the Terms
+    of Service/Privacy Policy gate — the admin form itself doesn't ask for
+    that on their behalf.
 
 ### Accessibility
 
@@ -269,26 +295,38 @@ to type it in manually instead.)
 5. **Set `PUBLIC_BASE_URL`** to this app's own public HTTPS URL — required
    for correct Twilio webhook signature verification behind a proxy/load
    balancer, and for delivery-status callback URLs.
-6. **Onboard a tenant**: `npm run onboard` (interactive CLI), `POST
+6. **Fill in `public/terms.html` and `public/privacy.html`** — replace
+   every `[bracketed placeholder]` (your agency's name, jurisdiction,
+   pricing/refund terms, contact email) and have a lawyer review the
+   result before onboarding real clients; these are the pages a client
+   reads and accepts on their first login.
+7. **Optionally set `DEFAULT_TWILIO_ACCOUNT_SID`/`DEFAULT_TWILIO_AUTH_TOKEN`/
+   `DEFAULT_SENDGRID_API_KEY`** if you'll run one shared Twilio/SendGrid
+   account across every client (the common agency setup) rather than each
+   client bringing their own — see `src/channelDefaults.ts` above.
+8. **Onboard a tenant**: `npm run onboard` (interactive CLI), `POST
    /admin/tenants`, or `public/admin.html`'s "Add new client" form (business
-   basics up front, Twilio/SendGrid credentials collapsed below a "skip for
-   now" checkbox, ending in a one-time magic link to hand the client) —
-   see `ONBOARDING.md`. Then run `npm run check-providers
+   basics up front, then just a phone number/from-email if you set the
+   shared defaults above, collapsed below a "skip for now" checkbox,
+   ending in a one-time magic link to hand the client) — see
+   `ONBOARDING.md`. The client accepts the Terms of Service/Privacy
+   Policy themselves on their first login; nothing actually sends until
+   they do. Then run `npm run check-providers
    -- --tenant <id>` to verify every configured provider credential
    (Twilio/SendGrid/Anthropic) actually authenticates before going live —
    catches a typo'd/revoked credential now instead of it failing silently
    on a real customer's first message.
-7. **Import existing leads**: `npm run import-leads -- --tenant <id> --file leads.csv`,
+9. **Import existing leads**: `npm run import-leads -- --tenant <id> --file leads.csv`,
    upload the same CSV from `public/dashboard.html`'s "Import leads" form
    (`POST /leads/import`), or point the client's CRM's outgoing webhook /
    a Zapier automation at `POST /webhooks/lead` with `Authorization:
    Bearer <tenant api key>`.
-8. **Run the API**: `npm start` (after `npm run build`) or `npm run dev`.
-9. **Run the worker** (sends initial outreach + follow-ups on a schedule):
-   `npm run worker`. Set `LEADRECOVERY_CRON_SCHEDULE` (cron syntax, default
-   hourly) and `LEADRECOVERY_RUN_ONCE=true` for a single pass (e.g. from an
-   external scheduler instead of the built-in cron loop).
-10. **Configure provider webhooks** with each tenant (URLs are printed by
+10. **Run the API**: `npm start` (after `npm run build`) or `npm run dev`.
+11. **Run the worker** (sends initial outreach + follow-ups on a schedule):
+    `npm run worker`. Set `LEADRECOVERY_CRON_SCHEDULE` (cron syntax, default
+    hourly) and `LEADRECOVERY_RUN_ONCE=true` for a single pass (e.g. from an
+    external scheduler instead of the built-in cron loop).
+12. **Configure provider webhooks** with each tenant (URLs are printed by
     `npm run onboard`):
     - Twilio SMS inbound → `/webhooks/<tenantId>/twilio/sms`
     - Twilio voice status callback → `/webhooks/<tenantId>/twilio/voice-status`
@@ -341,8 +379,10 @@ All routes except `/health` and the webhooks require `Authorization: Bearer
 | --- | --- | --- |
 | GET | `/health` | Liveness check (checks nothing external) |
 | GET | `/ready` | Readiness check — verifies Postgres connectivity when `DATABASE_URL` is set |
+| GET | `/terms-version` | Public, no auth — the exact version string a client must send back to `POST /tenants/me/accept-terms` |
 | GET | `/tenants/me` | The authenticated tenant's public info |
 | PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled |
+| POST | `/tenants/me/accept-terms` | Records the tenant's acceptance of the current Terms of Service/Privacy Policy version — required before `POST /workflow/run`, the worker, or any inbound webhook auto-reply will actually send anything |
 | GET | `/admin/tenants` | List tenants (admin) |
 | POST | `/admin/tenants` | Create a tenant (admin); returns the API key once |
 | PATCH | `/admin/tenants/:id` | Admin update: any self-service field, plus `status` (`"active"` \| `"suspended"`) — the only way to suspend/reactivate a tenant |
@@ -377,6 +417,7 @@ See [`.env.example`](./.env.example) for the copyable version with full comments
 | `LEADRECOVERY_ENCRYPTION_KEY_PREVIOUS` | Set only while rotating the encryption key — see `DEPLOYMENT.md` "Rotating the encryption key" |
 | `ADMIN_API_KEY` | Enables `/admin/tenants`; unset disables tenant management. A single shared key — every action is logged as actor "admin" |
 | `ADMIN_API_KEYS` | Optional, in addition to or instead of `ADMIN_API_KEY`: a comma-separated `name:key` list so each person holds their own key and the audit log records who did what |
+| `DEFAULT_TWILIO_ACCOUNT_SID` / `DEFAULT_TWILIO_AUTH_TOKEN` / `DEFAULT_SENDGRID_API_KEY` | Optional agency-wide shared provider credentials — see `src/channelDefaults.ts` above. Lets `POST /admin/tenants` create a client's channels from just the per-client phone number/from-email |
 | `PADDLE_WEBHOOK_SECRET` | Enables `POST /webhooks/paddle` (auto-suspend/reactivate on subscription lapse/recovery); unset disables it entirely — see "Billing (Paddle)" in `DEPLOYMENT.md` |
 | `LEADRECOVERY_CORS_ORIGIN` | Comma-separated allowed origins for cross-origin API calls (or `*`); unset sends no CORS headers, which is fine for the bundled same-origin dashboards |
 | `PUBLIC_BASE_URL` | This app's public HTTPS base URL — needed for correct Twilio signature verification behind a proxy and for delivery-status callback URLs. Deliberately unrelated to `TRUST_PROXY_HOPS` below |
@@ -539,9 +580,15 @@ reminder window/dedup/timezone-formatting logic
 (`tests/appointmentReminder.test.ts`) and its wiring into
 `runRecoveryWorkflow` (never sends twice across runs, defers during quiet
 hours without marking `appointmentReminderSentAt`); CSV import parsing and
-validation (`tests/leadImport.test.ts`); and `PATCH /leads/:id`/`POST
+validation (`tests/leadImport.test.ts`); `PATCH /leads/:id`/`POST
 /leads/import` (auth, validation, that `status` is never accepted, that
-clearing `appointmentAt` also clears `appointmentReminderSentAt`).
+clearing `appointmentAt` also clears `appointmentReminderSentAt`); shared
+Twilio/SendGrid credential resolution (`tests/channelDefaults.test.ts`,
+plus `POST /admin/tenants` actually using the shared defaults or rejecting
+a channel with none configured); and the Terms of Service gate —
+`POST /tenants/me/accept-terms` (version mismatch/auth), and that a tenant
+that hasn't accepted is paused identically to a suspended one across the
+same five webhook routes and `POST /workflow/run`.
 
 `npm run test:e2e` drives `public/index.html` (Command Center),
 `public/dashboard.html`, `public/reports.html`, and `public/admin.html` in
@@ -550,9 +597,13 @@ connecting with a valid/invalid API/admin key, live category counts and
 the lead-detail panel, session persistence across a reload, disconnecting,
 the all-leads list/appointment/CSV-import flows and their keyboard
 accessibility on `dashboard.html`, the activity report's date-range
-shortcuts on `reports.html`, and — for admin.html —
-creating/suspending/reactivating/rotating/deleting a tenant and seeing it
-reflected in the audit log. It starts its own server instance
+shortcuts on `reports.html`, the Terms of Service gate blocking a
+brand-new tenant on both `index.html` and `dashboard.html` (and that
+accepting it reveals the app, and "log out" from the gate clears the
+session), the admin form's shared-vs-own-account Twilio/SendGrid toggle,
+and — for admin.html — creating/suspending/reactivating/rotating/deleting
+a tenant and seeing it reflected in the audit log. It starts its own
+server instance
 (`playwright.config.ts`, with `ADMIN_API_KEY` set for the admin tests)
 against the in-memory demo tenant, so it needs no external services
 either. Kept separate from `npm test` (and run as its own CI job) since it

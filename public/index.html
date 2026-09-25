@@ -139,7 +139,7 @@
     background: rgba(91,233,255,0.08);
     box-shadow: 0 0 12px rgba(91,233,255,0.35);
   }
-  a.nav-link:focus-visible, button.ghost:focus-visible, #gate button:focus-visible,
+  a.nav-link:focus-visible, button.ghost:focus-visible, #gate button:focus-visible, #terms-gate button:focus-visible,
   #detail .close:focus-visible, g.node:focus-visible {
     outline: 2px solid #fff;
     outline-offset: 3px;
@@ -200,7 +200,7 @@
     justify-content: center;
     background: radial-gradient(ellipse at center, #061019 0%, #010204 80%);
   }
-  #gate .panel {
+  #gate .panel, #terms-gate .panel {
     width: 360px;
     padding: 28px;
     border: 1px solid var(--line);
@@ -208,15 +208,15 @@
     background: var(--glass);
     box-shadow: 0 0 40px rgba(91,233,255,0.12), inset 0 0 40px rgba(91,233,255,0.04);
   }
-  #gate h1 {
+  #gate h1, #terms-gate h1 {
     font-size: 13px;
     letter-spacing: 0.25em;
     text-transform: uppercase;
     margin: 0 0 4px;
   }
-  #gate .tag { font-size: 10px; color: var(--cyan-dim); letter-spacing: 0.15em; margin-bottom: 20px; }
-  #gate label { display: block; font-size: 10px; letter-spacing: 0.15em; color: var(--cyan-dim); margin: 14px 0 6px; text-transform: uppercase; }
-  #gate input {
+  #gate .tag, #terms-gate .tag { font-size: 10px; color: var(--cyan-dim); letter-spacing: 0.15em; margin-bottom: 20px; }
+  #gate label, #terms-gate label { display: block; font-size: 10px; letter-spacing: 0.15em; color: var(--cyan-dim); margin: 14px 0 6px; text-transform: uppercase; }
+  #gate input, #terms-gate input {
     width: 100%;
     background: rgba(0,0,0,0.4);
     border: 1px solid var(--line);
@@ -226,8 +226,8 @@
     font-size: 13px;
     border-radius: 3px;
   }
-  #gate input:focus { outline: none; box-shadow: 0 0 10px rgba(91,233,255,0.4); }
-  #gate button {
+  #gate input:focus, #terms-gate input:focus { outline: none; box-shadow: 0 0 10px rgba(91,233,255,0.4); }
+  #gate button, #terms-gate button {
     margin-top: 20px;
     width: 100%;
     padding: 10px;
@@ -241,10 +241,10 @@
     cursor: pointer;
     font-family: inherit;
   }
-  #gate button:hover { background: rgba(91,233,255,0.22); }
-  #gate .or-divider { text-align: center; font-size: 10px; letter-spacing: 0.15em; color: var(--cyan-dim); margin: 14px 0; }
+  #gate button:hover, #terms-gate button:hover { background: rgba(91,233,255,0.22); }
+  #gate .or-divider, #terms-gate .or-divider { text-align: center; font-size: 10px; letter-spacing: 0.15em; color: var(--cyan-dim); margin: 14px 0; }
   #gate .demo-btn { display: block; width: 100%; margin-top: 0; text-align: center; }
-  #gate .err { color: var(--red); font-size: 11px; margin-top: 12px; min-height: 14px; }
+  #gate .err, #terms-gate .err { color: var(--red); font-size: 11px; margin-top: 12px; min-height: 14px; }
 
   /* ---------- node detail panel ---------- */
   #detail {
@@ -352,6 +352,23 @@
   </div>
 </div>
 
+<div id="terms-gate" role="dialog" aria-modal="true" aria-labelledby="terms-gate-title" style="display:none; position:fixed; inset:0; z-index:25; align-items:center; justify-content:center; background:radial-gradient(ellipse at center, #061019 0%, #010204 80%);">
+  <div class="panel" style="width:400px;">
+    <h1 id="terms-gate-title">Before You Continue</h1>
+    <div class="tag" style="margin-bottom:16px; text-transform:none; letter-spacing:normal; font-size:12px; line-height:1.6;">
+      Please review and accept LeadRecovery's
+      <a href="terms.html" target="_blank" rel="noopener" style="color:var(--cyan);">Terms of Service</a>
+      and
+      <a href="privacy.html" target="_blank" rel="noopener" style="color:var(--cyan);">Privacy Policy</a>
+      before using this dashboard.
+    </div>
+    <button id="terms-gate-accept">I Agree — Continue</button>
+    <div class="or-divider">— or —</div>
+    <button type="button" id="terms-gate-logout" class="ghost demo-btn">Log Out</button>
+    <div class="err" id="terms-gate-error" role="alert"></div>
+  </div>
+</div>
+
 <script>
 (function () {
   "use strict";
@@ -377,9 +394,12 @@
     if (!apiKey) { gateErr.textContent = "API key required."; return; }
     const session = { baseUrl: baseUrl.replace(/\/$/, ""), apiKey };
     try {
-      await boot(session);
+      const { tenant } = await boot(session);
       setSession(session);
       gate.style.display = "none";
+      if (!tenant.termsAcceptedAt) {
+        showTermsGate();
+      }
     } catch (err) {
       gateErr.textContent = "Link failed: " + err.message;
     }
@@ -404,7 +424,51 @@
     gateErr.textContent = "";
     document.getElementById("tenant-label").textContent = "NOT CONNECTED";
     document.getElementById("clock-status").textContent = "STANDBY";
+    document.getElementById("terms-gate").style.display = "none";
     gate.style.display = "";
+  });
+
+  /* ===================== Terms of Service / Privacy Policy gate ===================== */
+  // A brand-new tenant starts unaccepted (see migration 0013) — nothing
+  // actually sends until the tenant accepts, both here (client-side, so
+  // there's nothing to click past) and server-side (worker.ts,
+  // webhooks/index.ts, POST /workflow/run all refuse to send for one).
+  let cachedTermsVersion = null;
+  async function currentTermsVersion() {
+    if (cachedTermsVersion) return cachedTermsVersion;
+    const res = await fetch((getSession()?.baseUrl || window.location.origin) + "/terms-version");
+    const data = await res.json();
+    cachedTermsVersion = data.version;
+    return cachedTermsVersion;
+  }
+
+  function showTermsGate() {
+    document.getElementById("terms-gate-error").textContent = "";
+    document.getElementById("terms-gate").style.display = "flex";
+    document.getElementById("terms-gate-accept").focus();
+  }
+
+  document.getElementById("terms-gate-accept").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session) return;
+    const errEl = document.getElementById("terms-gate-error");
+    errEl.textContent = "";
+    try {
+      const version = await currentTermsVersion();
+      const res = await fetch(session.baseUrl + "/tenants/me/accept-terms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.apiKey },
+        body: JSON.stringify({ version }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      document.getElementById("terms-gate").style.display = "none";
+    } catch (err) {
+      errEl.textContent = "Could not save: " + err.message;
+    }
+  });
+
+  document.getElementById("terms-gate-logout").addEventListener("click", () => {
+    document.getElementById("disconnect-btn").click();
   });
 
   /* ===================== clock ===================== */
@@ -826,7 +890,12 @@
     const existing = getSession();
     if (existing) {
       boot(existing)
-        .then(() => { gate.style.display = "none"; })
+        .then(({ tenant }) => {
+          gate.style.display = "none";
+          if (!tenant.termsAcceptedAt) {
+            showTermsGate();
+          }
+        })
         .catch(() => { setSession(null); });
     }
   }

@@ -88,7 +88,13 @@ async function redeliverFailedNotifications(stores: Stores): Promise<void> {
 }
 
 async function runOnce(): Promise<void> {
-  const tenants = (await stores.tenantStore.listTenants()).filter((t) => t.status !== "suspended");
+  // Never run for a suspended tenant, nor one that hasn't accepted
+  // LeadRecovery's own Terms of Service/Privacy Policy yet — a brand-new
+  // tenant starts unaccepted (see migration 0013) until it accepts via
+  // POST /tenants/me/accept-terms.
+  const tenants = (await stores.tenantStore.listTenants()).filter(
+    (t) => t.status !== "suspended" && Boolean(t.termsAcceptedAt)
+  );
   const now = new Date();
 
   await mapWithConcurrency(tenants, CONCURRENCY, async (tenant) => {

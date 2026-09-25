@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Privacy Policy</title>
+<style>
+  :root {
+    --bg: #04060b;
+    --panel: rgba(91, 233, 255, 0.05);
+    --border: rgba(91, 233, 255, 0.28);
+    --text: #5be9ff;
+    --muted: #1e6b7a;
+    --accent: #5be9ff;
+    --warn: #ffb454;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+    background: var(--bg);
+    color: #cdeaf2;
+    line-height: 1.6;
+  }
+  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.4; pointer-events: none; }
+  #vignette {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(0,4,10,0.75) 100%);
+  }
+  main { position: relative; z-index: 5; max-width: 760px; margin: 0 auto; padding: 40px 24px 100px; }
+  header { margin-bottom: 32px; }
+  header h1 { font-size: 20px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); margin: 0 0 6px; }
+  header .meta { color: var(--muted); font-size: 12px; letter-spacing: 0.05em; }
+  a { color: var(--accent); }
+  a.back { display: inline-block; margin-bottom: 20px; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .draft-notice {
+    background: rgba(255,180,84,0.08);
+    border: 1px solid rgba(255,180,84,0.4);
+    color: var(--warn);
+    border-radius: 4px;
+    padding: 14px 16px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    margin-bottom: 32px;
+  }
+  section { margin-bottom: 28px; }
+  h2 { font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 12px; }
+  p, li { font-size: 13.5px; color: #cdeaf2; }
+  ul { padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  strong { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .placeholder { color: var(--warn); }
+</style>
+</head>
+<body>
+
+<div id="stars"></div>
+<div id="vignette"></div>
+
+<main>
+  <a class="back" href="index.html">&larr; Back to Command Center</a>
+
+  <div class="draft-notice">
+    <strong>Draft — not legal advice.</strong> This is a starting-point
+    template describing what this particular software actually does with
+    data (see the codebase's own architecture — encryption at rest,
+    third-party processors, export/delete mechanics). Replace every
+    <span class="placeholder">[bracketed placeholder]</span> and have a
+    qualified lawyer review it — especially if you have clients or leads in
+    the EU/UK (GDPR), California (CCPA/CPRA), or another jurisdiction with
+    its own data-protection law — before relying on this with real clients.
+  </div>
+
+  <header>
+    <h1>Privacy Policy</h1>
+    <div class="meta">Effective date: <span class="placeholder">[effective date]</span> &middot; Version 2026-09-25</div>
+  </header>
+
+  <section>
+    <h2>1. Scope</h2>
+    <p>
+      This Privacy Policy describes how <span class="placeholder">[Your
+      Agency Name]</span> ("we", "us") handles information through the
+      LeadRecovery platform ("Service") — both information about you (our
+      business client) and information about the leads/contacts you manage
+      through your account.
+    </p>
+  </section>
+
+  <section>
+    <h2>2. Information we collect</h2>
+    <table>
+      <tr><th>Category</th><th>Examples</th></tr>
+      <tr><td>Your account info</td><td>Business name, timezone, contact phone/email/website you provide, API key</td></tr>
+      <tr><td>Your lead data</td><td>Names, phone numbers, email addresses, source, notes, appointment details you upload or connect via webhook/CSV</td></tr>
+      <tr><td>Message content</td><td>Outbound messages sent on your behalf and inbound replies received, plus delivery status</td></tr>
+      <tr><td>Configuration</td><td>Message template wording, and any knowledge-base text you provide for the automated reply assistant</td></tr>
+      <tr><td>Usage/technical data</td><td>API request logs, timestamps, IP address (for rate limiting and security)</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>3. How we use this information</h2>
+    <ul>
+      <li>To operate the Service — compose, send, and track messages; classify replies; run the automated reply assistant when you enable it.</li>
+      <li>To notify your team when a lead reply needs human attention (via a webhook URL you configure, e.g. Slack).</li>
+      <li>To provide activity/ROI reporting back to you.</li>
+      <li>To maintain security (rate limiting, audit logging of admin actions) and to troubleshoot issues.</li>
+      <li>To bill you, where applicable, via our payment processor.</li>
+    </ul>
+    <p>We do not sell lead data, and we do not use it to train any model beyond the specific automated-reply behavior you configure for your own account.</p>
+  </section>
+
+  <section>
+    <h2>4. Third-party processors</h2>
+    <p>Operating the Service means sharing the minimum necessary data with:</p>
+    <ul>
+      <li><strong>Twilio</strong> — to send/receive SMS and WhatsApp messages, when you configure that channel.</li>
+      <li><strong>SendGrid</strong> — to send/receive email, when you configure that channel.</li>
+      <li><strong>Anthropic (Claude API)</strong> — to compose automated reply answers from your own knowledge-base text, and optionally to help classify ambiguous inbound replies, only when you enable those features.</li>
+      <li><strong>Paddle</strong> — to process billing, if your account is billed through it.</li>
+      <li><strong>Our hosting/database provider</strong> — <span class="placeholder">[name your host]</span> — to store and run the Service.</li>
+    </ul>
+    <p>Each of these processes data under its own privacy terms; we only send what each integration actually needs to function.</p>
+  </section>
+
+  <section>
+    <h2>5. Data retention</h2>
+    <p>
+      We retain your account and lead data for as long as your account is
+      active, and for a reasonable period afterward for legal/accounting
+      purposes unless you request deletion sooner. Deleting a tenant
+      account permanently removes its leads and message history from our
+      systems (this cascades immediately and cannot be undone).
+    </p>
+  </section>
+
+  <section>
+    <h2>6. Security</h2>
+    <p>
+      Provider credentials (Twilio/SendGrid) are encrypted at rest.
+      Administrative actions are logged to an audit trail. Access to your
+      account is gated by a per-tenant API key; we recommend rotating it
+      immediately if you suspect it has been exposed.
+    </p>
+  </section>
+
+  <section>
+    <h2>7. Your rights</h2>
+    <p>
+      You can export a full copy of your lead data at any time (in CSV or
+      JSON) directly from the Service. You can request correction or
+      deletion of your account and its data by contacting us, or by asking
+      us to delete your tenant, which removes it immediately. If you are
+      located somewhere with a statutory right of access/portability/
+      erasure (e.g. GDPR, CCPA), these mechanisms are how we fulfill it —
+      <span class="placeholder">[add your jurisdiction-specific request
+      process/timeline here]</span>.
+    </p>
+  </section>
+
+  <section>
+    <h2>8. Leads' own rights</h2>
+    <p>
+      A lead who no longer wants to be contacted can reply STOP (SMS/
+      WhatsApp) or an equivalent opt-out phrase, which the Service
+      recognizes automatically and suppresses further outreach to that
+      contact. As the business client, you are responsible for handling
+      any further data-subject request a lead makes directly to you.
+    </p>
+  </section>
+
+  <section>
+    <h2>9. Children's privacy</h2>
+    <p>
+      The Service is intended for business use and is not directed at
+      children. We do not knowingly collect information from children
+      through this Service.
+    </p>
+  </section>
+
+  <section>
+    <h2>10. International data transfers</h2>
+    <p>
+      Our infrastructure and the third-party processors above may store or
+      process data outside your own country. By using the Service, you
+      consent to this transfer as necessary to operate it.
+      <span class="placeholder">[Add specifics — e.g. Standard Contractual
+      Clauses — if you have clients/leads in the EU/UK.]</span>
+    </p>
+  </section>
+
+  <section>
+    <h2>11. Changes to this policy</h2>
+    <p>
+      We may update this Privacy Policy from time to time. A material
+      change requires you to accept the new version (alongside the
+      <a href="terms.html">Terms of Service</a>) before continuing to use
+      the Service.
+    </p>
+  </section>
+
+  <section>
+    <h2>12. Contact</h2>
+    <p>Questions about this Privacy Policy: <span class="placeholder">[contact email]</span>.</p>
+  </section>
+</main>
+
+<script>
+(function () {
+  const el = document.getElementById("stars");
+  let svg = "<svg width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>";
+  for (let i = 0; i < 100; i++) {
+    const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 1.1 + 0.2;
+    const op = Math.random() * 0.5 + 0.1;
+    const dur = (Math.random() * 4 + 3).toFixed(2);
+    svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#8fe8ff" opacity="${op}">
+      <animate attributeName="opacity" values="${op};${op * 0.15};${op}" dur="${dur}s" repeatCount="indefinite" />
+    </circle>`;
+  }
+  svg += "</svg>";
+  el.innerHTML = svg;
+})();
+</script>
+</body>
+</html>

@@ -8,6 +8,8 @@ import { parsePageParams, paginate } from "../pagination.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { isObviouslyUnsafeWebhookHostname } from "../ssrf.js";
 import { recordAudit } from "../audit.js";
+import { CURRENT_TERMS_VERSION } from "../terms.js";
+import { resolveChannelDefaults } from "../channelDefaults.js";
 
 const MAX_KNOWLEDGE_BASE_LENGTH = 20_000;
 
@@ -249,6 +251,34 @@ export function createTenantRoutes({
     res.json(toPublicTenant(req.tenant!));
   });
 
+  // Records the tenant's (the business client's, not a lead's) acceptance of
+  // LeadRecovery's own Terms of Service/Privacy Policy — required before any
+  // outbound message actually sends (see worker.ts, webhooks/index.ts, and
+  // POST /workflow/run). Only accepts the exact current version so a client
+  // can't "accept" a version this deployment doesn't currently offer, and
+  // so a future material change can require re-acceptance instead of
+  // silently carrying an old agreement forward.
+  router.post(
+    "/tenants/me/accept-terms",
+    createTenantLimiter(),
+    tenantAuth,
+    asyncHandler(async (req, res) => {
+      const tenant = req.tenant!;
+      const version = req.body?.version;
+      if (version !== CURRENT_TERMS_VERSION) {
+        res.status(400).json({
+          error: `version must be the current terms version ("${CURRENT_TERMS_VERSION}")`,
+        });
+        return;
+      }
+      const updated = await tenantStore.updateTenant(tenant.id, {
+        termsAcceptedAt: new Date().toISOString(),
+        termsVersion: version,
+      });
+      res.json(toPublicTenant(updated!));
+    })
+  );
+
   // A summary the tenant (or whoever runs this on their behalf) can use for
   // "what did this cost/deliver this period" reporting — e.g. a monthly
   // retainer's activity report — without hand-computing it from GET /leads
@@ -375,6 +405,12 @@ export function createTenantRoutes({
         return;
       }
 
+      const { channels, error: channelsError } = resolveChannelDefaults(body.channels);
+      if (channelsError) {
+        res.status(400).json({ error: channelsError });
+        return;
+      }
+
       const tenant: Tenant = {
         id: generateId("tenant"),
         name: body.name,
@@ -382,7 +418,7 @@ export function createTenantRoutes({
         timezone: body.timezone,
         quietHours: body.quietHours,
         devMode: body.devMode ?? false,
-        channels: body.channels ?? {},
+        channels,
         notifyWebhookUrl: body.notifyWebhookUrl,
         templates: body.templates,
         knowledgeBase: body.knowledgeBase,

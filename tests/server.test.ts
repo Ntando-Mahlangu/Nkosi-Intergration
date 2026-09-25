@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { createApp } from "../src/server.js";
+import { CURRENT_TERMS_VERSION } from "../src/terms.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -282,5 +283,56 @@ describe("POST /leads/import", () => {
       .set("Authorization", `Bearer ${DEMO_API_KEY}`)
       .send({});
     expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /workflow/run — Terms of Service gate", () => {
+  const DEMO_API_KEY = "demo-key";
+
+  it("runs normally for the demo tenant (grandfathered — already accepted)", async () => {
+    const res = await request(createApp()).post("/workflow/run").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses to run for a brand-new tenant that hasn't accepted the Terms of Service yet", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    try {
+      const app = createApp();
+      const created = await request(app)
+        .post("/admin/tenants")
+        .set("Authorization", "Bearer admin-secret")
+        .send({ name: "Brand New Co", timezone: "UTC" });
+      expect(created.status).toBe(201);
+      expect(created.body.termsAcceptedAt).toBeUndefined();
+
+      const res = await request(app).post("/workflow/run").set("Authorization", `Bearer ${created.body.apiKey}`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/Terms of Service/);
+    } finally {
+      delete process.env.ADMIN_API_KEY;
+    }
+  });
+
+  it("runs again once the tenant accepts the current terms version", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    try {
+      const app = createApp();
+      const created = await request(app)
+        .post("/admin/tenants")
+        .set("Authorization", "Bearer admin-secret")
+        .send({ name: "Brand New Co", timezone: "UTC" });
+
+      const accepted = await request(app)
+        .post("/tenants/me/accept-terms")
+        .set("Authorization", `Bearer ${created.body.apiKey}`)
+        .send({ version: CURRENT_TERMS_VERSION });
+      expect(accepted.status).toBe(200);
+
+      const res = await request(app).post("/workflow/run").set("Authorization", `Bearer ${created.body.apiKey}`);
+      expect(res.status).toBe(200);
+    } finally {
+      delete process.env.ADMIN_API_KEY;
+    }
   });
 });
