@@ -135,6 +135,16 @@ jobs:
           test -n "$tenant_key"
           curl -sf http://localhost:3000/tenants/me -H "Authorization: Bearer $tenant_key"
 
+          # A brand-new tenant hasn't accepted LeadRecovery's own Terms of
+          # Service yet (see migration 0013 / src/terms.ts), and the worker
+          # skips any tenant without termsAcceptedAt set — accept here so the
+          # tick this job waits for below actually has a tenant to process.
+          terms_version=$(curl -sf http://localhost:3000/terms-version | node -e "process.stdin.on('data',d=>process.stdout.write(JSON.parse(d).version))")
+          curl -sf -X POST http://localhost:3000/tenants/me/accept-terms \
+            -H "Authorization: Bearer $tenant_key" \
+            -H "Content-Type: application/json" \
+            -d "{\"version\":\"$terms_version\"}"
+
       # Only started now: worker.ts runs an immediate tick on startup (see
       # "Also run once immediately on startup" in src/worker.ts), and its
       # default cron schedule is hourly — starting it before the tenant
