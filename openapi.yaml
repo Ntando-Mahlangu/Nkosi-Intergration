@@ -770,6 +770,28 @@ components:
           type: string
           maxLength: 320
           description: Reference-only business website, for the agency's own records.
+        consentBasisConfirmed:
+          type: boolean
+          description: >-
+            POST /admin/tenants only. Not enforced with a 400 (so the
+            onboarding CLI/CI/direct integrations aren't hard-blocked), but
+            recorded as consentBasisConfirmedAt when true — see
+            COMPLIANCE.md "Consent basis".
+        carrierApprovalConfirmed:
+          type: boolean
+          description: >-
+            Admin-only (rejected on PATCH /tenants/me, same as status).
+            true records carrierApprovalConfirmedAt now; false clears it.
+            Gates the sms/whatsapp channels — see COMPLIANCE.md
+            "SMS / WhatsApp (Twilio)".
+        botDisclosureEnabled:
+          type: boolean
+          description: Whether the chatbot's first auto-reply per conversation proactively discloses it's automated. Defaults to true when unset.
+        dataRetentionDays:
+          type: integer
+          minimum: 30
+          maximum: 3650
+          description: How many days after a lead closes out before the worker auto-purges it. Defaults to 365 when unset.
 
     PublicTenant:
       type: object
@@ -802,6 +824,10 @@ components:
         website: { type: string, description: "Reference-only business website, if set at onboarding." }
         termsAcceptedAt: { type: string, format: date-time, description: "When this tenant accepted the Terms of Service/Privacy Policy. Unset blocks all outbound sending." }
         termsVersion: { type: string, description: "Which CURRENT_TERMS_VERSION was accepted, or \"grandfathered\" for a tenant that predates this field." }
+        consentBasisConfirmedAt: { type: string, format: date-time, description: "When the agency confirmed this client has a lawful basis to contact its leads. An audit record, not enforced server-side." }
+        carrierApprovalConfirmedAt: { type: string, format: date-time, description: "When the agency confirmed 10DLC/WhatsApp carrier approval. Unset blocks the sms/whatsapp channels (falls back to email, or skips the lead)." }
+        botDisclosureEnabled: { type: boolean, description: "Whether the chatbot's first auto-reply per conversation proactively discloses it's automated. Defaults to true when unset." }
+        dataRetentionDays: { type: integer, description: "Days after a lead closes out before the worker auto-purges it. Defaults to 365 when unset." }
         createdAt: { type: string, format: date-time }
 
     Lead:

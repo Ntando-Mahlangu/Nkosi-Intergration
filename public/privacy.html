@@ -6,49 +6,51 @@
 <title>Privacy Policy</title>
 <style>
   :root {
-    --bg: #04060b;
-    --panel: rgba(91, 233, 255, 0.05);
-    --border: rgba(91, 233, 255, 0.28);
-    --text: #5be9ff;
-    --muted: #1e6b7a;
-    --accent: #5be9ff;
-    --warn: #ffb454;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --bg: #14171f;
+    --panel: #1b1e27;
+    --border: rgba(201, 168, 117, 0.22);
+    --text: #eee7d8;
+    --muted: #8b8677;
+    --accent: #c9a875;
+    --warn: #d99a4e;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+    font-family: var(--sans);
     background: var(--bg);
-    color: #cdeaf2;
+    color: #e9e2d0;
     line-height: 1.6;
   }
-  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.4; pointer-events: none; }
+  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.3; pointer-events: none; }
   #vignette {
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 45%, rgba(0,4,10,0.75) 100%);
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(12,14,19,0.75) 100%);
   }
   main { position: relative; z-index: 5; max-width: 760px; margin: 0 auto; padding: 40px 24px 100px; }
   header { margin-bottom: 32px; }
-  header h1 { font-size: 20px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); margin: 0 0 6px; }
+  header h1 { font-family: var(--serif); font-size: 28px; letter-spacing: 0.005em; color: var(--text); margin: 0 0 8px; font-weight: 400; }
   header .meta { color: var(--muted); font-size: 12px; letter-spacing: 0.05em; }
   a { color: var(--accent); }
   a.back { display: inline-block; margin-bottom: 20px; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; }
   .draft-notice {
-    background: rgba(255,180,84,0.08);
-    border: 1px solid rgba(255,180,84,0.4);
+    background: rgba(217,154,78,0.08);
+    border: 1px solid rgba(217,154,78,0.4);
     color: var(--warn);
-    border-radius: 4px;
+    border-radius: 8px;
     padding: 14px 16px;
     font-size: 12.5px;
     line-height: 1.6;
     margin-bottom: 32px;
   }
   section { margin-bottom: 28px; }
-  h2 { font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 12px; }
-  p, li { font-size: 13.5px; color: #cdeaf2; }
+  h2 { font-family: var(--serif); font-size: 17px; letter-spacing: 0.005em; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 14px; font-weight: 400; }
+  p, li { font-size: 13.5px; color: #e9e2d0; }
   ul { padding-left: 20px; }
   li { margin-bottom: 6px; }
   strong { color: var(--text); }
@@ -220,7 +222,7 @@
     const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 1.1 + 0.2;
     const op = Math.random() * 0.5 + 0.1;
     const dur = (Math.random() * 4 + 3).toFixed(2);
-    svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#8fe8ff" opacity="${op}">
+    svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#d9cbb0" opacity="${op}">
       <animate attributeName="opacity" values="${op};${op * 0.15};${op}" dur="${dur}s" repeatCount="indefinite" />
     </circle>`;
   }

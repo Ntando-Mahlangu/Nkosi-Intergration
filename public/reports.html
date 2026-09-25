@@ -6,40 +6,37 @@
 <title>LeadRecovery Reports</title>
 <style>
   :root {
-    --bg: #04060b;
-    --panel: rgba(91, 233, 255, 0.05);
-    --border: rgba(91, 233, 255, 0.28);
-    --text: #5be9ff;
-    --muted: #1e6b7a;
-    --accent: #5be9ff;
-    --high: #ff5c5c;
-    --medium: #ffb454;
-    --low: #1e6b7a;
-    --ok: #5bffb0;
-    --fail: #ff5c5c;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --bg: #14171f;
+    --panel: #1b1e27;
+    --border: rgba(201, 168, 117, 0.22);
+    --text: #eee7d8;
+    --muted: #8b8677;
+    --accent: #c9a875;
+    --high: #b5555a;
+    --medium: #d99a4e;
+    --low: #8b8677;
+    --ok: #7fa88a;
+    --fail: #b5555a;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+    font-family: var(--sans);
     background: var(--bg);
     color: var(--text);
   }
 
   /* ---------- ambient HUD backdrop (same as index.html's Command Center) ---------- */
-  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.5; pointer-events: none; }
+  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.35; pointer-events: none; }
   #vignette {
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 45%, rgba(0,4,10,0.75) 100%);
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(12,14,19,0.75) 100%);
   }
-  .bracket { position: fixed; width: 34px; height: 34px; border-color: var(--text); opacity: 0.55; z-index: 5; pointer-events: none; }
-  .bracket.tl { top: 14px; left: 14px; border-top: 2px solid; border-left: 2px solid; }
-  .bracket.tr { top: 14px; right: 14px; border-top: 2px solid; border-right: 2px solid; }
-  .bracket.bl { bottom: 14px; left: 14px; border-bottom: 2px solid; border-left: 2px solid; }
-  .bracket.br { bottom: 14px; right: 14px; border-bottom: 2px solid; border-right: 2px solid; }
 
   header {
     position: relative;
@@ -51,10 +48,10 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 12px;
-    background: rgba(4,6,11,0.7);
+    background: rgba(20,23,31,0.7);
     backdrop-filter: blur(4px);
   }
-  header h1 { font-size: 13px; letter-spacing: 0.25em; text-transform: uppercase; margin: 0; font-weight: 600; }
+  header h1 { font-family: var(--serif); font-size: 19px; letter-spacing: 0.01em; margin: 0; font-weight: 400; }
   header .sub { color: var(--muted); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
   main { position: relative; z-index: 5; max-width: 960px; margin: 0 auto; padding: 24px; }
   .auth-panel {
@@ -62,31 +59,31 @@
     z-index: 5;
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 0 40px rgba(91,233,255,0.12), inset 0 0 40px rgba(91,233,255,0.04);
+    border-radius: 10px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
     padding: 28px;
     max-width: 480px;
     margin: 60px auto;
   }
-  .auth-panel h2 { margin-top: 0; font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; }
+  .auth-panel h2 { font-family: var(--serif); margin-top: 0; font-size: 19px; letter-spacing: 0.01em; font-weight: 400; }
   label { display: block; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
   input {
     width: 100%;
     padding: 9px 10px;
     background: rgba(0,0,0,0.4);
     border: 1px solid var(--border);
-    border-radius: 3px;
+    border-radius: 6px;
     color: var(--text);
     font-family: inherit;
     font-size: 13px;
     color-scheme: dark;
   }
-  input:focus { outline: none; box-shadow: 0 0 10px rgba(91,233,255,0.4); }
+  input:focus { outline: none; border-color: var(--accent); }
   button {
-    background: rgba(91,233,255,0.12);
+    background: rgba(201,168,117,0.12);
     border: 1px solid var(--text);
     color: var(--text);
-    border-radius: 3px;
+    border-radius: 6px;
     padding: 9px 16px;
     font-size: 11px;
     letter-spacing: 0.15em;
@@ -96,7 +93,7 @@
     font-family: inherit;
     transition: background 0.2s, box-shadow 0.2s;
   }
-  button:hover { background: rgba(91,233,255,0.22); box-shadow: 0 0 12px rgba(91,233,255,0.35); }
+  button:hover { background: rgba(201,168,117,0.22); border-color: var(--accent); }
   button.secondary, a.secondary {
     background: transparent;
     border: 1px solid var(--border);
@@ -105,13 +102,13 @@
     display: inline-flex;
     align-items: center;
     padding: 0 16px;
-    border-radius: 3px;
+    border-radius: 6px;
     font-size: 11px;
     letter-spacing: 0.15em;
     text-transform: uppercase;
     font-weight: 600;
   }
-  button.secondary:hover, a.secondary:hover { background: rgba(91,233,255,0.08); box-shadow: 0 0 12px rgba(91,233,255,0.35); }
+  button.secondary:hover, a.secondary:hover { background: rgba(201,168,117,0.08); border-color: var(--accent); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .error { color: var(--fail); font-size: 13px; margin-top: 8px; }
   .empty { color: var(--muted); padding: 32px; text-align: center; }
@@ -126,18 +123,18 @@
   .stat-card {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 0 24px rgba(91,233,255,0.06), inset 0 0 24px rgba(91,233,255,0.03);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.28);
     padding: 14px 16px;
   }
-  .stat-card .stat-value { font-size: 26px; font-weight: 700; color: var(--text); text-shadow: 0 0 14px rgba(91,233,255,0.5); }
+  .stat-card .stat-value { font-size: 26px; font-weight: 700; color: var(--text); text-shadow: 0 0 14px rgba(201,168,117,0.5); }
   .stat-card .stat-label { color: var(--muted); font-size: 11px; letter-spacing: 0.05em; margin-top: 4px; }
 
   .breakdown {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 0 24px rgba(91,233,255,0.06), inset 0 0 24px rgba(91,233,255,0.03);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.28);
     padding: 4px 16px;
   }
   .breakdown-row {
@@ -155,10 +152,6 @@
 
 <div id="stars"></div>
 <div id="vignette"></div>
-<div class="bracket tl"></div>
-<div class="bracket tr"></div>
-<div class="bracket bl"></div>
-<div class="bracket br"></div>
 
 <div id="auth" class="auth-panel">
   <h2>LeadRecovery Reports</h2>
@@ -233,8 +226,8 @@
   </main>
 </div>
 
-<div id="terms-gate" role="dialog" aria-modal="true" aria-labelledby="terms-gate-title" style="display:none; position:fixed; inset:0; z-index:50; align-items:center; justify-content:center; background:rgba(0,4,10,0.85); padding:20px;">
-  <div style="max-width:480px; width:100%; padding:28px; background:var(--panel); border:1px solid var(--border); border-radius:6px; box-shadow:0 0 40px rgba(91,233,255,0.15), inset 0 0 40px rgba(91,233,255,0.04);">
+<div id="terms-gate" role="dialog" aria-modal="true" aria-labelledby="terms-gate-title" style="display:none; position:fixed; inset:0; z-index:50; align-items:center; justify-content:center; background:rgba(12,14,19,0.85); padding:20px;">
+  <div style="max-width:480px; width:100%; padding:28px; background:var(--panel); border:1px solid var(--border); border-radius:10px; box-shadow:0 20px 60px rgba(0,0,0,0.45);">
     <h2 id="terms-gate-title" style="margin-top:0; font-size:13px; letter-spacing:0.2em; text-transform:uppercase;">Before you continue</h2>
     <p style="color:var(--muted); font-size:13px; line-height:1.6;">
       Please review and accept LeadRecovery's
@@ -257,11 +250,11 @@
   (function buildStars() {
     const el = document.getElementById("stars");
     let svg = "<svg width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>";
-    for (let i = 0; i < 140; i++) {
+    for (let i = 0; i < 70; i++) {
       const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 1.1 + 0.2;
       const op = Math.random() * 0.6 + 0.1;
       const dur = (Math.random() * 4 + 3).toFixed(2);
-      svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#8fe8ff" opacity="${op}">
+      svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#d9cbb0" opacity="${op}">
         <animate attributeName="opacity" values="${op};${op * 0.15};${op}" dur="${dur}s" repeatCount="indefinite" />
       </circle>`;
     }

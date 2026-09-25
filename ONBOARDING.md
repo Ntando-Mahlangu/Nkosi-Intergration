@@ -27,6 +27,12 @@ registration, WhatsApp Business approval, SPF/DKIM, consent basis) that have
 to happen alongside this — some of these have lead times of days to weeks
 and should be started immediately.
 
+`public/admin.html`'s "Add new client" form requires checking "Client has a
+documented lawful basis to contact its leads" before it will create the
+tenant — an actual attestation with a timestamp
+(`consentBasisConfirmedAt`), not a formality. Don't check it until you've
+actually confirmed this with the client.
+
 ## 3. Provision the tenant
 
 ```bash
@@ -50,7 +56,18 @@ Twilio/SendGrid setup collapsed behind a "Skip provider setup for now
 accounts don't exist yet — the tenant is created in `devMode` (console-only
 sends) so you can still validate the rest of the pipeline immediately —
 and come back to it (`PATCH /admin/tenants/:id` or the same form's fields)
-once they do. If you've set `DEFAULT_TWILIO_ACCOUNT_SID`/
+once they do.
+
+Whenever you do configure real SMS/WhatsApp credentials for a client — now
+or later — the sms/whatsapp channels stay unusable (silently falling back
+to email, or skipping the lead) until you separately confirm carrier
+approval: `PATCH /admin/tenants/:id` with `{"carrierApprovalConfirmed":
+true}` once you've verified their 10DLC registration and/or WhatsApp
+Business template approval with Twilio (see `COMPLIANCE.md`). `devMode`
+bypasses this for test-mode use, same as it bypasses needing real
+credentials at all.
+
+If you've set `DEFAULT_TWILIO_ACCOUNT_SID`/
 `DEFAULT_TWILIO_AUTH_TOKEN`/`DEFAULT_SENDGRID_API_KEY` (the common setup —
 one shared Twilio/SendGrid account across all your clients, see
 `README.md`'s `src/channelDefaults.ts` section), unchecking "skip" only

@@ -186,11 +186,19 @@ export class PostgresLeadStore implements LeadStore {
     if (rows[0]) return leadFromRow(rows[0]);
     return this.getLeadById(tenantId, id);
   }
+
+  async deleteLead(tenantId: string, id: string): Promise<boolean> {
+    // ON DELETE CASCADE on messages.lead_id (0001_init.sql) means this also
+    // removes the lead's message history.
+    const result = await this.pool.query(`DELETE FROM leads WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
+    return (result.rowCount ?? 0) > 0;
+  }
 }
 
 const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at,
   notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at,
-  contact_phone, contact_email, website, terms_accepted_at, terms_version`;
+  contact_phone, contact_email, website, terms_accepted_at, terms_version,
+  consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days`;
 
 /**
  * Tenant provider credentials (Twilio auth tokens, SendGrid API keys) are
@@ -265,6 +273,14 @@ export class PostgresTenantStore implements TenantStore {
         ? new Date(row.terms_accepted_at as string).toISOString()
         : undefined,
       termsVersion: (row.terms_version as string | null) ?? undefined,
+      consentBasisConfirmedAt: (row.consent_basis_confirmed_at as string | null)
+        ? new Date(row.consent_basis_confirmed_at as string).toISOString()
+        : undefined,
+      carrierApprovalConfirmedAt: (row.carrier_approval_confirmed_at as string | null)
+        ? new Date(row.carrier_approval_confirmed_at as string).toISOString()
+        : undefined,
+      botDisclosureEnabled: (row.bot_disclosure_enabled as boolean | null) ?? undefined,
+      dataRetentionDays: (row.data_retention_days as number | null) ?? undefined,
       createdAt: new Date(row.created_at as string).toISOString(),
     };
   }
@@ -298,8 +314,8 @@ export class PostgresTenantStore implements TenantStore {
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
       [
         tenant.id,
         tenant.name,
@@ -323,6 +339,10 @@ export class PostgresTenantStore implements TenantStore {
         tenant.website ?? null,
         tenant.termsAcceptedAt ?? null,
         tenant.termsVersion ?? null,
+        tenant.consentBasisConfirmedAt ?? null,
+        tenant.carrierApprovalConfirmedAt ?? null,
+        tenant.botDisclosureEnabled ?? null,
+        tenant.dataRetentionDays ?? null,
       ]
     );
     return tenant;
@@ -369,6 +389,12 @@ export class PostgresTenantStore implements TenantStore {
     if ("website" in patch) push("website", patch.website ?? null);
     if ("termsAcceptedAt" in patch) push("terms_accepted_at", patch.termsAcceptedAt ?? null);
     if ("termsVersion" in patch) push("terms_version", patch.termsVersion ?? null);
+    if ("consentBasisConfirmedAt" in patch) push("consent_basis_confirmed_at", patch.consentBasisConfirmedAt ?? null);
+    if ("carrierApprovalConfirmedAt" in patch) {
+      push("carrier_approval_confirmed_at", patch.carrierApprovalConfirmedAt ?? null);
+    }
+    if ("botDisclosureEnabled" in patch) push("bot_disclosure_enabled", patch.botDisclosureEnabled ?? null);
+    if ("dataRetentionDays" in patch) push("data_retention_days", patch.dataRetentionDays ?? null);
     if ("createdAt" in patch) push("created_at", patch.createdAt);
 
     if (setClauses.length === 0) return this.getTenant(id);

@@ -38,7 +38,16 @@ and their own leads.
   existing inquiry, a prior customer relationship, explicit marketing
   opt-in, etc.). "They filled out a form two years ago" may or may not be a
   valid basis depending on jurisdiction and how long ago that was — this is
-  a business/legal decision, not a technical one.
+  a business/legal decision, not a technical one, and nothing in the code
+  can verify it for you.
+- The admin UI's "Add new client" form requires checking a "Client has a
+  documented lawful basis to contact its leads" box before it will create
+  the tenant — a recorded attestation (`Tenant.consentBasisConfirmedAt`),
+  not a formality. Calling `POST /admin/tenants` directly without
+  `consentBasisConfirmed: true` still works (so the onboarding CLI, CI, and
+  existing integrations aren't hard-blocked) but leaves the tenant visibly
+  unconfirmed in `GET /admin/tenants` — treat that as a follow-up item, not
+  a pass.
 - Load any existing do-not-contact/opt-out list **before** the first import
   (see `ONBOARDING.md` step 2).
 
@@ -57,7 +66,19 @@ and their own leads.
 - **Sending windows**: many jurisdictions restrict SMS marketing hours
   (e.g. commonly 8am-9pm local). The default quiet-hours window
   (`src/quietHours.ts`, 8pm-8am) is a reasonable starting point but confirm
-  the client's specific jurisdiction's rules and adjust per tenant.
+  the client's specific jurisdiction's rules and adjust per tenant
+  (`quietHours` on the admin/self-service tenant config).
+- **Carrier approval is a recorded, enforced gate, not just a checklist
+  item**: `Tenant.carrierApprovalConfirmedAt` (set via the admin UI/API
+  after you've verified 10DLC/WhatsApp approval with the client) actually
+  blocks the sms/whatsapp channels — `selectChannel`
+  (`src/channels/index.ts`) treats them as unusable until it's set, falling
+  back to email or skipping the lead entirely, rather than silently trying
+  to send SMS/WhatsApp before the client is cleared to. `devMode` bypasses
+  this for local/demo use only. Set it via `PATCH /admin/tenants/:id` with
+  `{"carrierApprovalConfirmed": true}` once you've confirmed approval;
+  `false` clears it (e.g. approval lapsed). Pre-existing tenants are
+  grandfathered (migration 0014) the same way terms-acceptance is.
 
 ## Email (SendGrid)
 
@@ -89,14 +110,14 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
   context — for example California's B.O.T. Act (Bus. & Prof. Code
   §17941) for online commercial communications, and similar rules are
   emerging elsewhere. LeadRecovery's chatbot is instructed to answer
-  *honestly* if asked whether it's a bot/AI, but it does **not**
-  proactively announce this in every message by default — that's a
-  product/legal decision for the business, not something the code decides
-  for them. Confirm with the client's counsel whether their jurisdiction
-  requires proactive disclosure and, if so, add it — e.g. via a
-  `knowledgeBase` instruction, or by having the first auto-reply in a
-  conversation include a brief disclosure through a custom
-  `tenant.templates` prefix.
+  *honestly* if asked whether it's a bot/AI regardless, and additionally
+  **proactively discloses this by default**: the first auto-reply of every
+  conversation is prefixed with a short disclosure note (see
+  `src/chatbot.ts`'s `BOT_DISCLOSURE_NOTE`), controlled by
+  `Tenant.botDisclosureEnabled` (default true when unset). Only set it to
+  `false` for a specific tenant if you've confirmed their jurisdiction
+  doesn't require it and the client prefers not to show it — don't disable
+  it globally without that check.
 - The knowledge base itself is the compliance boundary: the model is
   instructed to answer only from what the business wrote there and to
   escalate anything else, but it's still an LLM — review real
@@ -124,6 +145,16 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
   conversation content). Make sure the Postgres instance is encrypted at
   rest and access is restricted appropriately, and agree a data-retention
   policy with the client.
+- **Data-retention purging is automatic, not just a policy on paper.**
+  Once a lead reaches a closed-out status (`do_not_contact`, `unqualified`,
+  `fraudulent`, `converted`, `opted_out`) and stays inactive past the
+  tenant's retention window, the worker permanently deletes it (and its
+  message history, cascaded) on its next tick — see `src/dataRetention.ts`.
+  A lead still active in the funnel is never auto-purged regardless of age.
+  Defaults to `DEFAULT_DATA_RETENTION_DAYS` (365 days) unless overridden
+  per tenant via `dataRetentionDays` (30-3650 days, settable by the tenant
+  itself via `PATCH /tenants/me` or by an admin) — set it to match
+  whatever retention period you actually agreed with the client.
 - Admin key and webhook shared-secret comparisons use constant-time
   comparison (`src/security.ts`) to avoid leaking timing information; all
   admin/webhook/tenant-authed routes are also rate limited

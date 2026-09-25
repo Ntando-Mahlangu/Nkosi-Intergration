@@ -140,6 +140,16 @@ deployment serves many clients with fully isolated data.
   `POST /workflow/run` — so there's no way around it by calling the API
   directly. Pre-existing tenants are grandfathered (migration 0013) rather
   than retroactively blocked.
+- **`src/dataRetention.ts`**, **`src/channels/index.ts`**'s carrier-approval
+  gate, and **`src/chatbot.ts`**'s bot disclosure — three more compliance
+  controls beyond terms acceptance (see `COMPLIANCE.md`): a closed-out
+  lead's data is auto-purged past the tenant's `dataRetentionDays` (default
+  365, worker-driven); the sms/whatsapp channels are unusable until an
+  admin confirms `carrierApprovalConfirmed` (10DLC/WhatsApp approval),
+  falling back to email or skipping the lead rather than sending
+  unapproved; and the chatbot's first auto-reply in a conversation
+  proactively discloses it's automated unless `botDisclosureEnabled` is
+  explicitly set to `false`.
 - **`src/channelDefaults.ts`** — an agency running multiple clients
   typically owns one shared Twilio account and one shared SendGrid
   account, not one per client. Setting `DEFAULT_TWILIO_ACCOUNT_SID`/
@@ -381,11 +391,11 @@ All routes except `/health` and the webhooks require `Authorization: Bearer
 | GET | `/ready` | Readiness check — verifies Postgres connectivity when `DATABASE_URL` is set |
 | GET | `/terms-version` | Public, no auth — the exact version string a client must send back to `POST /tenants/me/accept-terms` |
 | GET | `/tenants/me` | The authenticated tenant's public info |
-| PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled |
+| PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled/botDisclosureEnabled/dataRetentionDays |
 | POST | `/tenants/me/accept-terms` | Records the tenant's acceptance of the current Terms of Service/Privacy Policy version — required before `POST /workflow/run`, the worker, or any inbound webhook auto-reply will actually send anything |
 | GET | `/admin/tenants` | List tenants (admin) |
-| POST | `/admin/tenants` | Create a tenant (admin); returns the API key once |
-| PATCH | `/admin/tenants/:id` | Admin update: any self-service field, plus `status` (`"active"` \| `"suspended"`) — the only way to suspend/reactivate a tenant |
+| POST | `/admin/tenants` | Create a tenant (admin); returns the API key once. Also accepts `consentBasisConfirmed`/`carrierApprovalConfirmed` (recorded attestations — see `COMPLIANCE.md`) and any self-service field |
+| PATCH | `/admin/tenants/:id` | Admin update: any self-service field, plus `status` (`"active"` \| `"suspended"`) and `carrierApprovalConfirmed` (admin-only — the only way to clear an sms/whatsapp send block for a tenant) |
 | POST | `/admin/tenants/:id/rotate-key` | Issue a new API key for a tenant (admin); the old key stops working immediately |
 | DELETE | `/admin/tenants/:id` | Permanently delete a tenant (admin) — cascades to its leads/messages in Postgres; no undo |
 | GET | `/admin/notifications/failed` | Notifications ("interested"/escalation) that failed to reach `notifyWebhookUrl` even after retries — `pending` ones are still being retried by the worker, `dead` ones gave up and need attention |
@@ -452,9 +462,11 @@ to a human via `notifyWebhookUrl` instead of an automated answer.
 Conversation history for the lead (via `GET /leads/:id/messages`) is passed
 along so replies stay coherent across a multi-turn exchange.
 
-See "Bot disclosure" in `COMPLIANCE.md` before turning this on for a real
-client — some jurisdictions require proactively disclosing that a customer
-is messaging with an automated system.
+The first auto-reply of every conversation proactively discloses it's
+automated by default (some jurisdictions require this — see "Bot
+disclosure" in `COMPLIANCE.md`); set `{"botDisclosureEnabled": false}` via
+`PATCH /tenants/me` only after confirming the client's jurisdiction doesn't
+require it.
 
 ## Localization
 

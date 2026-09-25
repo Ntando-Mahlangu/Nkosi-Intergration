@@ -6,41 +6,38 @@
 <title>LeadRecovery Dashboard</title>
 <style>
   :root {
-    --bg: #04060b;
-    --panel: rgba(91, 233, 255, 0.05);
-    --border: rgba(91, 233, 255, 0.28);
-    --text: #5be9ff;
-    --muted: #1e6b7a;
-    --accent: #5be9ff;
-    --high: #ff5c5c;
-    --medium: #ffb454;
-    --low: #1e6b7a;
-    --ok: #5bffb0;
-    --fail: #ff5c5c;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --bg: #14171f;
+    --panel: #1b1e27;
+    --border: rgba(201, 168, 117, 0.22);
+    --text: #eee7d8;
+    --muted: #8b8677;
+    --accent: #c9a875;
+    --high: #b5555a;
+    --medium: #d99a4e;
+    --low: #8b8677;
+    --ok: #7fa88a;
+    --fail: #b5555a;
   }
   * { box-sizing: border-box; }
   html, body { min-height: 100%; }
   body {
     margin: 0;
-    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+    font-family: var(--sans);
     background: var(--bg);
     color: var(--text);
   }
 
   /* ---------- ambient HUD backdrop (same as index.html's Command Center) ---------- */
-  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.5; pointer-events: none; }
+  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.35; pointer-events: none; }
   #vignette {
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 45%, rgba(0,4,10,0.75) 100%);
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(12,14,19,0.75) 100%);
   }
-  .bracket { position: fixed; width: 34px; height: 34px; border-color: var(--text); opacity: 0.55; z-index: 5; pointer-events: none; }
-  .bracket.tl { top: 14px; left: 14px; border-top: 2px solid; border-left: 2px solid; }
-  .bracket.tr { top: 14px; right: 14px; border-top: 2px solid; border-right: 2px solid; }
-  .bracket.bl { bottom: 14px; left: 14px; border-bottom: 2px solid; border-left: 2px solid; }
-  .bracket.br { bottom: 14px; right: 14px; border-bottom: 2px solid; border-right: 2px solid; }
 
   header {
     position: relative;
@@ -52,10 +49,10 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 12px;
-    background: rgba(4,6,11,0.7);
+    background: rgba(20,23,31,0.7);
     backdrop-filter: blur(4px);
   }
-  header h1 { font-size: 13px; letter-spacing: 0.25em; text-transform: uppercase; margin: 0; font-weight: 600; }
+  header h1 { font-family: var(--serif); font-size: 19px; letter-spacing: 0.01em; margin: 0; font-weight: 400; }
   header .sub { color: var(--muted); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
   main { position: relative; z-index: 5; max-width: 960px; margin: 0 auto; padding: 24px; }
   .auth-panel {
@@ -63,31 +60,31 @@
     z-index: 5;
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 0 40px rgba(91,233,255,0.12), inset 0 0 40px rgba(91,233,255,0.04);
+    border-radius: 10px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
     padding: 28px;
     max-width: 480px;
     margin: 60px auto;
   }
-  .auth-panel h2 { margin-top: 0; font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; }
+  .auth-panel h2 { font-family: var(--serif); margin-top: 0; font-size: 19px; letter-spacing: 0.01em; font-weight: 400; }
   label { display: block; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
   input, select {
     width: 100%;
     padding: 9px 10px;
     background: rgba(0,0,0,0.4);
     border: 1px solid var(--border);
-    border-radius: 3px;
+    border-radius: 6px;
     color: var(--text);
     font-family: inherit;
     font-size: 13px;
   }
   select { color-scheme: dark; }
-  input:focus, select:focus { outline: none; box-shadow: 0 0 10px rgba(91,233,255,0.4); }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
   button {
-    background: rgba(91,233,255,0.12);
+    background: rgba(201,168,117,0.12);
     border: 1px solid var(--text);
     color: var(--text);
-    border-radius: 3px;
+    border-radius: 6px;
     padding: 9px 16px;
     font-size: 11px;
     letter-spacing: 0.15em;
@@ -97,7 +94,7 @@
     font-family: inherit;
     transition: background 0.2s, box-shadow 0.2s;
   }
-  button:hover { background: rgba(91,233,255,0.22); box-shadow: 0 0 12px rgba(91,233,255,0.35); }
+  button:hover { background: rgba(201,168,117,0.22); border-color: var(--accent); }
   button.secondary, a.secondary {
     background: transparent;
     border: 1px solid var(--border);
@@ -107,15 +104,15 @@
     text-transform: uppercase;
     font-weight: 600;
   }
-  button.secondary:hover, a.secondary:hover { background: rgba(91,233,255,0.08); box-shadow: 0 0 12px rgba(91,233,255,0.35); }
+  button.secondary:hover, a.secondary:hover { background: rgba(201,168,117,0.08); border-color: var(--accent); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
   .stat { font-size: 12px; letter-spacing: 0.05em; color: var(--muted); }
   .card {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 0 24px rgba(91,233,255,0.06), inset 0 0 24px rgba(91,233,255,0.03);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.28);
     padding: 14px 16px;
     margin-bottom: 10px;
   }
@@ -125,19 +122,19 @@
     font-size: 10px;
     font-weight: 700;
     padding: 2px 8px;
-    border-radius: 3px;
+    border-radius: 6px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
   }
-  .badge.HIGH { background: rgba(255,92,92,0.12); color: var(--high); border: 1px solid rgba(255,92,92,0.4); }
-  .badge.MEDIUM { background: rgba(255,180,84,0.12); color: var(--medium); border: 1px solid rgba(255,180,84,0.4); }
-  .badge.LOW { background: rgba(30,107,122,0.25); color: var(--muted); border: 1px solid var(--border); }
+  .badge.HIGH { background: rgba(181,85,90,0.12); color: var(--high); border: 1px solid rgba(181,85,90,0.4); }
+  .badge.MEDIUM { background: rgba(217,154,78,0.12); color: var(--medium); border: 1px solid rgba(217,154,78,0.4); }
+  .badge.LOW { background: rgba(139,134,119,0.25); color: var(--muted); border: 1px solid var(--border); }
   .reasons { color: var(--muted); font-size: 12px; margin-top: 6px; }
   .message {
     margin-top: 10px;
     background: rgba(0,0,0,0.35);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 8px;
     padding: 10px 12px;
     font-size: 13px;
     line-height: 1.4;
@@ -155,22 +152,22 @@
     align-items: center;
     gap: 8px;
     padding: 10px 12px;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     border: 1px solid transparent;
   }
-  .lead-row:hover, .lead-row:focus-visible { background: rgba(91,233,255,0.06); border-color: var(--border); }
+  .lead-row:hover, .lead-row:focus-visible { background: rgba(201,168,117,0.06); border-color: var(--border); }
   .lead-row .lead-meta { color: var(--muted); font-size: 11px; letter-spacing: 0.05em; }
   .lead-row .appt-tag {
     font-size: 10px;
     font-weight: 700;
     padding: 2px 7px;
-    border-radius: 3px;
+    border-radius: 6px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    background: rgba(255,180,84,0.12);
+    background: rgba(217,154,78,0.12);
     color: var(--medium);
-    border: 1px solid rgba(255,180,84,0.4);
+    border: 1px solid rgba(217,154,78,0.4);
     margin-left: 8px;
   }
 
@@ -182,7 +179,7 @@
   #overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,4,10,0.75);
+    background: rgba(12,14,19,0.75);
     display: none;
     align-items: center;
     justify-content: center;
@@ -191,17 +188,17 @@
   }
   #overlay.open { display: flex; }
   #lead-detail {
-    background: #050a12;
+    background: #1b1e27;
     border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 0 40px rgba(91,233,255,0.15), inset 0 0 40px rgba(91,233,255,0.04);
+    border-radius: 10px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.45);
     padding: 20px;
     width: 100%;
     max-width: 520px;
     max-height: 85vh;
     overflow-y: auto;
   }
-  #lead-detail h3 { margin: 0 0 4px; font-size: 14px; color: var(--amber, #ffb454); text-transform: uppercase; letter-spacing: 0.1em; }
+  #lead-detail h3 { margin: 0 0 4px; font-size: 14px; color: var(--amber, #d99a4e); text-transform: uppercase; letter-spacing: 0.1em; }
   #lead-detail .detail-meta { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
   #lead-detail .close-btn { float: right; }
   .appt-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; margin-top: 4px; }
@@ -210,11 +207,11 @@
   .bubble {
     max-width: 85%;
     padding: 8px 10px;
-    border-radius: 4px;
+    border-radius: 8px;
     font-size: 13px;
     line-height: 1.4;
   }
-  .bubble.outbound { align-self: flex-end; background: rgba(91,233,255,0.1); border: 1px solid var(--border); }
+  .bubble.outbound { align-self: flex-end; background: rgba(201,168,117,0.1); border: 1px solid var(--border); }
   .bubble.inbound { align-self: flex-start; background: rgba(0,0,0,0.35); border: 1px solid var(--border); }
   .bubble .bubble-meta { color: var(--muted); font-size: 10px; margin-top: 4px; }
 </style>
@@ -223,10 +220,6 @@
 
 <div id="stars"></div>
 <div id="vignette"></div>
-<div class="bracket tl"></div>
-<div class="bracket tr"></div>
-<div class="bracket bl"></div>
-<div class="bracket br"></div>
 
 <div id="auth" class="auth-panel">
   <h2>LeadRecovery Dashboard</h2>
@@ -325,8 +318,8 @@
   </div>
 </div>
 
-<div id="terms-gate" role="dialog" aria-modal="true" aria-labelledby="terms-gate-title" style="display:none; position:fixed; inset:0; z-index:50; align-items:center; justify-content:center; background:rgba(0,4,10,0.85); padding:20px;">
-  <div style="max-width:480px; width:100%; padding:28px; background:var(--panel); border:1px solid var(--border); border-radius:6px; box-shadow:0 0 40px rgba(91,233,255,0.15), inset 0 0 40px rgba(91,233,255,0.04);">
+<div id="terms-gate" role="dialog" aria-modal="true" aria-labelledby="terms-gate-title" style="display:none; position:fixed; inset:0; z-index:50; align-items:center; justify-content:center; background:rgba(12,14,19,0.85); padding:20px;">
+  <div style="max-width:480px; width:100%; padding:28px; background:var(--panel); border:1px solid var(--border); border-radius:10px; box-shadow:0 20px 60px rgba(0,0,0,0.45);">
     <h2 id="terms-gate-title" style="margin-top:0; font-size:13px; letter-spacing:0.2em; text-transform:uppercase;">Before you continue</h2>
     <p style="color:var(--muted); font-size:13px; line-height:1.6;">
       Please review and accept LeadRecovery's
@@ -349,11 +342,11 @@
   (function buildStars() {
     const el = document.getElementById("stars");
     let svg = "<svg width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>";
-    for (let i = 0; i < 140; i++) {
+    for (let i = 0; i < 70; i++) {
       const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 1.1 + 0.2;
       const op = Math.random() * 0.6 + 0.1;
       const dur = (Math.random() * 4 + 3).toFixed(2);
-      svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#8fe8ff" opacity="${op}">
+      svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#d9cbb0" opacity="${op}">
         <animate attributeName="opacity" values="${op};${op * 0.15};${op}" dur="${dur}s" repeatCount="indefinite" />
       </circle>`;
     }

@@ -18,5 +18,11 @@ export const DEMO_TENANT: Tenant = {
   // the bundled demo should work out of the box with no extra click.
   termsAcceptedAt: new Date(0).toISOString(),
   termsVersion: "grandfathered",
+  // Also grandfathered, same rationale — see migration 0014's own comment.
+  // devMode already bypasses the carrier-approval gate regardless, but this
+  // keeps the demo tenant's attestation fields consistent with a real
+  // grandfathered tenant rather than looking like an unconfirmed one.
+  consentBasisConfirmedAt: new Date(0).toISOString(),
+  carrierApprovalConfirmedAt: new Date(0).toISOString(),
   createdAt: new Date(0).toISOString(),
 };

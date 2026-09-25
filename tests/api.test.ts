@@ -300,6 +300,111 @@ describe("tenant management routes", () => {
     delete process.env.ADMIN_API_KEY;
   });
 
+  it("records consentBasisConfirmed as an audit-visible attestation, without hard-requiring it", async () => {
+    // Not enforced as an API-level requirement (see routes/tenants.ts's own
+    // comment) so this never blocks the onboarding CLI, CI, or a direct
+    // integration — but the admin UI's own form requires checking it, and
+    // when it's passed here it's recorded with a timestamp.
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const withAttestation = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Acme Plumbing", timezone: "UTC", consentBasisConfirmed: true });
+    expect(withAttestation.status).toBe(201);
+    expect(withAttestation.body.consentBasisConfirmedAt).toBeTruthy();
+
+    const withoutAttestation = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Other Biz", timezone: "UTC" });
+    expect(withoutAttestation.status).toBe(201);
+    expect(withoutAttestation.body.consentBasisConfirmedAt).toBeFalsy();
+
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("gates carrierApprovalConfirmed to the admin API, timestamping true and clearing on false", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Acme Plumbing", timezone: "UTC" });
+    expect(created.body.carrierApprovalConfirmedAt).toBeFalsy();
+
+    // A tenant can't self-confirm this via PATCH /tenants/me — only the admin API.
+    const selfAttempt = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${created.body.apiKey}`)
+      .send({ carrierApprovalConfirmed: true });
+    expect(selfAttempt.status).toBe(200);
+    expect(selfAttempt.body.carrierApprovalConfirmedAt).toBeFalsy();
+
+    const confirmed = await request(app)
+      .patch(`/admin/tenants/${created.body.id}`)
+      .set("Authorization", "Bearer admin-secret")
+      .send({ carrierApprovalConfirmed: true });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.carrierApprovalConfirmedAt).toBeTruthy();
+
+    const cleared = await request(app)
+      .patch(`/admin/tenants/${created.body.id}`)
+      .set("Authorization", "Bearer admin-secret")
+      .send({ carrierApprovalConfirmed: false });
+    expect(cleared.body.carrierApprovalConfirmedAt).toBeFalsy();
+
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("lets a tenant self-configure botDisclosureEnabled and dataRetentionDays via PATCH /tenants/me", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Acme Plumbing", timezone: "UTC" });
+
+    const patched = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${created.body.apiKey}`)
+      .send({ botDisclosureEnabled: false, dataRetentionDays: 90 });
+    expect(patched.status).toBe(200);
+    expect(patched.body.botDisclosureEnabled).toBe(false);
+    expect(patched.body.dataRetentionDays).toBe(90);
+
+    delete process.env.ADMIN_API_KEY;
+  });
+
+  it("rejects a dataRetentionDays outside the sane bounds", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const tooLow = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "New Biz", timezone: "UTC", dataRetentionDays: 5 });
+    expect(tooLow.status).toBe(400);
+    expect(tooLow.body.error).toMatch(/dataRetentionDays/);
+
+    delete process.env.ADMIN_API_KEY;
+  });
+
   it("tags a status change made via the admin API as statusReason: 'manual'", async () => {
     // Distinguishes an admin's own deliberate hold from a /webhooks/paddle
     // billing-driven suspension, so the admin dashboard can show which one
@@ -1797,6 +1902,45 @@ describe("webhook: a tenant that hasn't accepted the Terms of Service is fully p
   });
 });
 
+describe("webhook: sms/whatsapp replies are blocked until carrier approval is confirmed", () => {
+  // Unlike the suspended/unaccepted-terms gates above, this only blocks the
+  // *send* (sendAndLog's hasCarrierApproval check) — the inbound message is
+  // still recorded and classified, since receiving isn't what carrier
+  // approval governs (see COMPLIANCE.md "SMS / WhatsApp (Twilio)").
+  it("twilio/sms: still classifies the inbound reply, but suppresses the auto-reply send", async () => {
+    vi.spyOn(twilio, "validateRequest").mockReturnValue(true);
+    anthropicCreateMock.mockResolvedValueOnce({ content: [{ type: "text", text: "We're open 8-5!" }] });
+    const tenant: Tenant = {
+      ...TENANT,
+      devMode: false, // devMode would otherwise bypass the gate this test proves
+      channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+1" } },
+      autoReplyEnabled: true,
+      knowledgeBase: "Open Mon-Fri 8am-5pm.",
+      carrierApprovalConfirmedAt: undefined,
+    };
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const res = await request(app)
+      .post(`/webhooks/${tenant.id}/twilio/sms`)
+      .type("form")
+      .send({ From: LEAD.phone, Body: "what are your hours?" });
+
+    expect(res.status).toBe(200);
+    const history = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
+    expect(history).toHaveLength(1); // the inbound message was still recorded...
+    expect(history[0].direction).toBe("inbound");
+    expect(history.some((m) => m.direction === "outbound")).toBe(false); // ...but no reply was sent
+  });
+});
+
 describe("notify on interested reply", () => {
   it("POSTs to the tenant's notifyWebhookUrl when a reply classifies as interested", async () => {
     const tenantWithHook: Tenant = { ...TENANT, notifyWebhookUrl: "https://hooks.example.com/notify" };
@@ -2310,6 +2454,10 @@ describe("chatbot auto-reply on inbound messages", () => {
     ...TENANT,
     autoReplyEnabled: true,
     knowledgeBase: "We offer callouts starting at R500. Open Mon-Fri 8am-5pm.",
+    // Most of this block's assertions match the model's reply body exactly —
+    // disabled here so they aren't also asserting on the (separately tested,
+    // see "prepends a proactive bot-disclosure note...") disclosure prefix.
+    botDisclosureEnabled: false,
   };
 
   function buildChatbotStores(tenant: Tenant = CHATBOT_TENANT): Stores {
@@ -2347,6 +2495,28 @@ describe("chatbot auto-reply on inbound messages", () => {
 
     const lead = await stores.leadStore.getLeadById(CHATBOT_TENANT.id, LEAD.id);
     expect(lead?.status).toBe("responded");
+  });
+
+  it("proactively discloses it's an automated assistant on the first auto-reply, end to end, unless the tenant opts out", async () => {
+    anthropicCreateMock.mockResolvedValueOnce({
+      content: [{ type: "text", text: "We're open Mon-Fri 8am-5pm!" }],
+    });
+    // Unlike CHATBOT_TENANT above, leaves botDisclosureEnabled unset — the
+    // recommended default (see COMPLIANCE.md "Bot disclosure").
+    const tenant: Tenant = { ...CHATBOT_TENANT, botDisclosureEnabled: undefined };
+    const stores = buildChatbotStores(tenant);
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    await request(app)
+      .post(`/webhooks/${tenant.id}/sendgrid/email?token=${tenant.apiKey}`)
+      .field("from", "Jordan <jordan@example.com>")
+      .field("text", "what are your hours?");
+
+    const history = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
+    const autoReply = history.find((m) => m.direction === "outbound");
+    expect(autoReply?.body).toContain("you're chatting with an automated assistant");
+    expect(autoReply?.body).toContain("We're open Mon-Fri 8am-5pm!");
   });
 
   it("survives the channel adapter throwing while sending the auto-reply instead of failing the whole webhook request", async () => {

@@ -6,13 +6,15 @@
 <title>LeadRecovery — Command Center</title>
 <style>
   :root {
-    --void: #04060b;
-    --cyan: #5be9ff;
-    --cyan-dim: #1e6b7a;
-    --amber: #ffb454;
-    --red: #ff5c5c;
-    --glass: rgba(91, 233, 255, 0.06);
-    --line: rgba(91, 233, 255, 0.28);
+    --void: #14171f;
+    --cyan: #eee7d8;
+    --cyan-dim: #8b8677;
+    --amber: #c9a875;
+    --red: #b5555a;
+    --glass: rgba(255, 255, 255, 0.03);
+    --line: rgba(201, 168, 117, 0.24);
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -21,7 +23,7 @@
     height: 100%;
     background: var(--void);
     color: var(--cyan);
-    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+    font-family: var(--sans);
     overflow: hidden;
   }
   #scene {
@@ -29,62 +31,33 @@
     inset: 0;
   }
 
-  /* faint starfield */
+  /* faint, sparse ambient starfield */
   #stars {
     position: fixed;
     inset: 0;
     z-index: 0;
-    opacity: 0.5;
+    opacity: 0.35;
   }
 
-  /* ---------- HUD chrome ---------- */
-  .bracket {
-    position: fixed;
-    width: 34px;
-    height: 34px;
-    border-color: var(--cyan);
-    opacity: 0.55;
-    z-index: 5;
-    pointer-events: none;
-  }
-  .bracket.tl { top: 14px; left: 14px; border-top: 2px solid; border-left: 2px solid; }
-  .bracket.tr { top: 14px; right: 14px; border-top: 2px solid; border-right: 2px solid; }
-  .bracket.bl { bottom: 14px; left: 14px; border-bottom: 2px solid; border-left: 2px solid; }
-  .bracket.br { bottom: 14px; right: 14px; border-bottom: 2px solid; border-right: 2px solid; }
-
-  #scanline {
-    position: fixed;
-    inset: 0;
-    z-index: 4;
-    pointer-events: none;
-    background: linear-gradient(180deg, transparent, rgba(91,233,255,0.05) 50%, transparent);
-    height: 220px;
-    animation: sweep 7s linear infinite;
-    mix-blend-mode: screen;
-  }
-  @keyframes sweep {
-    0% { transform: translateY(-260px); }
-    100% { transform: translateY(100vh); }
-  }
   #vignette {
     position: fixed;
     inset: 0;
     z-index: 3;
     pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 45%, rgba(0,4,10,0.75) 100%);
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(4,5,8,0.7) 100%);
   }
   #grain {
     position: fixed;
     inset: 0;
     z-index: 6;
     pointer-events: none;
-    opacity: 0.035;
+    opacity: 0.025;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
   header.hud {
     position: fixed;
-    top: 22px;
+    top: 26px;
     left: 60px;
     right: 60px;
     z-index: 5;
@@ -94,29 +67,33 @@
     pointer-events: none;
   }
   header.hud .brand {
-    font-size: 12px;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
+    font-family: var(--serif);
+    font-size: 20px;
+    letter-spacing: 0.04em;
     color: var(--cyan);
-    opacity: 0.85;
+    opacity: 0.95;
   }
   header.hud .brand .sub {
+    font-family: var(--sans);
     font-size: 10px;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
     color: var(--cyan-dim);
-    margin-top: 4px;
+    margin-top: 6px;
   }
   header.hud .clock {
     text-align: right;
-    font-size: 12px;
-    letter-spacing: 0.15em;
-    opacity: 0.85;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    opacity: 0.9;
+    font-variant-numeric: tabular-nums;
   }
   header.hud .clock .status {
     color: var(--amber);
     font-size: 10px;
-    letter-spacing: 0.25em;
-    margin-top: 4px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-top: 6px;
   }
   a.nav-link, button.ghost {
     pointer-events: auto;
@@ -124,38 +101,37 @@
     background: transparent;
     border: 1px solid var(--line);
     text-decoration: none;
-    font-family: inherit;
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    padding: 6px 12px;
-    border-radius: 3px;
+    font-family: var(--sans);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    padding: 7px 13px;
+    border-radius: 5px;
     cursor: pointer;
-    margin-top: 8px;
+    margin-top: 10px;
     display: inline-block;
-    transition: background 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, border-color 0.2s;
   }
   a.nav-link:hover, button.ghost:hover {
-    background: rgba(91,233,255,0.08);
-    box-shadow: 0 0 12px rgba(91,233,255,0.35);
+    background: rgba(201,168,117,0.10);
+    border-color: var(--amber);
   }
   a.nav-link:focus-visible, button.ghost:focus-visible, #gate button:focus-visible, #terms-gate button:focus-visible,
   #detail .close:focus-visible, g.node:focus-visible {
-    outline: 2px solid #fff;
+    outline: 2px solid var(--amber);
     outline-offset: 3px;
   }
 
   /* ---------- ticker log ---------- */
   #log {
     position: fixed;
-    bottom: 22px;
+    bottom: 26px;
     left: 60px;
     width: 420px;
     max-height: 150px;
     overflow: hidden;
     z-index: 5;
-    font-size: 11px;
-    line-height: 1.7;
+    font-size: 11.5px;
+    line-height: 1.8;
     pointer-events: none;
     -webkit-mask-image: linear-gradient(to top, black 60%, transparent), linear-gradient(to right, black 82%, transparent);
     -webkit-mask-composite: source-in;
@@ -165,29 +141,30 @@
   #log .entry { opacity: 0; animation: fadein 0.4s forwards; white-space: nowrap; }
   #log .tag { color: var(--amber); }
   #log .tag.dim { color: var(--cyan-dim); }
-  @keyframes fadein { to { opacity: 0.8; } }
+  @keyframes fadein { to { opacity: 0.85; } }
 
   /* ---------- stat rail ---------- */
   #stats {
     position: fixed;
-    bottom: 22px;
+    bottom: 26px;
     right: 60px;
     z-index: 5;
     display: flex;
-    gap: 28px;
+    gap: 32px;
     pointer-events: none;
   }
   #stats .stat { text-align: right; }
   #stats .stat .n {
-    font-size: 26px;
+    font-family: var(--serif);
+    font-size: 28px;
     color: var(--cyan);
-    text-shadow: 0 0 14px rgba(91,233,255,0.6);
   }
   #stats .stat .l {
-    font-size: 9px;
-    letter-spacing: 0.2em;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
     color: var(--cyan-dim);
     text-transform: uppercase;
+    margin-top: 2px;
   }
 
   /* ---------- auth gate ---------- */
@@ -198,53 +175,52 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(ellipse at center, #061019 0%, #010204 80%);
+    background: radial-gradient(ellipse at center, #1b1e28 0%, #0c0e13 80%);
   }
   #gate .panel, #terms-gate .panel {
     width: 360px;
-    padding: 28px;
+    padding: 32px;
     border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--glass);
-    box-shadow: 0 0 40px rgba(91,233,255,0.12), inset 0 0 40px rgba(91,233,255,0.04);
+    border-radius: 12px;
+    background: #1b1e27;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.45);
   }
   #gate h1, #terms-gate h1 {
-    font-size: 13px;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    margin: 0 0 4px;
+    font-family: var(--serif);
+    font-size: 20px;
+    letter-spacing: 0.01em;
+    margin: 0 0 6px;
   }
-  #gate .tag, #terms-gate .tag { font-size: 10px; color: var(--cyan-dim); letter-spacing: 0.15em; margin-bottom: 20px; }
-  #gate label, #terms-gate label { display: block; font-size: 10px; letter-spacing: 0.15em; color: var(--cyan-dim); margin: 14px 0 6px; text-transform: uppercase; }
+  #gate .tag, #terms-gate .tag { font-size: 11px; color: var(--cyan-dim); letter-spacing: 0.06em; margin-bottom: 22px; }
+  #gate label, #terms-gate label { display: block; font-size: 10.5px; letter-spacing: 0.12em; color: var(--cyan-dim); margin: 16px 0 7px; text-transform: uppercase; }
   #gate input, #terms-gate input {
     width: 100%;
-    background: rgba(0,0,0,0.4);
+    background: rgba(0,0,0,0.25);
     border: 1px solid var(--line);
     color: var(--cyan);
-    padding: 9px 10px;
-    font-family: inherit;
-    font-size: 13px;
-    border-radius: 3px;
+    padding: 10px 11px;
+    font-family: var(--sans);
+    font-size: 13.5px;
+    border-radius: 6px;
   }
-  #gate input:focus, #terms-gate input:focus { outline: none; box-shadow: 0 0 10px rgba(91,233,255,0.4); }
+  #gate input:focus, #terms-gate input:focus { outline: none; border-color: var(--amber); }
   #gate button, #terms-gate button {
-    margin-top: 20px;
+    margin-top: 22px;
     width: 100%;
-    padding: 10px;
-    background: rgba(91,233,255,0.12);
-    border: 1px solid var(--cyan);
-    color: var(--cyan);
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    font-size: 11px;
-    border-radius: 3px;
+    padding: 11px;
+    background: rgba(201,168,117,0.14);
+    border: 1px solid var(--amber);
+    color: var(--amber);
+    letter-spacing: 0.08em;
+    font-size: 12px;
+    border-radius: 6px;
     cursor: pointer;
-    font-family: inherit;
+    font-family: var(--sans);
   }
-  #gate button:hover, #terms-gate button:hover { background: rgba(91,233,255,0.22); }
-  #gate .or-divider, #terms-gate .or-divider { text-align: center; font-size: 10px; letter-spacing: 0.15em; color: var(--cyan-dim); margin: 14px 0; }
+  #gate button:hover, #terms-gate button:hover { background: rgba(201,168,117,0.24); }
+  #gate .or-divider, #terms-gate .or-divider { text-align: center; font-size: 10px; letter-spacing: 0.1em; color: var(--cyan-dim); margin: 16px 0; text-transform: uppercase; }
   #gate .demo-btn { display: block; width: 100%; margin-top: 0; text-align: center; }
-  #gate .err, #terms-gate .err { color: var(--red); font-size: 11px; margin-top: 12px; min-height: 14px; }
+  #gate .err, #terms-gate .err { color: var(--red); font-size: 11.5px; margin-top: 12px; min-height: 14px; }
 
   /* ---------- node detail panel ---------- */
   #detail {
@@ -254,61 +230,57 @@
     width: 380px;
     height: 100%;
     z-index: 15;
-    background: rgba(3,8,14,0.88);
+    background: rgba(20,23,31,0.93);
     border-left: 1px solid var(--line);
     backdrop-filter: blur(6px);
+    box-shadow: -20px 0 50px rgba(0,0,0,0.35);
     transition: right 0.35s cubic-bezier(.2,.8,.2,1);
     padding: 70px 26px 26px;
     overflow-y: auto;
   }
   #detail.open { right: 0; }
   #detail h2 {
-    font-size: 14px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    margin: 0 0 4px;
+    font-family: var(--serif);
+    font-size: 17px;
+    letter-spacing: 0.01em;
+    margin: 0 0 5px;
     color: var(--amber);
   }
-  #detail .count { font-size: 11px; color: var(--cyan-dim); margin-bottom: 18px; letter-spacing: 0.1em; }
+  #detail .count { font-size: 11.5px; color: var(--cyan-dim); margin-bottom: 20px; letter-spacing: 0.03em; }
   #detail .lead {
     border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 10px 12px;
+    border-radius: 8px;
+    padding: 11px 13px;
     margin-bottom: 10px;
-    font-size: 12px;
-    background: rgba(91,233,255,0.03);
+    font-size: 12.5px;
+    background: rgba(255,255,255,0.02);
   }
-  #detail .lead .name { color: var(--cyan); font-weight: bold; margin-bottom: 3px; }
-  #detail .lead .meta { color: var(--cyan-dim); font-size: 10px; letter-spacing: 0.05em; }
+  #detail .lead .name { color: var(--cyan); font-weight: 600; margin-bottom: 3px; }
+  #detail .lead .meta { color: var(--cyan-dim); font-size: 10.5px; }
   #detail .close {
     position: absolute;
-    top: 24px;
+    top: 26px;
     right: 26px;
     cursor: pointer;
     font-size: 11px;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.1em;
     color: var(--cyan-dim);
     background: none;
     border: none;
-    font-family: inherit;
+    font-family: var(--sans);
   }
-  #detail .empty { color: var(--cyan-dim); font-size: 12px; }
+  #detail .empty { color: var(--cyan-dim); font-size: 12.5px; }
 </style>
 </head>
 <body>
 
 <div id="stars"></div>
-<div id="scanline"></div>
 <div id="vignette"></div>
 <div id="grain"></div>
-<div class="bracket tl"></div>
-<div class="bracket tr"></div>
-<div class="bracket bl"></div>
-<div class="bracket br"></div>
 
 <header class="hud">
   <div class="brand">
-    LEADRECOVERY <span style="color:var(--amber)">CORE</span>
+    LeadRecovery <span style="color:var(--amber); font-style:italic;">Command Center</span>
     <div class="sub" id="tenant-label" aria-live="polite">NOT CONNECTED</div>
     <a class="nav-link" href="dashboard.html">&larr; list view</a>
     <a class="nav-link" href="settings.html">settings</a>
@@ -352,14 +324,14 @@
   </div>
 </div>
 
-<div id="terms-gate" role="dialog" aria-modal="true" aria-labelledby="terms-gate-title" style="display:none; position:fixed; inset:0; z-index:25; align-items:center; justify-content:center; background:radial-gradient(ellipse at center, #061019 0%, #010204 80%);">
+<div id="terms-gate" role="dialog" aria-modal="true" aria-labelledby="terms-gate-title" style="display:none; position:fixed; inset:0; z-index:25; align-items:center; justify-content:center; background:radial-gradient(ellipse at center, #1b1e28 0%, #0c0e13 80%);">
   <div class="panel" style="width:400px;">
     <h1 id="terms-gate-title">Before You Continue</h1>
     <div class="tag" style="margin-bottom:16px; text-transform:none; letter-spacing:normal; font-size:12px; line-height:1.6;">
       Please review and accept LeadRecovery's
-      <a href="terms.html" target="_blank" rel="noopener" style="color:var(--cyan);">Terms of Service</a>
+      <a href="terms.html" target="_blank" rel="noopener" style="color:var(--amber); text-decoration:underline;">Terms of Service</a>
       and
-      <a href="privacy.html" target="_blank" rel="noopener" style="color:var(--cyan);">Privacy Policy</a>
+      <a href="privacy.html" target="_blank" rel="noopener" style="color:var(--amber); text-decoration:underline;">Privacy Policy</a>
       before using this dashboard.
     </div>
     <button id="terms-gate-accept">I Agree — Continue</button>
@@ -483,11 +455,11 @@
   const starsEl = document.getElementById("stars");
   function buildStars() {
     let svg = "<svg width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>";
-    for (let i = 0; i < 140; i++) {
-      const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 1.1 + 0.2;
-      const op = Math.random() * 0.6 + 0.1;
+    for (let i = 0; i < 70; i++) {
+      const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 0.9 + 0.2;
+      const op = Math.random() * 0.4 + 0.06;
       const dur = (Math.random() * 4 + 3).toFixed(2);
-      svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#8fe8ff" opacity="${op}">
+      svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#d9cbb0" opacity="${op}">
         <animate attributeName="opacity" values="${op};${op * 0.15};${op}" dur="${dur}s" repeatCount="indefinite" />
       </circle>`;
     }
@@ -526,18 +498,18 @@
   svg.innerHTML = `
     <defs>
       <filter id="glow" x="-200%" y="-200%" width="500%" height="500%">
-        <feGaussianBlur stdDeviation="6" result="blur" />
+        <feGaussianBlur stdDeviation="4" result="blur" />
         <feMerge>
           <feMergeNode in="blur" /><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" />
         </feMerge>
       </filter>
       <filter id="softglow" x="-200%" y="-200%" width="500%" height="500%">
-        <feGaussianBlur stdDeviation="14" />
+        <feGaussianBlur stdDeviation="10" />
       </filter>
       <radialGradient id="coreGrad" cx="50%" cy="50%" r="50%">
-        <stop offset="0%" stop-color="#eafcff" stop-opacity="0.95" />
-        <stop offset="35%" stop-color="#5be9ff" stop-opacity="0.55" />
-        <stop offset="100%" stop-color="#5be9ff" stop-opacity="0" />
+        <stop offset="0%" stop-color="#f3ede0" stop-opacity="0.9" />
+        <stop offset="35%" stop-color="#c9a875" stop-opacity="0.45" />
+        <stop offset="100%" stop-color="#c9a875" stop-opacity="0" />
       </radialGradient>
     </defs>
     <g id="halo" aria-hidden="true"></g>
@@ -547,7 +519,7 @@
     <g id="nodes"></g>
   `;
 
-  const COLOR = { cyan: "#5be9ff", amber: "#ffb454", red: "#ff5c5c" };
+  const COLOR = { cyan: "#c9a875", amber: "#d99a4e", red: "#b5555a" };
 
   let nodes = []; // { cat, x, y, count, activity, group, lastSpawn }
   let leadsByCategory = {};
@@ -613,7 +585,7 @@
     coreG().appendChild(el("circle", { cx, cy, r: coreR * 0.4, fill: "#fff", opacity: 0.9, class: "core-hot" }));
 
     nodes.forEach((n) => {
-      const path = el("path", { d: curvePath(cx, cy, n.x, n.y), fill: "none", stroke: "rgba(91,233,255,0.18)", "stroke-width": 1.2 });
+      const path = el("path", { d: curvePath(cx, cy, n.x, n.y), fill: "none", stroke: "rgba(201,168,117,0.20)", "stroke-width": 1.2 });
       path.dataset.key = n.cat.key;
       linesG().appendChild(path);
       n.pathEl = path;
@@ -634,14 +606,14 @@
       const labelY = n.y + (Math.sin(n.angle) >= 0 ? 30 : -22);
       const label = el("text", {
         x: n.x, y: labelY, "text-anchor": "middle", fill: COLOR[n.cat.color],
-        style: "font: 10px monospace; letter-spacing:1.5px; text-transform:uppercase;",
+        style: "font: 10px sans-serif; letter-spacing:1px; text-transform:uppercase;",
       });
       label.textContent = n.cat.label;
 
       const countY = labelY + (Math.sin(n.angle) >= 0 ? 14 : -14);
       const countText = el("text", {
-        x: n.x, y: countY, "text-anchor": "middle", fill: "#eafcff",
-        style: "font: bold 13px monospace;", class: "node-count",
+        x: n.x, y: countY, "text-anchor": "middle", fill: "#f3ede0",
+        style: "font: 600 14px Georgia, serif;", class: "node-count",
       });
       countText.textContent = "0";
       n.countEl = countText;

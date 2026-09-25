@@ -89,6 +89,12 @@ export interface LeadStore {
   findLeadByContact(tenantId: string, contact: { phone?: string; email?: string }): Promise<Lead | undefined>;
   createLead(lead: Lead): Promise<Lead>;
   updateLead(tenantId: string, id: string, patch: Partial<Lead>, guard?: UpdateLeadGuard): Promise<Lead | undefined>;
+  /**
+   * Permanently removes a lead (and, in Postgres, cascades to its message
+   * history — ON DELETE CASCADE, migration 0001). Used by the worker's
+   * data-retention purge (src/dataRetention.ts) — there is no undo.
+   */
+  deleteLead(tenantId: string, id: string): Promise<boolean>;
 }
 
 export interface TenantStore {

@@ -58,6 +58,12 @@ export class InMemoryLeadStore implements LeadStore {
     this.leads.set(id, updated);
     return updated;
   }
+
+  async deleteLead(tenantId: string, id: string): Promise<boolean> {
+    const existing = this.leads.get(id);
+    if (!existing || existing.tenantId !== tenantId) return false;
+    return this.leads.delete(id);
+  }
 }
 
 export class InMemoryTenantStore implements TenantStore {

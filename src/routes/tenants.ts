@@ -10,6 +10,7 @@ import { isObviouslyUnsafeWebhookHostname } from "../ssrf.js";
 import { recordAudit } from "../audit.js";
 import { CURRENT_TERMS_VERSION } from "../terms.js";
 import { resolveChannelDefaults } from "../channelDefaults.js";
+import { MAX_DATA_RETENTION_DAYS, MIN_DATA_RETENTION_DAYS } from "../dataRetention.js";
 
 const MAX_KNOWLEDGE_BASE_LENGTH = 20_000;
 
@@ -28,6 +29,12 @@ interface TenantConfigBody {
   contactPhone?: string;
   contactEmail?: string;
   website?: string;
+  /** Admin-only, required at creation — see validateTenantConfig/POST /admin/tenants. */
+  consentBasisConfirmed?: boolean;
+  /** Admin-only — see PATCH /admin/tenants/:id. */
+  carrierApprovalConfirmed?: boolean;
+  botDisclosureEnabled?: boolean;
+  dataRetentionDays?: number;
 }
 
 const MAX_CONTACT_FIELD_LENGTH = 320;
@@ -89,6 +96,16 @@ function isValidStatus(status: unknown): boolean {
   return status === undefined || status === "active" || status === "suspended";
 }
 
+function isValidDataRetentionDays(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= MIN_DATA_RETENTION_DAYS &&
+    value <= MAX_DATA_RETENTION_DAYS
+  );
+}
+
 // A non-empty string, i.e. not "" or whitespace-only — a template that
 // substitutes to a blank message would otherwise drop the mandatory
 // "Reply STOP" opt-out line entirely, and messaging.ts's own
@@ -136,6 +153,15 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   if (!isValidStatus(body.status)) {
     return 'status must be "active" or "suspended"';
   }
+  if (!isValidDataRetentionDays(body.dataRetentionDays)) {
+    return `dataRetentionDays must be a whole number from ${MIN_DATA_RETENTION_DAYS} to ${MAX_DATA_RETENTION_DAYS}`;
+  }
+  if (body.botDisclosureEnabled !== undefined && typeof body.botDisclosureEnabled !== "boolean") {
+    return "botDisclosureEnabled must be a boolean";
+  }
+  if (body.carrierApprovalConfirmed !== undefined && typeof body.carrierApprovalConfirmed !== "boolean") {
+    return "carrierApprovalConfirmed must be a boolean";
+  }
   if (!isValidTemplates(body.templates)) {
     return "templates.initialGrounded/initialUngrounded/notInterestedCloser must be non-empty strings, and followUps (if set) an array of non-empty strings";
   }
@@ -180,6 +206,16 @@ function buildTenantPatch(
   if (body.contactPhone !== undefined) patch.contactPhone = body.contactPhone;
   if (body.contactEmail !== undefined) patch.contactEmail = body.contactEmail;
   if (body.website !== undefined) patch.website = body.website;
+  if (body.botDisclosureEnabled !== undefined) patch.botDisclosureEnabled = body.botDisclosureEnabled;
+  if (body.dataRetentionDays !== undefined) patch.dataRetentionDays = body.dataRetentionDays;
+  // Admin-only (gated the same as status/paddleSubscriptionId below) — the
+  // agency operator sets this after independently verifying 10DLC/WhatsApp
+  // approval with the client, not something a tenant self-attests via
+  // PATCH /tenants/me. true records a fresh confirmation timestamp; false
+  // clears it (e.g. approval lapsed/was revoked).
+  if (includeStatus && body.carrierApprovalConfirmed !== undefined) {
+    patch.carrierApprovalConfirmedAt = body.carrierApprovalConfirmed ? new Date().toISOString() : undefined;
+  }
   // Gated the same as status: both are billing/access-control state that
   // only an admin sets, never the tenant itself via PATCH /tenants/me — a
   // tenant setting its own paddleSubscriptionId could let it get matched
@@ -429,6 +465,17 @@ export function createTenantRoutes({
         contactPhone: body.contactPhone,
         contactEmail: body.contactEmail,
         website: body.website,
+        // Not enforced as an API-level requirement (that would hard-block
+        // the CLI onboarding tool, CI, and any direct integration that
+        // predates this field) — but the admin UI's "Add new client" form
+        // requires checking this box before it will submit at all. Calling
+        // the API directly without it leaves the tenant visibly unconfirmed
+        // (GET /admin/tenants shows consentBasisConfirmedAt: null) rather
+        // than silently assuming it was checked. See COMPLIANCE.md "Consent basis".
+        consentBasisConfirmedAt: body.consentBasisConfirmed ? new Date().toISOString() : undefined,
+        carrierApprovalConfirmedAt: body.carrierApprovalConfirmed ? new Date().toISOString() : undefined,
+        botDisclosureEnabled: body.botDisclosureEnabled,
+        dataRetentionDays: body.dataRetentionDays,
         createdAt: new Date().toISOString(),
       };
 

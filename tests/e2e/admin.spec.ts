@@ -48,6 +48,7 @@ test.describe("Admin UI (public/admin.html)", () => {
 
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "Africa/Johannesburg");
+    await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
     await expect(page.locator(".reveal .key")).toContainText("lr_");
@@ -58,6 +59,18 @@ test.describe("Admin UI (public/admin.html)", () => {
     page.once("dialog", (d) => d.accept());
     await card.getByRole("button", { name: "Delete" }).click();
     await expect(page.locator("#tenants")).not.toContainText(name);
+  });
+
+  test("disables Create client until the consent-basis attestation is checked", async ({ page }) => {
+    await connect(page);
+    await page.fill("#new-name", uniqueName("E2E Consent Gate"));
+    await page.fill("#new-timezone", "UTC");
+
+    await expect(page.locator("#create-btn")).toBeDisabled();
+    await page.check("#new-consent-basis");
+    await expect(page.locator("#create-btn")).toBeEnabled();
+    await page.uncheck("#new-consent-basis");
+    await expect(page.locator("#create-btn")).toBeDisabled();
   });
 
   test("creating a tenant reveals a magic link, and the friendly contact fields show up in the tenant list", async ({
@@ -71,6 +84,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-phone", "(555) 123-4567");
     await page.fill("#new-email", "owner@example.com");
     await page.fill("#new-website", "https://example.com");
+    await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
     await expect(page.locator(".reveal .key")).toContainText("lr_");
@@ -112,6 +126,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.click("#new-twilio-advanced");
     await page.fill("#new-twilio-sid", "AC123");
     // authToken left blank on purpose
+    await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
     await expect(page.locator("#create-error")).toContainText("Fill in both Account SID and Auth Token");
@@ -128,6 +143,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-twilio-number", "+15551234567");
     // No DEFAULT_TWILIO_ACCOUNT_SID/DEFAULT_TWILIO_AUTH_TOKEN configured for this test server,
     // and the "own account" override was never checked.
+    await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
     await expect(page.locator("#create-error")).toContainText("no default Twilio account is configured");
@@ -138,6 +154,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await connect(page);
     await page.fill("#new-name", "");
     await page.fill("#new-timezone", "");
+    await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator("#create-error")).toContainText("required");
   });
@@ -147,6 +164,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     const name = uniqueName("E2E Suspend");
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
+    await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator(".reveal .key")).toContainText("lr_");
 
@@ -171,6 +189,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     const name = uniqueName("E2E Billing");
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
+    await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator(".reveal .key")).toContainText("lr_");
 
@@ -222,6 +241,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     const name = uniqueName("E2E Rotate");
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
+    await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
     const card = page.locator(`.card:has-text("${name}")`);
@@ -240,6 +260,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     const name = uniqueName("E2E Delete");
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
+    await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator("#tenants")).toContainText(name);
 
@@ -258,6 +279,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     const name = uniqueName("E2E Audit");
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
+    await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator("#audit-log")).toContainText("tenant.create");
 

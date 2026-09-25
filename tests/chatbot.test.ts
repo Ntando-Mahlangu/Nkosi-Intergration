@@ -95,7 +95,9 @@ describe("generateAutoReply", () => {
 
   it("returns a grounded reply for a simple FAQ-shaped question", async () => {
     mockTextResponse("We're open Monday to Friday, 8am to 5pm!");
-    const tenant = makeTenant();
+    // botDisclosureEnabled:false so this test's assertion is about grounding,
+    // not the disclosure prefix — see the dedicated "bot disclosure" tests below.
+    const tenant = makeTenant({ botDisclosureEnabled: false });
     const result = await generateAutoReply(tenant, makeLead(), [], "what are your hours?");
     expect(result.action).toBe("reply");
     expect(result.replyBody).toBe("We're open Monday to Friday, 8am to 5pm!");
@@ -246,5 +248,39 @@ describe("generateAutoReply", () => {
     const result = await generateAutoReply(makeTenant(), makeLead(), history, "another question", now);
     expect(result.action).toBe("reply");
     expect(createMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("bot disclosure (COMPLIANCE.md 'Bot disclosure')", () => {
+  beforeEach(() => {
+    createMock.mockReset();
+  });
+
+  it("prepends a disclosure note to the first auto-reply of a conversation by default", async () => {
+    mockTextResponse("We're open Mon-Fri 8am-5pm!");
+    const result = await generateAutoReply(makeTenant(), makeLead(), [], "what are your hours?");
+    expect(result.action).toBe("reply");
+    expect(result.replyBody).toMatch(/^\(Just so you know, you're chatting with an automated assistant\.\)\n\n/);
+    expect(result.replyBody).toContain("We're open Mon-Fri 8am-5pm!");
+  });
+
+  it("does not repeat the disclosure on a later auto-reply in the same conversation", async () => {
+    mockTextResponse("Sure, 24-48 hours typically.");
+    const history = [
+      inbound("what are your hours?"),
+      {
+        ...outbound("(Just so you know, you're chatting with an automated assistant.)\n\nWe're open 8-5!"),
+        kind: "auto_reply" as const,
+      },
+    ];
+    const result = await generateAutoReply(makeTenant(), makeLead(), history, "how long does a job take?");
+    expect(result.replyBody).toBe("Sure, 24-48 hours typically.");
+  });
+
+  it("never discloses when the tenant explicitly turns it off", async () => {
+    mockTextResponse("We're open Mon-Fri 8am-5pm!");
+    const tenant = makeTenant({ botDisclosureEnabled: false });
+    const result = await generateAutoReply(tenant, makeLead(), [], "what are your hours?");
+    expect(result.replyBody).toBe("We're open Mon-Fri 8am-5pm!");
   });
 });

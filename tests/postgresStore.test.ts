@@ -97,6 +97,31 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(updated?.knowledgeBase).toBe("We open at 8am and close at 5pm, Monday to Friday."); // untouched fields survive a partial update
   });
 
+  it("round-trips the legal-compliance attestation/config fields (migration 0014)", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant({
+      ...TENANT,
+      consentBasisConfirmedAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
+      carrierApprovalConfirmedAt: new Date("2026-01-02T00:00:00.000Z").toISOString(),
+      botDisclosureEnabled: false,
+      dataRetentionDays: 90,
+    });
+
+    const reread = await tenantStore.getTenant(TENANT.id);
+    expect(reread?.consentBasisConfirmedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(reread?.carrierApprovalConfirmedAt).toBe("2026-01-02T00:00:00.000Z");
+    expect(reread?.botDisclosureEnabled).toBe(false);
+    expect(reread?.dataRetentionDays).toBe(90);
+
+    const updated = await tenantStore.updateTenant(TENANT.id, {
+      carrierApprovalConfirmedAt: undefined,
+      dataRetentionDays: 30,
+    });
+    expect(updated?.carrierApprovalConfirmedAt).toBeUndefined();
+    expect(updated?.dataRetentionDays).toBe(30);
+    expect(updated?.consentBasisConfirmedAt).toBe("2026-01-01T00:00:00.000Z"); // untouched field survives
+  });
+
   it("never stores channel credentials in cleartext in the database", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant(TENANT);
@@ -348,6 +373,31 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
 
     expect(await leadStore.getLeadById("tenant-2", "lead-1")).toBeUndefined();
     expect(await leadStore.getAllLeads("tenant-2")).toHaveLength(1);
+  });
+
+  it("deleteLead removes the lead and cascades to its message history (data-retention purge)", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    const leadStore = new PostgresLeadStore(pool);
+    const messageStore = new PostgresMessageStore(pool);
+    await tenantStore.createTenant(TENANT);
+    await leadStore.createLead(LEAD);
+    await messageStore.logMessage({
+      id: "msg-to-purge",
+      tenantId: TENANT.id,
+      leadId: LEAD.id,
+      channel: "sms",
+      direction: "outbound",
+      body: "Hi Jordan...",
+      at: new Date("2026-09-01T00:00:00.000Z").toISOString(),
+    });
+
+    expect(await leadStore.deleteLead(TENANT.id, LEAD.id)).toBe(true);
+    expect(await leadStore.getLeadById(TENANT.id, LEAD.id)).toBeUndefined();
+    expect(await messageStore.getMessagesForLead(TENANT.id, LEAD.id)).toHaveLength(0);
+
+    // Already gone / wrong tenant / never existed — all false, never throw.
+    expect(await leadStore.deleteLead(TENANT.id, LEAD.id)).toBe(false);
+    expect(await leadStore.deleteLead("no-such-tenant", "no-such-lead")).toBe(false);
   });
 
   it("logs and retrieves messages for a lead in chronological order", async () => {

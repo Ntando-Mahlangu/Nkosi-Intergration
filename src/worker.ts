@@ -10,6 +10,8 @@ import { installFatalErrorHandlers } from "./fatalErrorHandlers.js";
 import { acquireWorkerLockOrExit } from "./workerLock.js";
 import { withTenantWorkflowLock } from "./workflowLock.js";
 import { sendOperatorAlert } from "./operatorAlert.js";
+import { isPastRetention, retentionDaysFor } from "./dataRetention.js";
+import type { Tenant } from "./types.js";
 
 // This file is always run directly (nothing else imports it), so this is
 // always the actual process entrypoint — safe to install unconditionally,
@@ -87,15 +89,45 @@ async function redeliverFailedNotifications(stores: Stores): Promise<void> {
   });
 }
 
+/**
+ * Purges leads (and, in Postgres, their cascaded message history) once
+ * they're both closed-out and past the tenant's data-retention window (see
+ * src/dataRetention.ts / COMPLIANCE.md "Data handling"). Runs for every
+ * tenant regardless of status/terms-acceptance — this is a data-hygiene
+ * obligation independent of whether the agency is currently allowed to
+ * contact the tenant's leads, not a "send" this app gates elsewhere.
+ */
+async function purgeExpiredLeads(tenants: Tenant[], now: Date): Promise<void> {
+  for (const tenant of tenants) {
+    const retentionDays = retentionDaysFor(tenant);
+    let leads: Awaited<ReturnType<typeof stores.leadStore.getAllLeads>>;
+    try {
+      leads = await stores.leadStore.getAllLeads(tenant.id);
+    } catch (err) {
+      logger.error("retention_purge_list_failed", { tenantId: tenant.id, error: (err as Error).message });
+      continue;
+    }
+    for (const lead of leads) {
+      if (!isPastRetention(lead, retentionDays, now)) continue;
+      try {
+        await stores.leadStore.deleteLead(tenant.id, lead.id);
+        logger.info("lead_purged_retention", { tenantId: tenant.id, leadId: lead.id, retentionDays });
+      } catch (err) {
+        logger.error("retention_purge_failed", { tenantId: tenant.id, leadId: lead.id, error: (err as Error).message });
+      }
+    }
+  }
+}
+
 async function runOnce(): Promise<void> {
-  // Never run for a suspended tenant, nor one that hasn't accepted
-  // LeadRecovery's own Terms of Service/Privacy Policy yet — a brand-new
-  // tenant starts unaccepted (see migration 0013) until it accepts via
-  // POST /tenants/me/accept-terms.
-  const tenants = (await stores.tenantStore.listTenants()).filter(
-    (t) => t.status !== "suspended" && Boolean(t.termsAcceptedAt)
-  );
+  const allTenants = await stores.tenantStore.listTenants();
   const now = new Date();
+
+  // Never run the outreach workflow for a suspended tenant, nor one that
+  // hasn't accepted LeadRecovery's own Terms of Service/Privacy Policy yet —
+  // a brand-new tenant starts unaccepted (see migration 0013) until it
+  // accepts via POST /tenants/me/accept-terms.
+  const tenants = allTenants.filter((t) => t.status !== "suspended" && Boolean(t.termsAcceptedAt));
 
   await mapWithConcurrency(tenants, CONCURRENCY, async (tenant) => {
     try {
@@ -116,6 +148,7 @@ async function runOnce(): Promise<void> {
   });
 
   await redeliverFailedNotifications(stores);
+  await purgeExpiredLeads(allTenants, now);
 
   if (process.env.DATABASE_URL) {
     await cleanupExpiredRateLimitCounters(getPool());

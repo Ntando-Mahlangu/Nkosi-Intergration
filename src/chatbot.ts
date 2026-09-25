@@ -17,6 +17,15 @@ const MAX_HISTORY_MESSAGES = 16;
 const MAX_AUTO_REPLIES_PER_WINDOW = 5;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 
+/**
+ * Prepended once, to the first auto-reply of a conversation, when
+ * tenant.botDisclosureEnabled isn't explicitly false — several jurisdictions
+ * require proactively disclosing an automated system in commercial
+ * messaging (e.g. California's B.O.T. Act) rather than only disclosing when
+ * asked. See COMPLIANCE.md "Bot disclosure".
+ */
+const BOT_DISCLOSURE_NOTE = "(Just so you know, you're chatting with an automated assistant.)";
+
 function buildSystemPrompt(tenant: Tenant, lead: Lead): string {
   return [
     `You are answering customer messages on behalf of ${tenant.name}.`,
@@ -121,7 +130,11 @@ export async function generateAutoReply(
     if (!text || ESCALATE_PATTERN.test(text)) {
       return { action: "escalate" };
     }
-    return { action: "reply", replyBody: text };
+
+    const disclosureEnabled = tenant.botDisclosureEnabled !== false;
+    const isFirstAutoReply = !history.some((m) => m.kind === "auto_reply");
+    const replyBody = disclosureEnabled && isFirstAutoReply ? `${BOT_DISCLOSURE_NOTE}\n\n${text}` : text;
+    return { action: "reply", replyBody };
   } catch (err) {
     logger.error("chatbot_reply_failed", { tenantId: tenant.id, leadId: lead.id, error: (err as Error).message });
     return { action: "escalate" };

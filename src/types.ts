@@ -273,6 +273,48 @@ export interface Tenant {
   termsAcceptedAt?: string;
   /** Which CURRENT_TERMS_VERSION (src/terms.ts) was accepted — lets a future material change require re-acceptance instead of silently carrying over an old agreement. */
   termsVersion?: string;
+  /**
+   * When the agency operator confirmed (on the client's behalf, at
+   * onboarding) that this client has a documented lawful basis to contact
+   * every lead it imports — an existing inquiry, a prior customer
+   * relationship, explicit opt-in, etc. (see COMPLIANCE.md "Consent
+   * basis"). Required to create a tenant at all (POST /admin/tenants
+   * rejects a request that doesn't set it); pre-existing tenants from
+   * before this field existed are grandfathered (migration 0014) rather
+   * than retroactively blocked. This is an audit record of the decision,
+   * not something the system can independently verify.
+   */
+  consentBasisConfirmedAt?: string;
+  /**
+   * When the agency operator confirmed this client has completed the
+   * carrier-side approval required to send SMS/WhatsApp at volume — 10DLC
+   * registration (US) and/or WhatsApp Business template approval via
+   * Twilio (see COMPLIANCE.md "SMS / WhatsApp (Twilio)"). Unset blocks the
+   * sms/whatsapp channels specifically (selectChannel in
+   * src/channels/index.ts falls back to email, or skips the lead if none
+   * is usable) — email is unaffected, and devMode always bypasses this.
+   * Pre-existing tenants are grandfathered (migration 0014).
+   */
+  carrierApprovalConfirmedAt?: string;
+  /**
+   * Whether the auto-reply chatbot proactively discloses (in the first
+   * auto-reply of a conversation) that the customer is talking to an
+   * automated assistant, ahead of being asked — some jurisdictions require
+   * this (e.g. California's B.O.T. Act) rather than only disclosing when
+   * asked. Defaults to true (recommended) when unset; only takes effect
+   * when autoReplyEnabled + knowledgeBase are also configured. See
+   * src/chatbot.ts and COMPLIANCE.md "Bot disclosure".
+   */
+  botDisclosureEnabled?: boolean;
+  /**
+   * How many days of inactivity after a lead reaches a closed-out status
+   * (do_not_contact, unqualified, fraudulent, converted, opted_out) before
+   * the worker automatically purges it (and its message history) — a
+   * data-retention-limitation control (see COMPLIANCE.md "Data handling").
+   * Unset uses DEFAULT_DATA_RETENTION_DAYS (src/dataRetention.ts). Never
+   * purges a lead still active in the funnel, regardless of age.
+   */
+  dataRetentionDays?: number;
   createdAt: string;
 }
 

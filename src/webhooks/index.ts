@@ -4,7 +4,7 @@ import multer from "multer";
 import type { Stores } from "../store/index.js";
 import { classifyReply } from "../reply/classify.js";
 import { generateAutoReply } from "../chatbot.js";
-import { safeSend } from "../channels/index.js";
+import { hasCarrierApproval, safeSend } from "../channels/index.js";
 import { requireTenantAuth } from "../middleware/auth.js";
 import { createWebhookLimiter } from "../middleware/rateLimit.js";
 import { generateId } from "../idgen.js";
@@ -98,6 +98,11 @@ async function sendAndLog(
   message: ComposedMessage,
   kind: NonNullable<Message["kind"]>
 ): Promise<void> {
+  if (!hasCarrierApproval(tenant, message.channel)) {
+    logger.warn("send_blocked_carrier_approval", { kind, leadId: lead.id, channel: message.channel });
+    return;
+  }
+
   const messageId = generateId("msg");
   // safeSend never throws — a provider SDK (Twilio/SendGrid) can throw on a
   // provider-level error, not just return {ok: false}, and without that
