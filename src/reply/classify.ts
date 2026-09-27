@@ -25,7 +25,15 @@ function keywordPattern(keyword: string): RegExp {
   return new RegExp(`(?<![a-z0-9_-])${escapeRegExp(keyword)}(?![a-z0-9_-])`);
 }
 
-const STOP_KEYWORDS = ["stop", "unsubscribe", "cancel", "quit", "remove me", "opt out", "optout"].map(keywordPattern);
+// "stopall" is one of the standard carrier/CTIA opt-out keywords (alongside
+// STOP/UNSUBSCRIBE/CANCEL/QUIT) — listed explicitly, not just relying on
+// "stop" to match inside it: keywordPattern's word-boundary check means
+// "stop" alone does NOT match within "stopall" (the "a" right after "stop"
+// fails the (?![a-z0-9_-]) lookahead), so without this a STOPALL reply fell
+// through to "unknown" instead of being suppressed.
+const STOP_KEYWORDS = ["stop", "stopall", "unsubscribe", "cancel", "quit", "remove me", "opt out", "optout"].map(
+  keywordPattern
+);
 const NEGATIVE_KEYWORDS = ["not interested", "no thanks", "not now", "already sorted", "nah"].map(keywordPattern);
 const POSITIVE_KEYWORDS = ["yes", "yeah", "yep", "sure", "interested", "please", "book", "sounds good"].map(
   keywordPattern

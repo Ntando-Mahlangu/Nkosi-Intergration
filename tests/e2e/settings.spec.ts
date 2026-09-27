@@ -130,4 +130,36 @@ test.describe("Settings (public/settings.html)", () => {
     // Leave the tenant blank for any later run of this suite.
     await resetToBlank(page);
   });
+
+  test("bot disclosure defaults on, and data-retention-days round-trips and validates its range", async ({ page }) => {
+    await connect(page);
+    // botDisclosureEnabled defaults to true (recommended) when unset.
+    await expect(page.locator("#bot-disclosure-enabled")).toBeChecked();
+
+    await page.uncheck("#bot-disclosure-enabled");
+    await page.fill("#data-retention-days", "90");
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toHaveText("Saved.");
+
+    await page.reload();
+    await expect(page.locator("#app")).toBeVisible();
+    await expect(page.locator("#bot-disclosure-enabled")).not.toBeChecked();
+    await expect(page.locator("#data-retention-days")).toHaveValue("90");
+
+    await page.fill("#data-retention-days", "5"); // below the 30-day floor
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toContainText("30 to 3650");
+
+    // Leave botDisclosureEnabled back at its default for any later run of
+    // this suite. There's no "clear" for dataRetentionDays once set (an
+    // empty field just leaves the last saved value in place, same as any
+    // other field this form doesn't submit when blank) — 90 days lingering
+    // on the demo tenant doesn't affect anything else in this suite. Still
+    // need to fix up the field's current value (left at "5" by the
+    // validation check above) so this save doesn't fail the same check.
+    await page.fill("#data-retention-days", "90");
+    await page.check("#bot-disclosure-enabled");
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toHaveText("Saved.");
+  });
 });

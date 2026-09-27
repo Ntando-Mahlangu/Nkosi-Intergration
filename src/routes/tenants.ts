@@ -402,6 +402,21 @@ export function createTenantRoutes({
         res.status(400).json({ error });
         return;
       }
+      // Same validation/shared-default-filling POST /admin/tenants already
+      // applies to `channels` — without this, a PATCH could store a channel
+      // POST would have rejected (e.g. fromNumber with no accountSid/
+      // authToken and no shared default configured), which then fails at
+      // send time instead of at config time, and silently consumes the
+      // lead's preferred-channel slot instead of a workflow falling back to
+      // another channel it *can* actually send on.
+      if (body.channels !== undefined) {
+        const { channels, error: channelsError } = resolveChannelDefaults(body.channels);
+        if (channelsError) {
+          res.status(400).json({ error: channelsError });
+          return;
+        }
+        body.channels = channels;
+      }
 
       const updated = await tenantStore.updateTenant(tenant.id, buildTenantPatch(body, { includeStatus: false }));
       res.json(toPublicTenant(updated!));
@@ -514,6 +529,17 @@ export function createTenantRoutes({
       if (conflict) {
         res.status(400).json({ error: conflict });
         return;
+      }
+      // Same validation/shared-default-filling as POST /admin/tenants and
+      // PATCH /tenants/me — see that route's own comment for why this can't
+      // be skipped here.
+      if (body.channels !== undefined) {
+        const { channels, error: channelsError } = resolveChannelDefaults(body.channels);
+        if (channelsError) {
+          res.status(400).json({ error: channelsError });
+          return;
+        }
+        body.channels = channels;
       }
 
       const updated = await tenantStore.updateTenant(req.params.id, buildTenantPatch(body, { includeStatus: true }));

@@ -8,6 +8,14 @@ describe("classifyReplyByKeyword", () => {
     expect(classifyReplyByKeyword("cancel")).toBe("stop");
   });
 
+  it("recognizes STOPALL — a standard carrier opt-out keyword 'stop' alone doesn't match inside", () => {
+    // Regression test: keywordPattern's word-boundary check means "stop"
+    // does NOT match within "stopall" (the "a" right after fails the
+    // negative lookahead) — STOPALL needs its own listed keyword.
+    expect(classifyReplyByKeyword("STOPALL")).toBe("stop");
+    expect(classifyReplyByKeyword("stopall please")).toBe("stop");
+  });
+
   it("recognizes questions", () => {
     expect(classifyReplyByKeyword("how much would that cost?")).toBe("question");
   });

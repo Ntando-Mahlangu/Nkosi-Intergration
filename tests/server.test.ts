@@ -245,6 +245,36 @@ describe("PATCH /leads/:id", () => {
   });
 });
 
+describe("DELETE /leads/:id", () => {
+  const DEMO_API_KEY = "demo-key";
+
+  it("requires tenant auth", async () => {
+    const res = await request(createApp()).delete("/leads/some-id");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 for a lead that doesn't belong to this tenant", async () => {
+    const res = await request(createApp()).delete("/leads/no-such-lead").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("permanently removes a lead — a right-to-erasure request, distinct from the automatic retention purge", async () => {
+    const app = createApp();
+    const before = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = before.body[0].id;
+
+    const res = await request(app).delete(`/leads/${leadId}`).set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(res.status).toBe(204);
+
+    const after = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(after.body.some((l: { id: string }) => l.id === leadId)).toBe(false);
+
+    // Already gone — a second delete is a clean 404, not an error.
+    const again = await request(app).delete(`/leads/${leadId}`).set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(again.status).toBe(404);
+  });
+});
+
 describe("POST /leads/import", () => {
   const DEMO_API_KEY = "demo-key";
 

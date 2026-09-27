@@ -146,15 +146,30 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
   rest and access is restricted appropriately, and agree a data-retention
   policy with the client.
 - **Data-retention purging is automatic, not just a policy on paper.**
-  Once a lead reaches a closed-out status (`do_not_contact`, `unqualified`,
-  `fraudulent`, `converted`, `opted_out`) and stays inactive past the
-  tenant's retention window, the worker permanently deletes it (and its
-  message history, cascaded) on its next tick — see `src/dataRetention.ts`.
-  A lead still active in the funnel is never auto-purged regardless of age.
-  Defaults to `DEFAULT_DATA_RETENTION_DAYS` (365 days) unless overridden
-  per tenant via `dataRetentionDays` (30-3650 days, settable by the tenant
-  itself via `PATCH /tenants/me` or by an admin) — set it to match
-  whatever retention period you actually agreed with the client.
+  Once a lead reaches a closed-out status (`unqualified`, `fraudulent`,
+  `converted`) and stays inactive past the tenant's retention window, the
+  worker permanently deletes it (and its message history, cascaded) on its
+  next tick — see `src/dataRetention.ts`. A lead still active in the
+  funnel is never auto-purged regardless of age. Defaults to
+  `DEFAULT_DATA_RETENTION_DAYS` (365 days) unless overridden per tenant via
+  `dataRetentionDays` (30-3650 days, settable by the tenant itself via
+  `PATCH /tenants/me` or by an admin) — set it to match whatever retention
+  period you actually agreed with the client.
+  **`do_not_contact` and `opted_out` leads are deliberately exempt, no
+  matter how old** — they're the system's only record of a phone/email
+  that must never be re-contacted (`checkSuppression` in
+  `compliance.ts`). Leads aren't deduplicated against existing records on
+  import (`leadImport.ts` always creates a new row) or matched by contact
+  info except on an inbound reply, so purging a suppressed lead would let
+  a later re-import of the same contact (e.g. a refreshed CRM export) come
+  back in as a brand-new, un-suppressed lead and get messaged again — a
+  real re-contact risk (TCPA/CAN-SPAM), not just a data-hygiene tradeoff.
+  If you need to actually remove a specific person's data on request (a
+  right-to-erasure request), use `DELETE /leads/:id` — distinct from the
+  automatic purge above, this is an explicit, immediate removal of one
+  lead (and its message history, cascaded) regardless of status, since
+  it's the person themselves (or the business acting on their behalf)
+  asking, not an automatic age-based sweep.
 - Admin key and webhook shared-secret comparisons use constant-time
   comparison (`src/security.ts`) to avoid leaking timing information; all
   admin/webhook/tenant-authed routes are also rate limited

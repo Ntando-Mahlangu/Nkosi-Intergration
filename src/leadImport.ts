@@ -87,6 +87,18 @@ export function parseLeadsCsv(text: string, tenantId: string): ParsedLeadsCsv {
         ? new Date(appointmentAtRaw).toISOString()
         : undefined;
 
+    // Falls back to now (not just blank) both when the column is absent/blank
+    // and when it's present but unparseable — an unvalidated raw string here
+    // (e.g. "TBD", a bad locale format) would store a createdAt that's not
+    // actually a valid date. scoring.ts's daysSince() computes NaN for such
+    // a value, which makes every age-gated priority rule (recent/old lead)
+    // silently false, so a lead like this always fell through to the lowest
+    // generic priority regardless of its actual, real signals (a fresh missed
+    // call, a recent quote) — a scoring bug, not just a data-quality one.
+    const createdAtRaw = col(row, "createdat");
+    const createdAt =
+      createdAtRaw && !Number.isNaN(Date.parse(createdAtRaw)) ? new Date(createdAtRaw).toISOString() : undefined;
+
     leads.push({
       id: generateId("lead"),
       tenantId,
@@ -102,7 +114,7 @@ export function parseLeadsCsv(text: string, tenantId: string): ParsedLeadsCsv {
         const raw = col(row, "source");
         return isLeadSource(raw) ? raw : "spreadsheet";
       })(),
-      createdAt: col(row, "createdat") || new Date().toISOString(),
+      createdAt: createdAt || new Date().toISOString(),
       status: "new",
       requestedService: col(row, "requestedservice") || undefined,
       previousQuote: col(row, "previousquote") || undefined,

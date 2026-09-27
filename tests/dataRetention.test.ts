@@ -8,7 +8,7 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     tenantId: "tenant-1",
     source: "crm",
     createdAt: new Date("2020-01-01T00:00:00.000Z").toISOString(),
-    status: "opted_out",
+    status: "converted",
     ...overrides,
   };
 }
@@ -34,7 +34,15 @@ describe("isPastRetention", () => {
     }
   );
 
-  it.each(["do_not_contact", "unqualified", "fraudulent", "converted", "opted_out"] as const)(
+  it.each(["do_not_contact", "opted_out"] as const)(
+    "never purges a suppressed lead (status=%s) regardless of age — purging it would let a later re-import re-contact them with no memory of the opt-out",
+    (status) => {
+      const lead = makeLead({ status, createdAt: new Date("2000-01-01").toISOString() });
+      expect(isPastRetention(lead, 30, now)).toBe(false);
+    }
+  );
+
+  it.each(["unqualified", "fraudulent", "converted"] as const)(
     "purges a closed-out lead (status=%s) once past the retention window",
     (status) => {
       const lead = makeLead({

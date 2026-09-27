@@ -404,6 +404,7 @@ All routes except `/health` and the webhooks require `Authorization: Bearer
 | GET | `/leads/plan` | Dry run: scored + composed plans, nothing sent. Same optional pagination |
 | GET | `/leads/:id/messages` | Conversation history for one lead (includes delivery status) |
 | PATCH | `/leads/:id` | Update one lead's `name`/`requestedService`/`previousQuote`/`notes`/`preferredChannel`/`appointmentStatus`/`appointmentAt`. Never accepts `status` — that's compliance-sensitive and only ever set by the classify/workflow logic. Clearing `appointmentAt` also clears `appointmentReminderSentAt`, so rescheduling gets a fresh reminder instead of being silently blocked by the old one |
+| DELETE | `/leads/:id` | Permanently delete one lead (and its messages, cascaded in Postgres) — a right-to-erasure request for a specific person, distinct from the automatic retention purge (which never touches `do_not_contact`/`opted_out` leads; see `COMPLIANCE.md`) |
 | POST | `/leads/import` | Bulk-create leads from a CSV body (`{"csv": "..."}`), same columns/validation as `npm run import-leads`; returns `{imported, skipped}`. Does not dedupe against existing leads, matching the CLI script |
 | GET | `/leads/export` | Full-fidelity export of every lead field, as CSV (default) or `?format=json` — for a client's own records or a data right-of-access request |
 | GET | `/tenants/me/report` | Activity summary for reporting/billing: lead status counts (current snapshot) + message activity (sent/replied, by kind/classification) over an optional `?since=&until=` window |

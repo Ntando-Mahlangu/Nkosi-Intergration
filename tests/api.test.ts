@@ -2369,6 +2369,75 @@ describe("admin tenant creation validation", () => {
     delete process.env.ADMIN_API_KEY;
   });
 
+  it("PATCH /tenants/me applies the same channel validation/shared-defaults as POST /admin/tenants, not just at creation", async () => {
+    // Regression test: PATCH used to store `channels` as-is with no
+    // validation at all — a tenant could PATCH in a channel POST would have
+    // rejected (e.g. fromNumber with no accountSid/authToken and no shared
+    // default configured), which then failed only at send time instead of
+    // at config time.
+    process.env.ADMIN_API_KEY = "admin-secret";
+    delete process.env.DEFAULT_TWILIO_ACCOUNT_SID;
+    delete process.env.DEFAULT_TWILIO_AUTH_TOKEN;
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Acme Plumbing", timezone: "UTC" });
+
+    const rejected = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${created.body.apiKey}`)
+      .send({ channels: { sms: { fromNumber: "+15551234567" } } });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error).toMatch(/no default Twilio account is configured/);
+
+    process.env.DEFAULT_TWILIO_ACCOUNT_SID = "AC_shared";
+    process.env.DEFAULT_TWILIO_AUTH_TOKEN = "shared-token";
+    const accepted = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${created.body.apiKey}`)
+      .send({ channels: { sms: { fromNumber: "+15551234567" } } });
+    expect(accepted.status).toBe(200);
+    const stored = await stores.tenantStore.getTenant(created.body.id);
+    expect(stored?.channels.sms).toEqual({
+      fromNumber: "+15551234567",
+      accountSid: "AC_shared",
+      authToken: "shared-token",
+    });
+
+    delete process.env.ADMIN_API_KEY;
+    delete process.env.DEFAULT_TWILIO_ACCOUNT_SID;
+    delete process.env.DEFAULT_TWILIO_AUTH_TOKEN;
+  });
+
+  it("PATCH /admin/tenants/:id applies the same channel validation as POST /admin/tenants", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    delete process.env.DEFAULT_TWILIO_ACCOUNT_SID;
+    delete process.env.DEFAULT_TWILIO_AUTH_TOKEN;
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const created = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Acme Plumbing", timezone: "UTC" });
+
+    const res = await request(app)
+      .patch(`/admin/tenants/${created.body.id}`)
+      .set("Authorization", "Bearer admin-secret")
+      .send({ channels: { sms: { fromNumber: "+15551234567", accountSid: "AC1" } } }); // accountSid with no authToken
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/must include both accountSid and authToken, or neither/);
+    delete process.env.ADMIN_API_KEY;
+  });
+
   it("rejects a contactPhone/contactEmail/website over the length cap", async () => {
     process.env.ADMIN_API_KEY = "admin-secret";
     const stores = buildStores();

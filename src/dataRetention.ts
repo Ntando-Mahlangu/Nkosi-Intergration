@@ -8,34 +8,41 @@ export const MIN_DATA_RETENTION_DAYS = 30;
 export const MAX_DATA_RETENTION_DAYS = 3650;
 
 /**
- * Statuses that mean a lead is fully closed out — no further contact is
- * planned, ever. Only these are eligible for automatic data-retention
- * purging; an active/in-flight lead (new, contacted_no_response,
- * responded, booked, active_conversation) is never auto-purged regardless
- * of age, since it's still part of the business's live pipeline.
+ * Statuses eligible for automatic data-retention purging: a lead fully
+ * closed out with no further contact planned, AND no ongoing obligation to
+ * remember *why* it's closed out. An active/in-flight lead (new,
+ * contacted_no_response, responded, booked, active_conversation) is never
+ * auto-purged regardless of age, since it's still part of the business's
+ * live pipeline.
+ *
+ * Deliberately excludes "opted_out" and "do_not_contact": those two are the
+ * system's only record that a specific phone/email must not be re-contacted
+ * (checkSuppression in compliance.ts). Leads aren't deduplicated against
+ * existing records on import (see leadImport.ts) or matched by contact info
+ * except on an inbound reply — so purging an opted-out lead would let a
+ * later re-import of the same contact (e.g. a refreshed CRM export) come
+ * back in as a brand-new "new" lead with no memory of the prior opt-out,
+ * and get messaged again. That's a real TCPA/CAN-SPAM re-contact risk, not
+ * just a data-hygiene tradeoff — so these two are exempt regardless of how
+ * old they are. "unqualified"/"fraudulent"/"converted" carry no such
+ * ongoing suppression obligation and are safe to purge.
  */
-const TERMINAL_STATUSES: ReadonlySet<LeadStatus> = new Set([
-  "do_not_contact",
-  "unqualified",
-  "fraudulent",
-  "converted",
-  "opted_out",
-]);
+const PURGE_ELIGIBLE_STATUSES: ReadonlySet<LeadStatus> = new Set(["unqualified", "fraudulent", "converted"]);
 
 export function retentionDaysFor(tenant: Pick<Tenant, "dataRetentionDays">): number {
   return tenant.dataRetentionDays ?? DEFAULT_DATA_RETENTION_DAYS;
 }
 
 /**
- * True if `lead` is both closed-out (TERMINAL_STATUSES) and has been
- * inactive for at least `retentionDays` — the two conditions the worker's
- * purge (see worker.ts) requires before permanently deleting a lead and its
- * message history. Ages off `lastContactedAt` when set, otherwise
- * `createdAt` (a lead that was imported already-closed and never actually
- * contacted).
+ * True if `lead` is both closed-out and purge-eligible (PURGE_ELIGIBLE_STATUSES)
+ * and has been inactive for at least `retentionDays` — the two conditions
+ * the worker's purge (see worker.ts) requires before permanently deleting a
+ * lead and its message history. Ages off `lastContactedAt` when set,
+ * otherwise `createdAt` (a lead that was imported already-closed and never
+ * actually contacted).
  */
 export function isPastRetention(lead: Lead, retentionDays: number, now: Date = new Date()): boolean {
-  if (!TERMINAL_STATUSES.has(lead.status)) return false;
+  if (!PURGE_ELIGIBLE_STATUSES.has(lead.status)) return false;
   const reference = lead.lastContactedAt ?? lead.createdAt;
   const ageMs = now.getTime() - new Date(reference).getTime();
   return ageMs >= retentionDays * 24 * 60 * 60 * 1000;

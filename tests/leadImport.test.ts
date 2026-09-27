@@ -84,6 +84,24 @@ describe("parseLeadsCsv", () => {
     expect(Date.parse(leads[0].createdAt)).toBeGreaterThanOrEqual(before);
   });
 
+  it("normalizes a valid createdAt to ISO", () => {
+    const csv = "phone,createdAt\n+27821111111,2024-01-15T00:00:00Z\n";
+    const { leads } = parseLeadsCsv(csv, TENANT_ID);
+    expect(leads[0].createdAt).toBe("2024-01-15T00:00:00.000Z");
+  });
+
+  it("falls back to now (not a NaN-producing raw string) for an unparseable createdAt", () => {
+    // Regression test: storing the raw CSV cell verbatim (e.g. "TBD", a bad
+    // locale format) made scoring.ts's daysSince() compute NaN, silently
+    // disabling every age-gated priority rule for that lead — it always
+    // fell through to the lowest generic priority regardless of its real
+    // signals (a fresh missed call, a recent quote).
+    const csv = "phone,createdAt\n+27821111111,TBD\n";
+    const before = Date.now();
+    const { leads } = parseLeadsCsv(csv, TENANT_ID);
+    expect(Date.parse(leads[0].createdAt)).toBeGreaterThanOrEqual(before);
+  });
+
   it("returns nothing for an empty file", () => {
     expect(parseLeadsCsv("", TENANT_ID)).toEqual({ leads: [], skippedCount: 0 });
   });

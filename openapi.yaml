@@ -436,6 +436,26 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Suspended" }
         "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [leads]
+      summary: Permanently delete one lead (a right-to-erasure request)
+      description: >
+        Cascades to the lead's message history in Postgres. No undo.
+        Distinct from the automatic data-retention purge (see
+        COMPLIANCE.md), which never touches do_not_contact/opted_out leads
+        — this endpoint deletes regardless of status, since it's an
+        explicit request for one specific person's data.
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /leads/import:
     post:

@@ -300,6 +300,29 @@ export function createApp() {
     })
   );
 
+  // A specific person's right-to-erasure request — distinct from the
+  // automatic data-retention purge (src/dataRetention.ts, src/worker.ts),
+  // which deliberately never touches do_not_contact/opted_out leads (see
+  // COMPLIANCE.md "Data handling"): an explicit request to delete one
+  // person's data overrides that exemption, since it's the person
+  // themselves (or the business acting on their behalf) asking, not an
+  // automatic age-based sweep. In Postgres this cascades to the lead's
+  // message history (ON DELETE CASCADE, migration 0001) — no undo. Before
+  // this existed, the only way to remove one lead's data was deleting the
+  // entire tenant (DELETE /admin/tenants/:id).
+  app.delete(
+    "/leads/:id",
+    ...auth,
+    asyncHandler(async (req: Request, res: Response) => {
+      const deleted = await stores.leadStore.deleteLead(req.tenant!.id, req.params.id);
+      if (!deleted) {
+        res.status(404).json({ error: "no such lead" });
+        return;
+      }
+      res.status(204).send();
+    })
+  );
+
   // Executes the full workflow: sends via channel adapters, updates lead status, logs messages.
   // Locked per tenant (see workflowLock.ts) so this can never overlap with
   // the worker's own cron tick (or another concurrent call here) for the

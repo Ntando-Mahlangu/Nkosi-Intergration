@@ -302,6 +302,33 @@
         <label for="auto-reply-enabled">Turn on auto-reply</label>
       </div>
       <div class="hint">Requires a non-empty knowledge base above — grayed out until you've written one.</div>
+
+      <div class="checkbox-row" style="margin-top:16px;">
+        <input type="checkbox" id="bot-disclosure-enabled" />
+        <label for="bot-disclosure-enabled">Proactively disclose that replies are automated</label>
+      </div>
+      <div class="hint">
+        On by default (recommended) — the first auto-reply of every conversation
+        says up front that it's an automated assistant. Some jurisdictions
+        require this (e.g. California's B.O.T. Act) — only turn it off after
+        confirming your jurisdiction doesn't.
+      </div>
+    </section>
+
+    <section>
+      <h2>Data retention</h2>
+      <div class="desc">
+        How long after a lead is fully closed out (unqualified, fraudulent, or
+        converted) before it's automatically deleted along with its message
+        history. Leads still active in your pipeline are never auto-deleted
+        regardless of age, and a lead marked do-not-contact/opted-out is never
+        auto-deleted either — that record is what stops LeadRecovery from
+        re-contacting them if they're ever imported again.
+      </div>
+      <div class="field">
+        <label for="data-retention-days">Retention period (days)</label>
+        <input type="number" id="data-retention-days" min="30" max="3650" placeholder="365 (default)" />
+      </div>
     </section>
 
     <div id="load-error" class="error" role="alert"></div>
@@ -387,6 +414,8 @@
     document.getElementById("tpl-fu-2").value = fu[2] || "";
     document.getElementById("knowledge-base").value = tenant.knowledgeBase || "";
     document.getElementById("auto-reply-enabled").checked = Boolean(tenant.autoReplyEnabled);
+    document.getElementById("bot-disclosure-enabled").checked = tenant.botDisclosureEnabled !== false;
+    document.getElementById("data-retention-days").value = tenant.dataRetentionDays || "";
     updateKbCounter();
     updateAutoReplyAvailability();
   }
@@ -537,13 +566,26 @@
 
     const knowledgeBase = val("knowledge-base");
     const autoReplyEnabled = document.getElementById("auto-reply-enabled").checked;
+    const botDisclosureEnabled = document.getElementById("bot-disclosure-enabled").checked;
+
+    const patchBody = { templates, knowledgeBase, autoReplyEnabled, botDisclosureEnabled };
+    const retentionRaw = val("data-retention-days");
+    if (retentionRaw) {
+      const retentionDays = Number(retentionRaw);
+      if (!Number.isInteger(retentionDays) || retentionDays < 30 || retentionDays > 3650) {
+        saveStatus.textContent = "Retention period must be a whole number of days from 30 to 3650.";
+        saveStatus.className = "save-status err";
+        return;
+      }
+      patchBody.dataRetentionDays = retentionDays;
+    }
 
     btn.disabled = true;
     btn.textContent = "Saving…";
     try {
       const updated = await api(session, "/tenants/me", {
         method: "PATCH",
-        body: JSON.stringify({ templates, knowledgeBase, autoReplyEnabled }),
+        body: JSON.stringify(patchBody),
       });
       fillForm(updated);
       saveStatus.textContent = "Saved.";
