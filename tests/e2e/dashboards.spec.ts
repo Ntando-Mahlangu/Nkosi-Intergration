@@ -184,6 +184,24 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
     await expect(page.locator("#tenant-label")).toHaveText("NKOSI INTEGRATIONS (DEMO)");
   });
 
+  test("never flashes the login gate while reconnecting with a persisted session", async ({ page }) => {
+    await page.goto("/");
+    await page.fill("#api-key", "demo-key");
+    await page.click("#connect-btn");
+    await expect(page.locator("#gate")).toBeHidden();
+
+    // Delay the tenant lookup so the gate's state can be checked while the
+    // reconnect is still in flight, not just after it's already resolved —
+    // proving the gate is hidden immediately on load, not only once the
+    // round trip finishes.
+    await page.route("**/tenants/me", async (route) => {
+      await new Promise((r) => setTimeout(r, 400));
+      await route.continue();
+    });
+    await page.reload();
+    await expect(page.locator("#gate")).toBeHidden({ timeout: 100 });
+  });
+
   test("a brand-new tenant sees the Terms of Service gate, and accepting it reveals the Command Center", async ({
     page,
   }) => {
@@ -252,6 +270,23 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
     await expect(page.locator("#tenant-name")).toHaveText("Nkosi Integrations (Demo)");
     await expect(page.locator("#summary")).toContainText("queued");
     await expect(page.locator("#summary")).toContainText("skipped");
+  });
+
+  test("never flashes the login panel while reconnecting with a persisted session", async ({ page }) => {
+    // Same fix as index.html's own version of this test — see that test's
+    // comment. dashboard.html/settings.html/reports.html share the same
+    // reconnect-before-hiding-the-panel logic.
+    await page.goto("/dashboard.html");
+    await page.fill("#api-key", "demo-key");
+    await page.click("#connect-btn");
+    await expect(page.locator("#auth")).toBeHidden();
+
+    await page.route("**/tenants/me", async (route) => {
+      await new Promise((r) => setTimeout(r, 400));
+      await route.continue();
+    });
+    await page.reload();
+    await expect(page.locator("#auth")).toBeHidden({ timeout: 100 });
   });
 
   test("shows an error for a bad API key", async ({ page }) => {
@@ -438,7 +473,7 @@ test.describe("Reports (public/reports.html, ROI/activity view)", () => {
 
     await page.goto("/reports.html");
     await expect(page.locator("#app")).toBeVisible();
-    await expect(page.locator("#outbound-breakdown")).toContainText("campaign");
+    await expect(page.locator("#outbound-breakdown")).toContainText("Campaign");
     // Outbound sent is the first stat card in #message-stats — the workflow
     // run above must have moved it above zero.
     const outboundSent = await page.locator("#message-stats .stat-card").first().locator(".stat-value").textContent();

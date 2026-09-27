@@ -87,8 +87,7 @@
     border-radius: 6px;
     padding: 9px 16px;
     font-size: 11px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
+    letter-spacing: 0.1em;
     cursor: pointer;
     font-weight: 600;
     font-family: inherit;
@@ -100,8 +99,7 @@
     border: 1px solid var(--border);
     color: var(--text);
     font-size: 11px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
+    letter-spacing: 0.1em;
     font-weight: 600;
   }
   button.secondary:hover, a.secondary:hover { background: rgba(201,168,117,0.08); border-color: var(--accent); }
@@ -437,6 +435,14 @@
     return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  // Turns a raw enum-shaped value (a lead status/source) into readable text
+  // — "contacted_no_response" -> "Contacted No Response".
+  function humanize(str) {
+    return String(str)
+      .replace(/[_.-]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
   /* ===================== all leads + lead detail (conversation + appointment) ===================== */
 
   let allLeadsCache = [];
@@ -456,7 +462,7 @@
         return `
       <div class="lead-row" data-index="${i}" tabindex="0" role="button" aria-haspopup="dialog">
         <span class="name">${escapeHtml(l.name || l.id)}</span>
-        <span class="lead-meta">${escapeHtml(l.status)}${apptTag}</span>
+        <span class="lead-meta">${escapeHtml(humanize(l.status))}${apptTag}</span>
       </div>`;
       })
       .join("");
@@ -503,7 +509,7 @@
 
     document.getElementById("detail-name").textContent = lead.name || lead.id;
     document.getElementById("detail-meta").textContent =
-      [lead.phone, lead.email, lead.source].filter(Boolean).join(" · ");
+      [lead.phone, lead.email, lead.source && humanize(lead.source)].filter(Boolean).join(" · ");
     document.getElementById("detail-appt-status").value = lead.appointmentStatus || "none";
     document.getElementById("detail-appt-at").value = toDatetimeLocalValue(lead.appointmentAt);
     document.getElementById("detail-appt-status-msg").textContent = "";
@@ -646,6 +652,10 @@
         showTermsGate();
       }
     } catch (err) {
+      // Restores visibility for the magic-link/persisted-session callers
+      // below, which hide the panel before calling connect() — a no-op for
+      // the manual "Connect" button, where the panel was never hidden.
+      authPanel.style.display = "";
       authError.textContent = "Could not connect: " + err.message;
     }
   }
@@ -745,15 +755,22 @@
   const linkParams = new URLSearchParams(window.location.search);
   const linkKey = linkParams.get("key");
   if (linkKey) {
+    // Hidden immediately, not just once connect() resolves — otherwise a
+    // valid magic link still flashes the login panel for the length of
+    // that network round trip before showing the app.
+    authPanel.style.display = "none";
     const linkBase = linkParams.get("base") || window.location.origin;
     history.replaceState(null, "", window.location.pathname);
     connect(linkBase, linkKey);
   } else {
     const existing = getSession();
     if (existing) {
+      // Same reasoning as the magic-link branch above — hide before the
+      // round trip, not after, so a valid persisted session never flashes
+      // the login panel at all.
+      authPanel.style.display = "none";
       loadDashboard(existing)
         .then((tenant) => {
-          authPanel.style.display = "none";
           if (tenant.termsAcceptedAt) {
             app.style.display = "block";
           } else {
@@ -762,6 +779,7 @@
         })
         .catch(() => {
           setSession(null);
+          authPanel.style.display = ""; // the persisted session turned out to be invalid — show the panel after all
         });
     }
   }

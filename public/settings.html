@@ -86,8 +86,7 @@
     border-radius: 6px;
     padding: 9px 16px;
     font-size: 11px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
+    letter-spacing: 0.1em;
     cursor: pointer;
     font-weight: 600;
     font-family: inherit;
@@ -99,8 +98,7 @@
     border: 1px solid var(--border);
     color: var(--text);
     font-size: 11px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
+    letter-spacing: 0.1em;
     font-weight: 600;
   }
   button.secondary:hover, a.secondary:hover { background: rgba(201,168,117,0.08); border-color: var(--accent); }
@@ -486,6 +484,10 @@
         showTermsGate();
       }
     } catch (err) {
+      // Restores visibility for the magic-link/persisted-session callers
+      // below, which hide the panel before calling connect() — a no-op for
+      // the manual "Connect" button, where the panel was never hidden.
+      authPanel.style.display = "";
       authError.textContent = "Could not connect: " + err.message;
     }
   }
@@ -626,15 +628,22 @@
   const linkParams = new URLSearchParams(window.location.search);
   const linkKey = linkParams.get("key");
   if (linkKey) {
+    // Hidden immediately, not just once connect() resolves — otherwise a
+    // valid magic link still flashes the login panel for the length of
+    // that network round trip before showing the app.
+    authPanel.style.display = "none";
     const linkBase = linkParams.get("base") || window.location.origin;
     history.replaceState(null, "", window.location.pathname);
     connect(linkBase, linkKey);
   } else {
     const existing = getSession();
     if (existing) {
+      // Same reasoning as the magic-link branch above — hide before the
+      // round trip, not after, so a valid persisted session never flashes
+      // the login panel at all.
+      authPanel.style.display = "none";
       loadSettings(existing)
         .then((tenant) => {
-          authPanel.style.display = "none";
           if (tenant.termsAcceptedAt) {
             app.style.display = "block";
           } else {
@@ -643,6 +652,7 @@
         })
         .catch(() => {
           setSession(null);
+          authPanel.style.display = ""; // the persisted session turned out to be invalid — show the panel after all
         });
     }
   }

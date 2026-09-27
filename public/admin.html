@@ -84,8 +84,7 @@
     border-radius: 6px;
     padding: 8px 14px;
     font-size: 11px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
+    letter-spacing: 0.1em;
     cursor: pointer;
     font-weight: 600;
     font-family: inherit;
@@ -448,6 +447,15 @@
     return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  // Turns a raw enum-shaped value (a notification reason, an audit action)
+  // into readable text — "needs_human_reply" -> "Needs Human Reply",
+  // "tenant.admin_update" -> "Tenant Admin Update".
+  function humanize(str) {
+    return String(str)
+      .replace(/[_.-]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
   // "index.html?key=..." auto-fills and auto-connects the Command Center's
   // access gate with this key, then strips it back out of the visible URL —
   // one link to send a client instead of asking them to copy/paste a raw
@@ -557,7 +565,7 @@
             <tr>
               <td><span class="badge ${n.status}">${escapeHtml(n.status)}</span></td>
               <td class="mono">${escapeHtml(n.tenantId)}</td>
-              <td>${escapeHtml(n.reason)}</td>
+              <td>${escapeHtml(humanize(n.reason))}</td>
               <td>${n.attempts}</td>
               <td>${escapeHtml(n.lastError || "")}</td>
               <td>${escapeHtml(new Date(n.lastAttemptAt).toLocaleString())}</td>
@@ -590,7 +598,7 @@
               (e) => `
             <tr>
               <td>${escapeHtml(new Date(e.createdAt).toLocaleString())}</td>
-              <td>${escapeHtml(e.action)}</td>
+              <td>${escapeHtml(humanize(e.action))}</td>
               <td class="mono">${escapeHtml(e.tenantId || "")}</td>
               <td class="mono">${e.details ? escapeHtml(JSON.stringify(e.details)) : ""}</td>
             </tr>`
@@ -845,14 +853,18 @@
 
   const existing = getSession();
   if (existing) {
+    // Hidden immediately, not just once loadAll() resolves — otherwise a
+    // valid persisted session still flashes the login panel for the length
+    // of that network round trip before showing the app.
+    authPanel.style.display = "none";
     loadAll(existing)
       .then(() => {
         document.getElementById("host-sub").textContent = existing.baseUrl;
-        authPanel.style.display = "none";
         app.style.display = "block";
       })
       .catch(() => {
         setSession(null);
+        authPanel.style.display = ""; // the persisted session turned out to be invalid — show the panel after all
       });
   }
 })();

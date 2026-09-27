@@ -248,7 +248,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     page.once("dialog", (d) => d.accept());
     await card.getByRole("button", { name: "Rotate key" }).click();
     await expect(page.locator(".reveal .key")).toContainText("lr_");
-    await expect(page.locator("#audit-log")).toContainText("tenant.key_rotate");
+    await expect(page.locator("#audit-log")).toContainText("Tenant Key Rotate");
 
     page.once("dialog", (d) => d.accept());
     await card.getByRole("button", { name: "Delete" }).click();
@@ -281,12 +281,12 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-timezone", "UTC");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
-    await expect(page.locator("#audit-log")).toContainText("tenant.create");
+    await expect(page.locator("#audit-log")).toContainText("Tenant Create");
 
     const card = page.locator(`.card:has-text("${name}")`);
     page.once("dialog", (d) => d.accept());
     await card.getByRole("button", { name: "Delete" }).click();
-    await expect(page.locator("#audit-log")).toContainText("tenant.delete");
+    await expect(page.locator("#audit-log")).toContainText("Tenant Delete");
   });
 
   test("paginates the tenant list once there are more than one page's worth", async ({ page }) => {
@@ -437,6 +437,17 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.reload();
     await expect(page.locator("#app")).toBeVisible();
     await expect(page.locator("#auth")).toBeHidden();
+  });
+
+  test("never flashes the login panel while reconnecting with a persisted session", async ({ page }) => {
+    await connect(page);
+
+    await page.route("**/admin/tenants*", async (route) => {
+      await new Promise((r) => setTimeout(r, 400));
+      await route.continue();
+    });
+    await page.reload();
+    await expect(page.locator("#auth")).toBeHidden({ timeout: 100 });
   });
 
   test("disconnect returns to the auth panel and clears the session", async ({ page }) => {

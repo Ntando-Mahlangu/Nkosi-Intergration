@@ -373,6 +373,10 @@
         showTermsGate();
       }
     } catch (err) {
+      // Restores visibility for the magic-link/persisted-session callers
+      // above, which hide the gate before calling connect() — a no-op for
+      // the manual "Establish Link" button below, where the gate was never hidden.
+      gate.style.display = "";
       gateErr.textContent = "Link failed: " + err.message;
     }
   }
@@ -782,7 +786,7 @@
         .map(
           (l) => `<div class="lead">
             <div class="name">${escapeHtml(l.name || l.id)}</div>
-            <div class="meta">${escapeHtml(l.status)} · ${escapeHtml(l.source)}${l.requestedService ? " · " + escapeHtml(l.requestedService) : ""}</div>
+            <div class="meta">${escapeHtml(humanize(l.status))} · ${escapeHtml(humanize(l.source))}${l.requestedService ? " · " + escapeHtml(l.requestedService) : ""}</div>
           </div>`
         )
         .join("");
@@ -807,6 +811,14 @@
 
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // Turns a raw enum-shaped value (a lead status/source) into readable text
+  // — "contacted_no_response" -> "Contacted No Response".
+  function humanize(str) {
+    return String(str)
+      .replace(/[_.-]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   /* ===================== boot ===================== */
@@ -855,20 +867,30 @@
   const linkParams = new URLSearchParams(window.location.search);
   const linkKey = linkParams.get("key");
   if (linkKey) {
+    // Hidden immediately, not just once connect() resolves — otherwise a
+    // valid magic link still flashes the login gate for the length of that
+    // network round trip before showing the Command Center.
+    gate.style.display = "none";
     const linkBase = linkParams.get("base") || window.location.origin;
     history.replaceState(null, "", window.location.pathname);
     connect(linkBase, linkKey);
   } else {
     const existing = getSession();
     if (existing) {
+      // Same reasoning as the magic-link branch above — hide before the
+      // round trip, not after, so a valid persisted session never flashes
+      // the login gate at all.
+      gate.style.display = "none";
       boot(existing)
         .then(({ tenant }) => {
-          gate.style.display = "none";
           if (!tenant.termsAcceptedAt) {
             showTermsGate();
           }
         })
-        .catch(() => { setSession(null); });
+        .catch(() => {
+          setSession(null);
+          gate.style.display = ""; // the persisted session turned out to be invalid — show the gate after all
+        });
     }
   }
 })();
