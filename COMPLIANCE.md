@@ -68,6 +68,14 @@ and their own leads.
   (`src/quietHours.ts`, 8pm-8am) is a reasonable starting point but confirm
   the client's specific jurisdiction's rules and adjust per tenant
   (`quietHours` on the admin/self-service tenant config).
+  **One deliberate exception**: an appointment reminder within
+  `APPOINTMENT_REMINDER_LAST_CHANCE_HOURS` (2h, `src/appointmentReminder.ts`)
+  of the appointment sends even during quiet hours rather than being
+  deferred into never sending at all — a confirmed appointment the lead
+  already agreed to is treated as transactional, not marketing. If a
+  client's jurisdiction restricts *all* outbound SMS hours with no
+  transactional exception, that's a real conflict to review with them
+  rather than something a wider `quietHours` window alone can fix.
 - **Carrier approval is a recorded, enforced gate, not just a checklist
   item**: `Tenant.carrierApprovalConfirmedAt` (set via the admin UI/API
   after you've verified 10DLC/WhatsApp approval with the client) actually
@@ -173,7 +181,20 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
 - Admin key and webhook shared-secret comparisons use constant-time
   comparison (`src/security.ts`) to avoid leaking timing information; all
   admin/webhook/tenant-authed routes are also rate limited
-  (`src/middleware/rateLimit.ts`) against brute-force/flooding.
+  (`src/middleware/rateLimit.ts`) against brute-force/flooding. The webhook
+  limiter specifically fails *open* (`passOnStoreError: true`) on a
+  transient error from its distributed Postgres-backed counter, rather than
+  the library's own default of rejecting the request — a brief DB blip must
+  never turn into every inbound webhook 500ing at once, including a lead's
+  own STOP reply or a Paddle billing event. The admin/tenant limiters keep
+  the library's default (fail closed) since those guard authenticated,
+  credentialed routes instead.
+- Twilio's `/webhooks/:tenantId/twilio/sms` route dedupes by MessageSid
+  (`Message.providerMessageId` on the inbound log entry) — the auto-reply
+  path calls out to an LLM before responding to Twilio's webhook, so a slow
+  enough response can trigger a provider-level retry of the exact same
+  message; without this, a retry would classify and reply/notify a second
+  time.
 - A client's right-of-access request — "send me a copy of everything you
   have on my leads" — is `GET /leads/export` (`?format=csv`, the default,
   or `?format=json`), every lead field as a one-shot download.

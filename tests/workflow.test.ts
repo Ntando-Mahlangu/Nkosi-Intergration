@@ -296,4 +296,36 @@ describe("runRecoveryWorkflow", () => {
     const updated = await store.getLeadById(TENANT.id, "booked-lead");
     expect(updated?.appointmentReminderSentAt).toBeUndefined();
   });
+
+  it("sends an appointment reminder even during quiet hours once it's in its last-chance window", async () => {
+    // Regression test: a tenant whose quiet hours cover every tick between a
+    // lead entering the 24h reminder window and the appointment itself would
+    // otherwise defer this reminder forever, and isDueForAppointmentReminder
+    // stops considering it due at all the instant the appointment time
+    // passes — so it would silently never send. Within the last-chance
+    // window (isLastChanceForAppointmentReminder), quiet hours are
+    // deliberately overridden rather than losing the reminder entirely.
+    const alwaysQuietTenant: Tenant = { ...TENANT, quietHours: { startHour: 0, endHour: 24 } };
+    const lead: Lead = {
+      id: "booked-lead",
+      tenantId: TENANT.id,
+      name: "Priya Naidoo",
+      phone: "+27821119999",
+      source: "booking_software",
+      createdAt: new Date("2026-09-01T00:00:00.000Z").toISOString(),
+      status: "booked",
+      appointmentStatus: "booked",
+      appointmentAt: new Date(NOW.getTime() + 60 * 60 * 1000).toISOString(), // 1h out — inside the last-chance window
+    };
+    const store = new InMemoryLeadStore([lead]);
+    const messages = new InMemoryMessageStore();
+    const result = await runRecoveryWorkflow(alwaysQuietTenant, store, messages, NOW);
+
+    expect(result.sent).toHaveLength(1);
+    expect(result.sent[0].result.ok).toBe(true);
+    expect(result.deferred.some((d) => d.lead.id === "booked-lead")).toBe(false);
+
+    const updated = await store.getLeadById(TENANT.id, "booked-lead");
+    expect(updated?.appointmentReminderSentAt).toBe(NOW.toISOString());
+  });
 });

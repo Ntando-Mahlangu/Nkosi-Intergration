@@ -34,6 +34,16 @@ function keywordPattern(keyword: string): RegExp {
 const STOP_KEYWORDS = ["stop", "stopall", "unsubscribe", "cancel", "quit", "remove me", "opt out", "optout"].map(
   keywordPattern
 );
+// "end" is also a standard carrier/CTIA opt-out keyword, but unlike the
+// others above it's deliberately NOT in STOP_KEYWORDS: as a bare word it
+// also appears constantly in ordinary conversation ("in the end I'll just
+// call", "what happens at the end of the trial?"), and keywordPattern's
+// word-boundary match would treat every one of those as an opt-out too. It's
+// only unambiguous as a reply's *entire* content, so it's checked separately
+// (exact match on the normalized, trimmed body) rather than added to the
+// substring-matched list above.
+const WHOLE_MESSAGE_STOP_KEYWORDS = new Set(["end"]);
+
 const NEGATIVE_KEYWORDS = ["not interested", "no thanks", "not now", "already sorted", "nah"].map(keywordPattern);
 const POSITIVE_KEYWORDS = ["yes", "yeah", "yep", "sure", "interested", "please", "book", "sounds good"].map(
   keywordPattern
@@ -52,6 +62,7 @@ function normalize(body: string): string {
 export function classifyReplyByKeyword(body: string): ReplyClassification {
   const text = normalize(body);
   if (STOP_KEYWORDS.some((re) => re.test(text))) return "stop";
+  if (WHOLE_MESSAGE_STOP_KEYWORDS.has(text.replace(/[.!]+$/, ""))) return "stop";
   // Negative keywords take priority over the bare "?" catch-all below: a
   // reply like "not interested, but is there a cheaper option?" must stop
   // follow-ups (see SYSTEM_PROMPT.md's "stop on any negative signal" rule),

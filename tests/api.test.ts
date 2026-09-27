@@ -1627,6 +1627,40 @@ describe("Twilio SMS/WhatsApp inbound webhook", () => {
     expect(updated?.status).toBe("opted_out");
   });
 
+  it("skips a duplicate delivery of the same inbound MessageSid instead of processing it twice", async () => {
+    // Regression test: recordInboundAndClassify calls an LLM (classifyReply's
+    // optional enhancement, generateAutoReply) before this route responds to
+    // Twilio's webhook request — a slow enough response can trigger a
+    // provider-level retry of the exact same message. Without a dedup check,
+    // a retry would re-log the inbound message, re-classify, and (for a
+    // question) send a second auto-reply to the lead.
+    stubValidSignature();
+    const tenant: Tenant = {
+      ...TENANT,
+      channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+15550000" } },
+    };
+    const stores: Stores = {
+      leadStore: new InMemoryLeadStore([LEAD]),
+      tenantStore: new InMemoryTenantStore([tenant]),
+      messageStore: new InMemoryMessageStore(),
+      notificationStore: new InMemoryNotificationStore(),
+      auditLogStore: new InMemoryAuditLogStore(),
+    };
+    const app = express();
+    app.use(createWebhookRoutes(stores));
+
+    const payload = { From: LEAD.phone, Body: "STOP", MessageSid: "SM_duplicate_test" };
+    const first = await request(app).post(`/webhooks/${tenant.id}/twilio/sms`).type("form").send(payload);
+    expect(first.status).toBe(200);
+
+    const retry = await request(app).post(`/webhooks/${tenant.id}/twilio/sms`).type("form").send(payload);
+    expect(retry.status).toBe(200);
+
+    const history = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
+    expect(history).toHaveLength(1); // not logged twice
+    expect(history[0].providerMessageId).toBe("SM_duplicate_test");
+  });
+
   it("validates a WhatsApp reply's signature against the whatsapp token when it differs from the sms token", async () => {
     // Regression test: a tenant can configure independent Twilio credentials
     // per channel (e.g. a separate (sub)account for WhatsApp), but this

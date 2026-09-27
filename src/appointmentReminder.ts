@@ -5,6 +5,15 @@ import { substituteTemplate } from "./templateSubstitute.js";
 export const APPOINTMENT_REMINDER_HOURS_BEFORE = 24;
 
 /**
+ * How close to the appointment a reminder is allowed to override quiet
+ * hours (see isLastChanceForAppointmentReminder below) rather than being
+ * deferred to a later run — deliberately much narrower than the 24h
+ * due-window above, so this only ever kicks in when the alternative is
+ * genuinely never sending it at all.
+ */
+export const APPOINTMENT_REMINDER_LAST_CHANCE_HOURS = 2;
+
+/**
  * Deliberately narrower than compliance.ts's checkSuppression, which also
  * treats "booked" (among others) as a hard stop — appropriate for recovery
  * outreach ("don't keep chasing someone who already booked"), but wrong
@@ -49,6 +58,28 @@ export function isDueForAppointmentReminder(lead: Lead, now: Date = new Date()):
 
 export function getLeadsDueForAppointmentReminder(leads: Lead[], now: Date = new Date()): Lead[] {
   return leads.filter((lead) => isDueForAppointmentReminder(lead, now));
+}
+
+/**
+ * True once a due-for-reminder lead's appointment is close enough that
+ * deferring it again for quiet hours would mean never sending it at all —
+ * isDueForAppointmentReminder above permanently stops considering a lead
+ * "due" the instant its appointment time passes (msUntil <= 0), so a tenant
+ * whose quiet-hours window happens to cover every single tick between the
+ * lead first entering the 24h window and the appointment itself would
+ * otherwise have this reminder silently vanish, with nothing distinguishing
+ * "deferred, will retry" from "deferred for the last time that mattered."
+ * See sendAppointmentReminders in workflow.ts, the only caller: within this
+ * narrow final window, it sends anyway rather than deferring for quiet
+ * hours — a confirmed appointment someone already agreed to is a
+ * transactional reminder, not a marketing send, and never sending it at
+ * all is a worse outcome than sending it slightly outside the tenant's
+ * configured quiet hours.
+ */
+export function isLastChanceForAppointmentReminder(lead: Lead, now: Date = new Date()): boolean {
+  if (!isDueForAppointmentReminder(lead, now)) return false;
+  const msUntil = Date.parse(lead.appointmentAt!) - now.getTime();
+  return msUntil <= APPOINTMENT_REMINDER_LAST_CHANCE_HOURS * 60 * 60 * 1000;
 }
 
 const DEFAULT_APPOINTMENT_REMINDER_TEMPLATE =

@@ -16,6 +16,21 @@ describe("classifyReplyByKeyword", () => {
     expect(classifyReplyByKeyword("stopall please")).toBe("stop");
   });
 
+  it("recognizes bare END (and END with trailing punctuation) as an opt-out", () => {
+    expect(classifyReplyByKeyword("END")).toBe("stop");
+    expect(classifyReplyByKeyword("  end  ")).toBe("stop");
+    expect(classifyReplyByKeyword("End.")).toBe("stop");
+    expect(classifyReplyByKeyword("end!")).toBe("stop");
+  });
+
+  it("never treats 'end' as an opt-out when it's part of a longer, ordinary reply", () => {
+    // "end" is a standard carrier opt-out keyword, but only unambiguous as a
+    // reply's entire content — as a substring match it would misclassify
+    // routine conversation as an opt-out.
+    expect(classifyReplyByKeyword("in the end I'll just call you")).not.toBe("stop");
+    expect(classifyReplyByKeyword("what happens at the end of the trial?")).not.toBe("stop");
+  });
+
   it("recognizes questions", () => {
     expect(classifyReplyByKeyword("how much would that cost?")).toBe("question");
   });

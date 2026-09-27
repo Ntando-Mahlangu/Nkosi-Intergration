@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   APPOINTMENT_REMINDER_HOURS_BEFORE,
+  APPOINTMENT_REMINDER_LAST_CHANCE_HOURS,
   composeAppointmentReminderMessage,
   getLeadsDueForAppointmentReminder,
   isDueForAppointmentReminder,
+  isLastChanceForAppointmentReminder,
 } from "../src/appointmentReminder.js";
 import type { Lead, Tenant } from "../src/types.js";
 
@@ -81,6 +83,36 @@ describe("isDueForAppointmentReminder", () => {
 
   it("never throws on an unparseable appointmentAt", () => {
     expect(isDueForAppointmentReminder(makeBookedLead({ appointmentAt: "not-a-date" }), NOW)).toBe(false);
+  });
+});
+
+describe("isLastChanceForAppointmentReminder", () => {
+  it("is false when the appointment is well outside the last-chance window", () => {
+    const lead = makeBookedLead({}); // 12h out, default fixture
+    expect(isLastChanceForAppointmentReminder(lead, NOW)).toBe(false);
+  });
+
+  it("is true once inside the last-chance window", () => {
+    const lead = makeBookedLead({
+      appointmentAt: new Date(
+        NOW.getTime() + (APPOINTMENT_REMINDER_LAST_CHANCE_HOURS - 0.5) * 60 * 60 * 1000
+      ).toISOString(),
+    });
+    expect(isLastChanceForAppointmentReminder(lead, NOW)).toBe(true);
+  });
+
+  it("is false once the lead isn't due at all (already reminded, suppressed, appointment passed, ...)", () => {
+    const alreadyReminded = makeBookedLead({
+      appointmentAt: new Date(NOW.getTime() + 30 * 60 * 1000).toISOString(),
+      appointmentReminderSentAt: NOW.toISOString(),
+    });
+    expect(isLastChanceForAppointmentReminder(alreadyReminded, NOW)).toBe(false);
+
+    const suppressed = makeBookedLead({
+      appointmentAt: new Date(NOW.getTime() + 30 * 60 * 1000).toISOString(),
+      status: "opted_out",
+    });
+    expect(isLastChanceForAppointmentReminder(suppressed, NOW)).toBe(false);
   });
 });
 

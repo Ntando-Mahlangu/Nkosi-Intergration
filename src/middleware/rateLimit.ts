@@ -34,7 +34,19 @@ export function createAdminLimiter() {
   });
 }
 
-/** Guards inbound provider webhooks against flooding/abuse; generous enough for real Twilio/SendGrid traffic. */
+/**
+ * Guards inbound provider webhooks against flooding/abuse; generous enough
+ * for real Twilio/SendGrid traffic.
+ *
+ * `passOnStoreError: true` (unlike the other two limiters below) — a
+ * transient Postgres error from the distributed store must never turn into
+ * a 500 that blocks every inbound webhook at once, including a lead's own
+ * STOP reply or a Paddle billing event. Failing open here trades a brief
+ * window of unlimited webhook traffic during a rare DB blip for never
+ * silently dropping a compliance-critical inbound message; the admin/tenant
+ * limiters below guard authenticated/credentialed routes instead, where
+ * failing closed on an uncertain store state is the safer default.
+ */
 export function createWebhookLimiter() {
   return rateLimit({
     windowMs: 60 * 1000,
@@ -42,6 +54,7 @@ export function createWebhookLimiter() {
     standardHeaders: true,
     legacyHeaders: false,
     store: distributedStoreIfConfigured("webhook"),
+    passOnStoreError: true,
   });
 }
 

@@ -136,15 +136,31 @@ async function sendAndLog(
  *   determines this needs a human (price negotiation, complaint, complex
  *   request, explicit ask for a person, or anything outside the knowledge
  *   base), notify the tenant's team instead of guessing.
+ *
+ * `providerMessageId` (Twilio's MessageSid, when the caller has one) guards
+ * against processing the same inbound delivery twice — this function calls
+ * out to an LLM (classifyReply's optional enhancement, generateAutoReply)
+ * before the caller responds to the provider's webhook request, so a slow
+ * enough response can trigger a provider-level retry of the exact same
+ * message. Without this, a retry would classify and reply/notify a second
+ * time — a duplicate auto-reply sent to the lead, or a duplicate
+ * "interested"/"needs human" alert to the tenant's team.
  */
 async function recordInboundAndClassify(
   stores: Stores,
   tenant: Tenant,
   lead: Lead,
   channel: Message["channel"],
-  body: string
+  body: string,
+  providerMessageId?: string
 ): Promise<{ classification: Awaited<ReturnType<typeof classifyReply>> }> {
   const history = await stores.messageStore.getMessagesForLead(tenant.id, lead.id);
+
+  if (providerMessageId && history.some((m) => m.providerMessageId === providerMessageId)) {
+    logger.info("inbound_duplicate_skipped", { tenantId: tenant.id, leadId: lead.id, providerMessageId });
+    return { classification: "unknown" };
+  }
+
   const classification = await classifyReply(body);
 
   await stores.messageStore.logMessage({
@@ -156,6 +172,7 @@ async function recordInboundAndClassify(
     body,
     at: new Date().toISOString(),
     classification,
+    providerMessageId,
   });
 
   if (classification === "stop") {
@@ -250,9 +267,10 @@ export function createWebhookRoutes(stores: Stores): Router {
       const channel = from?.startsWith("whatsapp:") ? "whatsapp" : "sms";
       const phone = from?.replace(/^whatsapp:/, "");
       const lead = phone ? await stores.leadStore.findLeadByContact(tenant.id, { phone }) : undefined;
+      const messageSid = req.body.MessageSid as string | undefined;
 
       if (lead) {
-        await recordInboundAndClassify(stores, tenant, lead, channel, body);
+        await recordInboundAndClassify(stores, tenant, lead, channel, body, messageSid);
       }
 
       res.type("text/xml").send("<Response></Response>");

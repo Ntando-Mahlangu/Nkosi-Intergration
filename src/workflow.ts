@@ -11,6 +11,7 @@ import {
   appointmentReminderReason,
   composeAppointmentReminderMessage,
   getLeadsDueForAppointmentReminder,
+  isLastChanceForAppointmentReminder,
 } from "./appointmentReminder.js";
 import { generateId } from "./idgen.js";
 
@@ -185,8 +186,11 @@ async function sendPlans(
  * folded in as a third branch, since the post-send bookkeeping is genuinely
  * different (a bookkeeping flag, not a status/follow-up-count transition)
  * and reusing sendPlans's initial/follow-up-shaped patch logic for this
- * would need its own branch there anyway. Still mirrors sendPlans's quiet-
- * hours deferral and safeSend resilience exactly.
+ * would need its own branch there anyway. Mirrors sendPlans's quiet-hours
+ * deferral and safeSend resilience, with one deliberate difference: a
+ * reminder in its last-chance window (see
+ * isLastChanceForAppointmentReminder) sends even during quiet hours rather
+ * than being deferred into never happening at all.
  */
 async function sendAppointmentReminders(
   tenant: Tenant,
@@ -197,15 +201,18 @@ async function sendAppointmentReminders(
 ): Promise<{ sent: SentPlan[]; deferred: SkippedLead[] }> {
   const sent: SentPlan[] = [];
   const deferred: SkippedLead[] = [];
-
-  if (isWithinQuietHours(tenant, now)) {
-    for (const plan of plans) {
-      deferred.push({ lead: plan.lead, reason: "deferred: within tenant quiet hours, will retry next run" });
-    }
-    return { sent, deferred };
-  }
+  const quietHoursActive = isWithinQuietHours(tenant, now);
 
   for (const plan of plans) {
+    // Quiet hours normally defer a reminder to the next run like any other
+    // send — except in its last chance window (see
+    // isLastChanceForAppointmentReminder's own doc comment), where deferring
+    // again would mean never sending it at all.
+    if (quietHoursActive && !isLastChanceForAppointmentReminder(plan.lead, now)) {
+      deferred.push({ lead: plan.lead, reason: "deferred: within tenant quiet hours, will retry next run" });
+      continue;
+    }
+
     const messageId = generateId("msg");
     const result = await safeSend(plan.message.channel, tenant, plan.lead, plan.message, messageId);
     sent.push({ plan, result, isFollowUp: false, isReminder: true });

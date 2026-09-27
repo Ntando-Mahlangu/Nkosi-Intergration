@@ -348,7 +348,16 @@ export interface Message {
   body: string;
   at: string; // ISO date
   classification?: ReplyClassification;
-  /** Provider's own message id (Twilio SID, etc.), when the send returned one. */
+  /**
+   * Provider's own message id (Twilio SID, etc.). Set on an outbound
+   * message when the send returned one, or on an inbound one when the
+   * provider's webhook payload carried its own id (currently only Twilio's
+   * MessageSid on /twilio/sms) — recordInboundAndClassify in
+   * webhooks/index.ts uses it to detect and skip a duplicate delivery of
+   * the same inbound message (a webhook retry after a slow response),
+   * rather than re-classifying it and re-sending an auto-reply/notification
+   * a second time.
+   */
   providerMessageId?: string;
   /** Latest delivery status reported by the provider (e.g. "delivered", "failed", "bounce"). */
   deliveryStatus?: string;
