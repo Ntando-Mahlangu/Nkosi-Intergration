@@ -103,6 +103,7 @@
     font-weight: 600;
   }
   button.secondary:hover, a.secondary:hover { background: rgba(201,168,117,0.08); border-color: var(--accent); }
+  .secondary.active { background: rgba(201,168,117,0.18); border-color: var(--accent); color: var(--accent); cursor: default; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
   .stat { font-size: 12px; letter-spacing: 0.05em; color: var(--muted); }
@@ -241,6 +242,7 @@
     </div>
     <div style="display:flex; gap:8px;">
       <a class="secondary" href="index.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:3px;">Command Center</a>
+      <span class="secondary active" aria-current="page" style="display:inline-flex; align-items:center; padding:0 16px; border-radius:3px;">List View</span>
       <a class="secondary" href="settings.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:3px;">Settings</a>
       <a class="secondary" href="reports.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:3px;">Reports</a>
       <button class="secondary" id="refresh-btn">Refresh</button>

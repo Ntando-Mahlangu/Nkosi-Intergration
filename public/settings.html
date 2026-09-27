@@ -102,10 +102,11 @@
     font-weight: 600;
   }
   button.secondary:hover, a.secondary:hover { background: rgba(201,168,117,0.08); border-color: var(--accent); }
+  .secondary.active { background: rgba(201,168,117,0.18); border-color: var(--accent); color: var(--accent); cursor: default; }
   button.danger { background: rgba(181,85,90,0.1); border: 1px solid var(--fail); color: var(--fail); }
   button.danger:hover { background: rgba(181,85,90,0.2); border-color: var(--fail); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  a.secondary { text-decoration: none; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 6px; }
+  a.secondary, .secondary.active { text-decoration: none; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 6px; }
   .toolbar {
     display: flex;
     gap: 8px;
@@ -186,6 +187,7 @@
     <div style="display:flex; gap:8px;">
       <a class="secondary" href="index.html">Command Center</a>
       <a class="secondary" href="dashboard.html">List view</a>
+      <span class="secondary active" aria-current="page">Settings</span>
       <a class="secondary" href="reports.html">Reports</a>
       <button class="secondary" id="logout-btn">Back</button>
     </div>

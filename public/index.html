@@ -95,7 +95,7 @@
     text-transform: uppercase;
     margin-top: 6px;
   }
-  a.nav-link, button.ghost {
+  .nav-link, button.ghost {
     pointer-events: auto;
     color: var(--cyan);
     background: transparent;
@@ -111,11 +111,17 @@
     display: inline-block;
     transition: background 0.2s, border-color 0.2s;
   }
-  a.nav-link:hover, button.ghost:hover {
+  .nav-link:hover:not(.active), button.ghost:hover {
     background: rgba(201,168,117,0.10);
     border-color: var(--amber);
   }
-  a.nav-link:focus-visible, button.ghost:focus-visible, #gate button:focus-visible, #terms-gate button:focus-visible,
+  .nav-link.active {
+    color: var(--amber);
+    border-color: var(--amber);
+    background: rgba(201,168,117,0.16);
+    cursor: default;
+  }
+  .nav-link:focus-visible, button.ghost:focus-visible, #gate button:focus-visible, #terms-gate button:focus-visible,
   #detail .close:focus-visible, g.node:focus-visible {
     outline: 2px solid var(--amber);
     outline-offset: 3px;
@@ -282,7 +288,8 @@
   <div class="brand">
     LeadRecovery <span style="color:var(--amber); font-style:italic;">Command Center</span>
     <div class="sub" id="tenant-label" aria-live="polite">NOT CONNECTED</div>
-    <a class="nav-link" href="dashboard.html">&larr; list view</a>
+    <span class="nav-link active" aria-current="page">command center</span>
+    <a class="nav-link" href="dashboard.html">list view</a>
     <a class="nav-link" href="settings.html">settings</a>
     <a class="nav-link" href="reports.html">reports</a>
     <button type="button" class="ghost" id="disconnect-btn">back</button>
