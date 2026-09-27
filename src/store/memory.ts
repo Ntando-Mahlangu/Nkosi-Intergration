@@ -85,6 +85,15 @@ export class InMemoryTenantStore implements TenantStore {
     return Array.from(this.tenants.values()).find((tenant) => tenant.paddleSubscriptionId === subscriptionId);
   }
 
+  async getTenantByEmail(email: string): Promise<Tenant | undefined> {
+    const lower = email.toLowerCase();
+    return Array.from(this.tenants.values()).find((tenant) => tenant.email?.toLowerCase() === lower);
+  }
+
+  async getTenantByPasswordResetTokenHash(tokenHash: string): Promise<Tenant | undefined> {
+    return Array.from(this.tenants.values()).find((tenant) => tenant.passwordResetTokenHash === tokenHash);
+  }
+
   async listTenants(): Promise<Tenant[]> {
     return Array.from(this.tenants.values());
   }

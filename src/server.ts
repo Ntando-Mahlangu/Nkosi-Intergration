@@ -7,6 +7,8 @@ import { getPool } from "./db/pool.js";
 import { createTenantRoutes } from "./routes/tenants.js";
 import { createLeadRoutes } from "./routes/leads.js";
 import { createWorkflowRoutes } from "./routes/workflow.js";
+import { createAuthRoutes } from "./routes/auth.js";
+import { createPublicCaptureRoutes } from "./routes/publicCapture.js";
 import { createWebhookRoutes } from "./webhooks/index.js";
 import { createCorsMiddleware } from "./middleware/cors.js";
 import { asyncHandler } from "./middleware/asyncHandler.js";
@@ -126,6 +128,8 @@ export function createApp() {
   app.use(createWebhookRoutes(stores));
 
   app.use(express.json());
+  app.use(createAuthRoutes(stores));
+  app.use(createPublicCaptureRoutes(stores));
   app.use(createTenantRoutes(stores));
   app.use(createLeadRoutes(stores));
   app.use(createWorkflowRoutes(stores));

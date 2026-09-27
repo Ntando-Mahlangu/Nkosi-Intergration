@@ -222,12 +222,23 @@
 
 <div id="auth" class="auth-panel">
   <h2>LeadRecovery Dashboard</h2>
+  <label for="login-email">Email</label>
+  <input id="login-email" type="email" placeholder="you@business.com" />
+  <label for="login-password">Password</label>
+  <input id="login-password" type="password" placeholder="••••••••" />
+  <div style="margin-top:16px;">
+    <button id="login-btn">Sign In</button>
+  </div>
+  <div style="text-align:center; margin-top:10px;">
+    <a href="reset-password.html" class="secondary" style="font-size:12px; text-decoration:underline; border:none; background:none; padding:0;">Forgot password?</a>
+  </div>
+  <div style="text-align:center; color:var(--muted); font-size:12px; margin:14px 0;">— or use an API key —</div>
   <label for="base-url">API base URL</label>
   <input id="base-url" placeholder="http://localhost:3000" />
   <label for="api-key">Tenant API key</label>
   <input id="api-key" type="password" placeholder="lr_..." />
   <div style="margin-top:16px;">
-    <button id="connect-btn">Connect</button>
+    <button id="connect-btn" class="secondary">Connect</button>
   </div>
   <div style="text-align:center; color:var(--muted); font-size:12px; margin:14px 0;">— or —</div>
   <button type="button" class="secondary" id="demo-btn" style="width:100%;">Explore the bundled demo</button>
@@ -666,6 +677,29 @@
     const baseUrl = document.getElementById("base-url").value.trim() || window.location.origin;
     const apiKey = document.getElementById("api-key").value.trim();
     connect(baseUrl, apiKey);
+  });
+
+  document.getElementById("login-btn").addEventListener("click", async () => {
+    const baseUrl = document.getElementById("base-url").value.trim() || window.location.origin;
+    const email = document.getElementById("login-email").value.trim();
+    const password = document.getElementById("login-password").value;
+    authError.textContent = "";
+    if (!email || !password) {
+      authError.textContent = "Email and password are required.";
+      return;
+    }
+    try {
+      const res = await fetch(baseUrl.replace(/\/$/, "") + "/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      connect(baseUrl, data.apiKey);
+    } catch (err) {
+      authError.textContent = "Sign-in failed: " + err.message;
+    }
   });
 
   // Same one-click path as index.html's "Explore the bundled demo" — the

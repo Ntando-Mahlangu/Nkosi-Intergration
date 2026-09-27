@@ -102,6 +102,10 @@ export interface TenantStore {
   getTenantByApiKey(apiKey: string): Promise<Tenant | undefined>;
   /** Fallback lookup for /webhooks/paddle when an event's custom_data doesn't carry a tenantId — see Tenant.paddleSubscriptionId. */
   getTenantByPaddleSubscriptionId(subscriptionId: string): Promise<Tenant | undefined>;
+  /** Case-insensitive lookup by login email (src/routes/auth.ts). */
+  getTenantByEmail(email: string): Promise<Tenant | undefined>;
+  /** Lookup by the SHA-256 hash of a password-reset/set-password token (src/routes/auth.ts) — never by the raw token. */
+  getTenantByPasswordResetTokenHash(tokenHash: string): Promise<Tenant | undefined>;
   listTenants(): Promise<Tenant[]>;
   createTenant(tenant: Tenant): Promise<Tenant>;
   updateTenant(id: string, patch: Partial<Tenant>): Promise<Tenant | undefined>;

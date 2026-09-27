@@ -379,20 +379,26 @@ schemas included) is in [`openapi.yaml`](./openapi.yaml) — paste it into
 any OpenAPI viewer (Swagger UI, Redoc, Postman's import) for interactive
 docs.
 
-All routes except `/health` and the webhooks require `Authorization: Bearer
-<tenant api key>`. Admin routes require `Authorization: Bearer
-<ADMIN_API_KEY>` instead. All routes are rate limited
-(`src/middleware/rateLimit.ts`) — tenant-authed routes and `/tenants/me` at
-60/min, admin routes at 30/15min, webhooks at 120/min, all per IP.
+All routes except `/health`, `/terms-version`, `/auth/*`, `/public/leads/:tenantId`,
+and the webhooks require `Authorization: Bearer <tenant api key>`. Admin
+routes require `Authorization: Bearer <ADMIN_API_KEY>` instead. All routes
+are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
+`/tenants/me` at 60/min, admin routes at 30/15min, webhooks at 120/min,
+`/auth/*` at 10/15min, `/public/leads/:tenantId` at 20/min, all per IP.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/health` | Liveness check (checks nothing external) |
 | GET | `/ready` | Readiness check — verifies Postgres connectivity when `DATABASE_URL` is set |
 | GET | `/terms-version` | Public, no auth — the exact version string a client must send back to `POST /tenants/me/accept-terms` |
+| POST | `/auth/login` | SaaS-style sign-in: `{email, password}` → `{apiKey, tenant}`. Resolves to the tenant's real API key rather than a session of its own — see "Environment variables" for the platform email this needs to actually deliver a set-password link |
+| POST | `/auth/forgot-password` | `{email}` → always the same generic response; emails a password-reset link if that email matches a tenant |
+| POST | `/auth/reset-password` | `{token, newPassword}` → sets the password and returns `{apiKey}`. Same endpoint sets a tenant's *first* password (the link a new `email` gets at creation) and a later reset |
 | GET | `/tenants/me` | The authenticated tenant's public info |
-| PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled/botDisclosureEnabled/dataRetentionDays |
+| PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled/botDisclosureEnabled/dataRetentionDays/email |
 | POST | `/tenants/me/accept-terms` | Records the tenant's acceptance of the current Terms of Service/Privacy Policy version — required before `POST /workflow/run`, the worker, or any inbound webhook auto-reply will actually send anything |
+| POST | `/tenants/me/change-password` | `{currentPassword?, newPassword}` — self-service while already signed in; `currentPassword` is only required if one is already set |
+| POST | `/public/leads/:tenantId` | Public, no tenant-auth — a lead-capture form embedded on the tenant's own website posts here with `{formKey, name?, phone?, email?, requestedService?, notes?}` (`formKey` is `Tenant.publicFormKey`, safe to publish — it can only ever create a lead through this one endpoint) |
 | GET | `/admin/tenants` | List tenants (admin) |
 | POST | `/admin/tenants` | Create a tenant (admin); returns the API key once. Also accepts `consentBasisConfirmed`/`carrierApprovalConfirmed` (recorded attestations — see `COMPLIANCE.md`) and any self-service field |
 | PATCH | `/admin/tenants/:id` | Admin update: any self-service field, plus `status` (`"active"` \| `"suspended"`) and `carrierApprovalConfirmed` (admin-only — the only way to clear an sms/whatsapp send block for a tenant) |
@@ -429,6 +435,8 @@ See [`.env.example`](./.env.example) for the copyable version with full comments
 | `ADMIN_API_KEY` | Enables `/admin/tenants`; unset disables tenant management. A single shared key — every action is logged as actor "admin" |
 | `ADMIN_API_KEYS` | Optional, in addition to or instead of `ADMIN_API_KEY`: a comma-separated `name:key` list so each person holds their own key and the audit log records who did what |
 | `DEFAULT_TWILIO_ACCOUNT_SID` / `DEFAULT_TWILIO_AUTH_TOKEN` / `DEFAULT_SENDGRID_API_KEY` | Optional agency-wide shared provider credentials — see `src/channelDefaults.ts` above. Lets `POST /admin/tenants` create a client's channels from just the per-client phone number/from-email |
+| `PLATFORM_SENDGRID_API_KEY` / `PLATFORM_EMAIL_FROM` | Optional: LeadRecovery's own transactional email (set-password/password-reset links, `src/authEmail.ts`) — distinct from a tenant's own `channels.email`. Unset: the link is logged to the console and returned directly in the create-tenant/reveal-panel response instead of emailed |
+| `LEADRECOVERY_AUTH_RATE_LIMIT` | `/auth/login` / `/auth/forgot-password` / `/auth/reset-password` rate limit, requests per 15 minutes per IP (default 10) |
 | `PADDLE_WEBHOOK_SECRET` | Enables `POST /webhooks/paddle` (auto-suspend/reactivate on subscription lapse/recovery); unset disables it entirely — see "Billing (Paddle)" in `DEPLOYMENT.md` |
 | `LEADRECOVERY_CORS_ORIGIN` | Comma-separated allowed origins for cross-origin API calls (or `*`); unset sends no CORS headers, which is fine for the bundled same-origin dashboards |
 | `PUBLIC_BASE_URL` | This app's public HTTPS base URL — needed for correct Twilio signature verification behind a proxy and for delivery-status callback URLs. Deliberately unrelated to `TRUST_PROXY_HOPS` below |

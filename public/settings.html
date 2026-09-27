@@ -166,12 +166,23 @@
 
 <div id="auth" class="auth-panel">
   <h2>LeadRecovery Settings</h2>
+  <label for="login-email">Email</label>
+  <input id="login-email" type="email" placeholder="you@business.com" />
+  <label for="login-password">Password</label>
+  <input id="login-password" type="password" placeholder="••••••••" />
+  <div style="margin-top:16px;">
+    <button id="login-btn">Sign In</button>
+  </div>
+  <div style="text-align:center; margin-top:10px;">
+    <a href="reset-password.html" class="secondary" style="font-size:12px; text-decoration:underline; border:none; background:none; padding:0;">Forgot password?</a>
+  </div>
+  <div style="text-align:center; color:var(--muted); font-size:12px; margin:14px 0;">— or use an API key —</div>
   <label for="base-url">API base URL</label>
   <input id="base-url" placeholder="http://localhost:3000" />
   <label for="api-key">Tenant API key</label>
   <input id="api-key" type="password" placeholder="lr_..." />
   <div style="margin-top:16px;">
-    <button id="connect-btn">Connect</button>
+    <button id="connect-btn" class="secondary">Connect</button>
   </div>
   <div style="text-align:center; color:var(--muted); font-size:12px; margin:14px 0;">— or —</div>
   <button type="button" class="secondary" id="demo-btn" style="width:100%;">Explore the bundled demo</button>
@@ -331,6 +342,50 @@
       </div>
     </section>
 
+    <section>
+      <h2>Account &amp; sign-in</h2>
+      <div class="desc">
+        Sign in with an email and password instead of pasting the API key
+        every time. Setting or changing the email below is saved along with
+        "Save changes" above; the password is separate (below), since
+        changing it needs your current one.
+      </div>
+      <div class="field">
+        <label for="account-email">Sign-in email</label>
+        <input type="email" id="account-email" placeholder="you@business.com" />
+        <div class="hint">Leave blank to remove email/password sign-in and use only the API key/magic link.</div>
+      </div>
+
+      <div class="field" style="margin-top:20px;">
+        <label for="account-current-password" id="account-current-password-label">Current password</label>
+        <input type="password" id="account-current-password" />
+        <label for="account-new-password" style="margin-top:14px;">New password</label>
+        <input type="password" id="account-new-password" placeholder="At least 8 characters" />
+        <div style="margin-top:12px;">
+          <button type="button" class="secondary" id="account-password-btn">Set password</button>
+        </div>
+        <div class="save-status" id="account-password-status" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Capture leads from your website</h2>
+      <div class="desc">
+        Paste this on your own website (a contact/quote-request form) to
+        send visitors straight into LeadRecovery as new leads — no CRM or
+        Zapier needed. The key below is safe to publish in your site's
+        source: it can only ever create a lead through this one form,
+        nothing else.
+      </div>
+      <div class="field">
+        <label for="capture-snippet">Embeddable form</label>
+        <textarea id="capture-snippet" rows="14" readonly style="font-family: ui-monospace, monospace; font-size:11px;"></textarea>
+        <div style="margin-top:8px;">
+          <button type="button" class="secondary" id="capture-copy-btn">Copy snippet</button>
+        </div>
+      </div>
+    </section>
+
     <div id="load-error" class="error" role="alert"></div>
   </main>
 </div>
@@ -403,6 +458,12 @@
 
   function fillForm(tenant) {
     document.getElementById("tenant-name").textContent = tenant.name;
+    document.getElementById("account-email").value = tenant.email || "";
+    document.getElementById("account-current-password-label").textContent = tenant.hasPassword
+      ? "Current password"
+      : "Current password (not set yet — leave blank)";
+    document.getElementById("account-password-btn").textContent = tenant.hasPassword ? "Change password" : "Set password";
+    fillCaptureSnippet(tenant);
     const t = tenant.templates || {};
     document.getElementById("tpl-grounded").value = t.initialGrounded || "";
     document.getElementById("tpl-ungrounded").value = t.initialUngrounded || "";
@@ -418,6 +479,44 @@
     document.getElementById("data-retention-days").value = tenant.dataRetentionDays || "";
     updateKbCounter();
     updateAutoReplyAvailability();
+  }
+
+  // A copy-pasteable contact-form snippet for the client's own website —
+  // posts straight to POST /public/leads/:tenantId (see
+  // src/routes/publicCapture.ts), unauthenticated except for `formKey`,
+  // which is safe to publish since it can only ever create a lead through
+  // this one endpoint.
+  function fillCaptureSnippet(tenant) {
+    const session = getSession();
+    const base = (session ? session.baseUrl : window.location.origin).replace(/\/$/, "");
+    const snippet = `<form id="leadrecovery-form">
+  <input name="name" placeholder="Your name" />
+  <input name="phone" placeholder="Phone" />
+  <input name="email" type="email" placeholder="Email" />
+  <textarea name="requestedService" placeholder="What do you need help with?"></textarea>
+  <button type="submit">Send</button>
+</form>
+<script>
+document.getElementById("leadrecovery-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var f = new FormData(e.target);
+  fetch("${base}/public/leads/${tenant.id}", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      formKey: "${tenant.publicFormKey || ""}",
+      name: f.get("name"),
+      phone: f.get("phone"),
+      email: f.get("email"),
+      requestedService: f.get("requestedService"),
+    }),
+  }).then(function (res) {
+    if (res.ok) { e.target.outerHTML = "<p>Thanks — we\\'ll be in touch!</p>"; }
+    else { alert("Something went wrong — please try again or contact us directly."); }
+  });
+});
+<\/script>`;
+    document.getElementById("capture-snippet").value = snippet;
   }
 
   function updateKbCounter() {
@@ -500,6 +599,29 @@
     connect(baseUrl, apiKey);
   });
 
+  document.getElementById("login-btn").addEventListener("click", async () => {
+    const baseUrl = document.getElementById("base-url").value.trim() || window.location.origin;
+    const email = document.getElementById("login-email").value.trim();
+    const password = document.getElementById("login-password").value;
+    authError.textContent = "";
+    if (!email || !password) {
+      authError.textContent = "Email and password are required.";
+      return;
+    }
+    try {
+      const res = await fetch(baseUrl.replace(/\/$/, "") + "/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      connect(baseUrl, data.apiKey);
+    } catch (err) {
+      authError.textContent = "Sign-in failed: " + err.message;
+    }
+  });
+
   document.getElementById("demo-btn").addEventListener("click", () => {
     connect(window.location.origin, "demo-key");
   });
@@ -572,7 +694,7 @@
     const autoReplyEnabled = document.getElementById("auto-reply-enabled").checked;
     const botDisclosureEnabled = document.getElementById("bot-disclosure-enabled").checked;
 
-    const patchBody = { templates, knowledgeBase, autoReplyEnabled, botDisclosureEnabled };
+    const patchBody = { templates, knowledgeBase, autoReplyEnabled, botDisclosureEnabled, email: val("account-email") || null };
     const retentionRaw = val("data-retention-days");
     if (retentionRaw) {
       const retentionDays = Number(retentionRaw);
@@ -600,6 +722,55 @@
     } finally {
       btn.disabled = false;
       btn.textContent = "Save changes";
+    }
+  });
+
+  document.getElementById("account-password-btn").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session) return;
+    const btn = document.getElementById("account-password-btn");
+    const statusEl = document.getElementById("account-password-status");
+    statusEl.textContent = "";
+    statusEl.className = "save-status";
+
+    const currentPassword = val("account-current-password");
+    const newPassword = val("account-new-password");
+    if (newPassword.length < 8) {
+      statusEl.textContent = "New password must be at least 8 characters.";
+      statusEl.className = "save-status err";
+      return;
+    }
+
+    btn.disabled = true;
+    try {
+      await api(session, "/tenants/me/change-password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      document.getElementById("account-current-password").value = "";
+      document.getElementById("account-new-password").value = "";
+      statusEl.textContent = "Password updated.";
+      statusEl.className = "save-status ok";
+      const tenant = await loadSettings(session);
+      fillForm(tenant);
+    } catch (err) {
+      statusEl.textContent = "Could not update password: " + err.message;
+      statusEl.className = "save-status err";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("capture-copy-btn").addEventListener("click", async () => {
+    const btn = document.getElementById("capture-copy-btn");
+    try {
+      await navigator.clipboard.writeText(document.getElementById("capture-snippet").value);
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = "Copy snippet"; }, 1500);
+    } catch {
+      // Clipboard API unavailable (e.g. an insecure context) — the
+      // textarea's own content is still selectable manually.
+      btn.textContent = "Select the text above to copy";
     }
   });
 

@@ -95,6 +95,24 @@ If more than one person runs the admin side of the agency, set
 provisioned/suspended/deleted a tenant, not just an indistinguishable
 "admin" for everyone.
 
+### Optional: let the client sign in with an email/password instead
+
+The magic link above already gets a client into their dashboard with
+nothing to type — but for a client who'll come back to it repeatedly (not
+just once, from your link), a normal email + password is the more familiar
+"SaaS" experience. Set `email` on the tenant (a field in `npm run
+onboard`/the "Add new client" form, or `PATCH /tenants/me` /
+`/admin/tenants/:id` later) and LeadRecovery automatically emails them a
+"set your password" link — the exact same mechanism `POST
+/auth/forgot-password` uses later if they forget it. This needs
+`PLATFORM_SENDGRID_API_KEY`/`PLATFORM_EMAIL_FROM` configured (see
+`.env.example`) to actually send; without it, the link is only logged to
+the console and returned in the create-tenant response/reveal panel (fine
+for local/test use, not for a real client). Either way, the client can
+change their email or set/change their password themselves later from
+`public/settings.html`'s "Account & sign-in" panel. Leaving `email` unset
+keeps that tenant on the API key/magic link only — nothing else changes.
+
 ### If you're billing this client through Paddle
 
 Note the tenant's **id** (not its API key) from the create response — that's
@@ -149,6 +167,15 @@ Pick whichever fits what they actually have:
 - **Missed calls / inbound replies**: configure Twilio's webhook URLs
   (printed by `npm run onboard`) so LeadRecovery detects missed calls and
   processes SMS/WhatsApp replies automatically.
+- **Website visitors who haven't called or emailed yet**: `public/settings.html`'s
+  "Capture leads from your website" panel gives the client a small
+  copy-paste HTML/JS snippet (a plain contact form) for their own site —
+  it POSTs straight to `POST /public/leads/:tenantId`, unauthenticated
+  except for a `formKey` (`Tenant.publicFormKey`, distinct from the API
+  key) that's deliberately safe to publish in the client's page source: it
+  can only ever create a lead through that one endpoint, nothing else.
+  This is the one capture method that needs no CRM/Zapier/CLI step at all —
+  the client just pastes the snippet themselves.
 
 ## 5. Dry run — review before anything sends
 

@@ -14,6 +14,7 @@ servers:
     description: Local demo server (npm run dev)
 tags:
   - name: health
+  - name: auth
   - name: tenant-self-service
   - name: admin
   - name: leads
@@ -84,6 +85,105 @@ paths:
                 properties:
                   version: { type: string, example: "2026-09-25" }
 
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: SaaS-style sign-in
+      description: >
+        Resolves email+password to the tenant's real API key rather than
+        minting a session of its own — every dashboard already knows how
+        to store/send an API key. Returns the same generic 401 whether the
+        email doesn't match a tenant, that tenant never set a password, or
+        the password is wrong, so a caller can't enumerate which emails
+        have an account.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKey: { type: string }
+                  tenant: { $ref: "#/components/schemas/PublicTenant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      summary: Request a password-reset email
+      description: >
+        Always the same generic response whether or not the email matches
+        a tenant — see /auth/login's own note on why. Emails a link (via
+        PLATFORM_SENDGRID_API_KEY, or logged to the console if unset) that
+        POST /auth/reset-password's token is good for 24 hours.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "200":
+          description: Generic success — check your email
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      summary: Set a new password from a reset/setup token
+      description: >
+        The same endpoint sets a tenant's *first* password (the link a
+        newly-set `email` gets at creation — see POST /admin/tenants) and a
+        later password reset — mechanically identical either way. The
+        token is single-use and expires after 24 hours.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: Password set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  apiKey: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /tenants/me:
     get:
       tags: [tenant-self-service]
@@ -149,6 +249,42 @@ paths:
               schema: { $ref: "#/components/schemas/PublicTenant" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /tenants/me/change-password:
+    post:
+      tags: [tenant-self-service]
+      summary: Set or change the tenant's own password while already signed in
+      description: >
+        `currentPassword` is required only if the tenant already has a
+        password — a tenant with none yet can set its first one with just
+        `newPassword` (holding the API key already proves the same access
+        a new password would grant).
+      security: [{ tenantAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Missing/invalid Authorization header, or an incorrect currentPassword
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /tenants/me/report:
     get:
@@ -538,6 +674,60 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Suspended" }
 
+  /public/leads/{tenantId}:
+    post:
+      tags: [leads]
+      summary: Public lead-capture form (embedded on the tenant's own website)
+      description: >
+        Deliberately not behind tenantAuth — meant to be called directly
+        from a tenant's own public website via front-end JS (see
+        public/settings.html's embeddable snippet), where a real API key
+        would let anyone who views source read/send on that tenant's
+        behalf. `formKey` (Tenant.publicFormKey) is the opposite: it can
+        only ever create a lead through this one endpoint. Any origin may
+        call this (Access-Control-Allow-Origin: *) since the tenant's
+        website domain isn't known in advance.
+      security: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [formKey]
+              properties:
+                formKey: { type: string }
+                name: { type: string }
+                phone: { type: string, description: "phone or email is required." }
+                email: { type: string }
+                requestedService: { type: string }
+                notes: { type: string }
+      responses:
+        "201":
+          description: Lead created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Invalid tenantId or formKey (same generic response for either, to avoid tenant-id enumeration)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Tenant is suspended and not currently accepting new leads
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /webhooks/lead:
     post:
       tags: [webhooks]
@@ -812,6 +1002,15 @@ components:
           minimum: 30
           maximum: 3650
           description: How many days after a lead closes out before the worker auto-purges it. Defaults to 365 when unset.
+        email:
+          type: string
+          nullable: true
+          description: >-
+            The tenant's SaaS-style login identity (see /auth/login) —
+            distinct from contactEmail, which is reference-only. Set null
+            (or an empty string) to remove email/password sign-in. Setting
+            it on POST /admin/tenants emails a set-password link (see
+            /auth/reset-password).
 
     PublicTenant:
       type: object
@@ -848,6 +1047,9 @@ components:
         carrierApprovalConfirmedAt: { type: string, format: date-time, description: "When the agency confirmed 10DLC/WhatsApp carrier approval. Unset blocks the sms/whatsapp channels (falls back to email, or skips the lead)." }
         botDisclosureEnabled: { type: boolean, description: "Whether the chatbot's first auto-reply per conversation proactively discloses it's automated. Defaults to true when unset." }
         dataRetentionDays: { type: integer, description: "Days after a lead closes out before the worker auto-purges it. Defaults to 365 when unset." }
+        email: { type: string, description: "The tenant's login identity for /auth/login, if set." }
+        hasPassword: { type: boolean, description: "Whether this tenant has ever set a password — settings.html uses this to show \"Set password\" vs \"Change password\"." }
+        publicFormKey: { type: string, description: "Low-privilege token for POST /public/leads/{tenantId} — safe to publish in the tenant's own website (see public/settings.html's embed snippet)." }
         createdAt: { type: string, format: date-time }
 
     Lead:

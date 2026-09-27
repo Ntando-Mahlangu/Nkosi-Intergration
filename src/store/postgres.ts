@@ -198,7 +198,8 @@ export class PostgresLeadStore implements LeadStore {
 const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at,
   notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at,
   contact_phone, contact_email, website, terms_accepted_at, terms_version,
-  consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days`;
+  consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days,
+  email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key`;
 
 /**
  * Tenant provider credentials (Twilio auth tokens, SendGrid API keys) are
@@ -281,6 +282,13 @@ export class PostgresTenantStore implements TenantStore {
         : undefined,
       botDisclosureEnabled: (row.bot_disclosure_enabled as boolean | null) ?? undefined,
       dataRetentionDays: (row.data_retention_days as number | null) ?? undefined,
+      email: (row.email as string | null) ?? undefined,
+      passwordHash: (row.password_hash as string | null) ?? undefined,
+      passwordResetTokenHash: (row.password_reset_token_hash as string | null) ?? undefined,
+      passwordResetExpiresAt: (row.password_reset_expires_at as string | null)
+        ? new Date(row.password_reset_expires_at as string).toISOString()
+        : undefined,
+      publicFormKey: (row.public_form_key as string | null) ?? undefined,
       createdAt: new Date(row.created_at as string).toISOString(),
     };
   }
@@ -302,6 +310,21 @@ export class PostgresTenantStore implements TenantStore {
     return rows[0] ? this.fromRow(rows[0]) : undefined;
   }
 
+  async getTenantByEmail(email: string): Promise<Tenant | undefined> {
+    const { rows } = await this.pool.query(`SELECT ${TENANT_COLUMNS} FROM tenants WHERE LOWER(email) = LOWER($1)`, [
+      email,
+    ]);
+    return rows[0] ? this.fromRow(rows[0]) : undefined;
+  }
+
+  async getTenantByPasswordResetTokenHash(tokenHash: string): Promise<Tenant | undefined> {
+    const { rows } = await this.pool.query(
+      `SELECT ${TENANT_COLUMNS} FROM tenants WHERE password_reset_token_hash = $1`,
+      [tokenHash]
+    );
+    return rows[0] ? this.fromRow(rows[0]) : undefined;
+  }
+
   async listTenants(): Promise<Tenant[]> {
     // `id` as a tiebreaker (not just created_at) so two tenants created in
     // the same instant still sort deterministically — GET /admin/tenants
@@ -314,8 +337,8 @@ export class PostgresTenantStore implements TenantStore {
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days, email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)`,
       [
         tenant.id,
         tenant.name,
@@ -343,6 +366,11 @@ export class PostgresTenantStore implements TenantStore {
         tenant.carrierApprovalConfirmedAt ?? null,
         tenant.botDisclosureEnabled ?? null,
         tenant.dataRetentionDays ?? null,
+        tenant.email ?? null,
+        tenant.passwordHash ?? null,
+        tenant.passwordResetTokenHash ?? null,
+        tenant.passwordResetExpiresAt ?? null,
+        tenant.publicFormKey ?? null,
       ]
     );
     return tenant;
@@ -395,6 +423,11 @@ export class PostgresTenantStore implements TenantStore {
     }
     if ("botDisclosureEnabled" in patch) push("bot_disclosure_enabled", patch.botDisclosureEnabled ?? null);
     if ("dataRetentionDays" in patch) push("data_retention_days", patch.dataRetentionDays ?? null);
+    if ("email" in patch) push("email", patch.email ?? null);
+    if ("passwordHash" in patch) push("password_hash", patch.passwordHash ?? null);
+    if ("passwordResetTokenHash" in patch) push("password_reset_token_hash", patch.passwordResetTokenHash ?? null);
+    if ("passwordResetExpiresAt" in patch) push("password_reset_expires_at", patch.passwordResetExpiresAt ?? null);
+    if ("publicFormKey" in patch) push("public_form_key", patch.publicFormKey ?? null);
     if ("createdAt" in patch) push("created_at", patch.createdAt);
 
     if (setClauses.length === 0) return this.getTenant(id);

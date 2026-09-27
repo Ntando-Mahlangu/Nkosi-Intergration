@@ -11,6 +11,10 @@ import { recordAudit } from "../audit.js";
 import { CURRENT_TERMS_VERSION } from "../terms.js";
 import { resolveChannelDefaults } from "../channelDefaults.js";
 import { MAX_DATA_RETENTION_DAYS, MIN_DATA_RETENTION_DAYS } from "../dataRetention.js";
+import { generateFormKey } from "../idgen.js";
+import { hashPassword, verifyPassword } from "../password.js";
+import { buildResetLink, issuePasswordResetToken, MIN_PASSWORD_LENGTH } from "./auth.js";
+import { sendAccountEmail } from "../authEmail.js";
 
 const MAX_KNOWLEDGE_BASE_LENGTH = 20_000;
 
@@ -35,6 +39,8 @@ interface TenantConfigBody {
   carrierApprovalConfirmed?: boolean;
   botDisclosureEnabled?: boolean;
   dataRetentionDays?: number;
+  /** The tenant's SaaS-style login identity (src/routes/auth.ts) — distinct from contactEmail, see Tenant.email. Settable by the tenant itself or an admin; `null` clears it. */
+  email?: string | null;
 }
 
 const MAX_CONTACT_FIELD_LENGTH = 320;
@@ -59,6 +65,20 @@ function isValidTimezone(timezone: string): boolean {
 function isValidContactField(value: unknown): boolean {
   if (value === undefined) return true;
   return typeof value === "string" && value.length <= MAX_CONTACT_FIELD_LENGTH;
+}
+
+const MAX_EMAIL_LENGTH = 320;
+
+/**
+ * Unlike contactEmail/contactPhone (reference-only, deliberately unvalidated
+ * — see isValidContactField), `email` is the tenant's actual login
+ * identity: a malformed one is unusable, not just untidy, since the
+ * password-reset/set-password link (src/routes/auth.ts) is sent to it. A
+ * loose "looks like an email" check, not full RFC 5322 validation.
+ */
+function isValidEmail(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  return typeof value === "string" && value.length <= MAX_EMAIL_LENGTH && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function isValidQuietHours(quietHours: unknown): quietHours is Tenant["quietHours"] {
@@ -172,6 +192,9 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   ) {
     return `contactPhone/contactEmail/website must be strings up to ${MAX_CONTACT_FIELD_LENGTH} characters`;
   }
+  if (!isValidEmail(body.email)) {
+    return `email must look like a real email address, up to ${MAX_EMAIL_LENGTH} characters`;
+  }
   // null is allowed through (same precedent as templates above) so the
   // admin API has a way to explicitly clear a tenant's subscription link.
   if (
@@ -208,6 +231,10 @@ function buildTenantPatch(
   if (body.website !== undefined) patch.website = body.website;
   if (body.botDisclosureEnabled !== undefined) patch.botDisclosureEnabled = body.botDisclosureEnabled;
   if (body.dataRetentionDays !== undefined) patch.dataRetentionDays = body.dataRetentionDays;
+  // Trimmed for the same lookup-integrity reason as paddleSubscriptionId
+  // below; null/empty clears it (same "explicitly clear" precedent as
+  // templates/paddleSubscriptionId elsewhere in this function).
+  if (body.email !== undefined) patch.email = body.email ? body.email.trim() : undefined;
   // Admin-only (gated the same as status/paddleSubscriptionId below) — the
   // agency operator sets this after independently verifying 10DLC/WhatsApp
   // approval with the client, not something a tenant self-attests via
@@ -266,6 +293,21 @@ async function checkPaddleSubscriptionIdConflict(
   return undefined;
 }
 
+/** Same idea as checkPaddleSubscriptionIdConflict, for `email` — migration 0015's partial unique index backs this up at the DB layer too. */
+async function checkEmailConflict(
+  tenantStore: Stores["tenantStore"],
+  email: string | null | undefined,
+  excludeTenantId?: string
+): Promise<string | undefined> {
+  const trimmed = typeof email === "string" ? email.trim() : undefined;
+  if (!trimmed) return undefined;
+  const existing = await tenantStore.getTenantByEmail(trimmed);
+  if (existing && existing.id !== excludeTenantId) {
+    return `email "${trimmed}" is already in use by another tenant`;
+  }
+  return undefined;
+}
+
 /**
  * Tenant self-service (`/tenants/me`, `PATCH /tenants/me`) and admin tenant
  * management (`/admin/tenants`, gated by ADMIN_API_KEY). The admin routes
@@ -283,9 +325,23 @@ export function createTenantRoutes({
   const tenantAuth = requireTenantAuth(tenantStore);
   const adminAuth = requireAdminAuth();
 
-  router.get("/tenants/me", createTenantLimiter(), tenantAuth, (req, res) => {
-    res.json(toPublicTenant(req.tenant!));
-  });
+  router.get(
+    "/tenants/me",
+    createTenantLimiter(),
+    tenantAuth,
+    asyncHandler(async (req, res) => {
+      let tenant = req.tenant!;
+      // Lazily backfills a pre-existing tenant (created before publicFormKey
+      // existed) instead of a data migration generating one for every row —
+      // see migration 0015's own comment on why. Harmless to do on every
+      // read that happens to hit an unbackfilled row; only ever runs once
+      // per tenant.
+      if (!tenant.publicFormKey) {
+        tenant = (await tenantStore.updateTenant(tenant.id, { publicFormKey: generateFormKey() })) ?? tenant;
+      }
+      res.json(toPublicTenant(tenant));
+    })
+  );
 
   // Records the tenant's (the business client's, not a lead's) acceptance of
   // LeadRecovery's own Terms of Service/Privacy Policy — required before any
@@ -312,6 +368,41 @@ export function createTenantRoutes({
         termsVersion: version,
       });
       res.json(toPublicTenant(updated!));
+    })
+  );
+
+  // Self-service password change while already authenticated via API key —
+  // the alternative to the emailed set-password/forgot-password link
+  // (src/routes/auth.ts) for a tenant that's already signed in and just
+  // wants to set/change its password directly. Requires the current
+  // password *if* one is already set (proves the caller, who could be
+  // anyone holding the API key, actually knows it too) — first-time setup
+  // for a tenant that's never had a password needs none, since simply
+  // holding the API key already proves the same level of access a brand
+  // new password would grant.
+  router.post(
+    "/tenants/me/change-password",
+    createTenantLimiter(),
+    tenantAuth,
+    asyncHandler(async (req, res) => {
+      const tenant = req.tenant!;
+      const { currentPassword, newPassword } = (req.body ?? {}) as {
+        currentPassword?: unknown;
+        newPassword?: unknown;
+      };
+      if (typeof newPassword !== "string" || newPassword.length < MIN_PASSWORD_LENGTH) {
+        res.status(400).json({ error: `newPassword must be at least ${MIN_PASSWORD_LENGTH} characters` });
+        return;
+      }
+      if (tenant.passwordHash) {
+        if (typeof currentPassword !== "string" || !(await verifyPassword(currentPassword, tenant.passwordHash))) {
+          res.status(401).json({ error: "currentPassword is incorrect" });
+          return;
+        }
+      }
+      const passwordHash = await hashPassword(newPassword);
+      await tenantStore.updateTenant(tenant.id, { passwordHash });
+      res.json({ ok: true });
     })
   );
 
@@ -402,6 +493,11 @@ export function createTenantRoutes({
         res.status(400).json({ error });
         return;
       }
+      const emailConflict = await checkEmailConflict(tenantStore, body.email, tenant.id);
+      if (emailConflict) {
+        res.status(400).json({ error: emailConflict });
+        return;
+      }
       // Same validation/shared-default-filling POST /admin/tenants already
       // applies to `channels` — without this, a PATCH could store a channel
       // POST would have rejected (e.g. fromNumber with no accountSid/
@@ -455,6 +551,11 @@ export function createTenantRoutes({
         res.status(400).json({ error: conflict });
         return;
       }
+      const emailConflict = await checkEmailConflict(tenantStore, body.email);
+      if (emailConflict) {
+        res.status(400).json({ error: emailConflict });
+        return;
+      }
 
       const { channels, error: channelsError } = resolveChannelDefaults(body.channels);
       if (channelsError) {
@@ -491,6 +592,9 @@ export function createTenantRoutes({
         carrierApprovalConfirmedAt: body.carrierApprovalConfirmed ? new Date().toISOString() : undefined,
         botDisclosureEnabled: body.botDisclosureEnabled,
         dataRetentionDays: body.dataRetentionDays,
+        email: typeof body.email === "string" ? body.email.trim() : undefined,
+        // Every tenant gets one at creation — see Tenant.publicFormKey.
+        publicFormKey: generateFormKey(),
         createdAt: new Date().toISOString(),
       };
 
@@ -501,8 +605,26 @@ export function createTenantRoutes({
         actor: req.adminActor ?? "admin",
         details: { name: created.name, timezone: created.timezone },
       });
-      // Only place the raw API key is ever returned — the client must save it now.
-      res.status(201).json({ ...toPublicTenant(created), apiKey: created.apiKey });
+
+      // A SaaS-style sign-in needs a password before it's usable — rather
+      // than the agency operator ever typing/knowing a client's password,
+      // the client sets their own via the same emailed link
+      // POST /auth/forgot-password later re-sends, just triggered
+      // automatically here instead of tenant-initiated.
+      let passwordSetupLink: string | undefined;
+      if (created.email) {
+        const token = await issuePasswordResetToken(tenantStore, created.id);
+        passwordSetupLink = buildResetLink(token);
+        await sendAccountEmail(
+          created.email,
+          `Set your LeadRecovery password for ${created.name}`,
+          `Set your password (expires in 24 hours) to sign in at ${created.name}'s LeadRecovery dashboard:\n\n${passwordSetupLink}`
+        );
+      }
+
+      // Only place the raw API key (and, if set, the password-setup link)
+      // is ever returned — the client must save it now.
+      res.status(201).json({ ...toPublicTenant(created), apiKey: created.apiKey, passwordSetupLink });
     })
   );
 
@@ -528,6 +650,11 @@ export function createTenantRoutes({
       const conflict = await checkPaddleSubscriptionIdConflict(tenantStore, body.paddleSubscriptionId, existing.id);
       if (conflict) {
         res.status(400).json({ error: conflict });
+        return;
+      }
+      const emailConflict = await checkEmailConflict(tenantStore, body.email, existing.id);
+      if (emailConflict) {
+        res.status(400).json({ error: emailConflict });
         return;
       }
       // Same validation/shared-default-filling as POST /admin/tenants and

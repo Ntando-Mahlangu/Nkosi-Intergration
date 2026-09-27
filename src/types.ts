@@ -315,16 +315,41 @@ export interface Tenant {
    * purges a lead still active in the funnel, regardless of age.
    */
   dataRetentionDays?: number;
+  /**
+   * The tenant's own login identity for the SaaS-style sign-in flow
+   * (src/routes/auth.ts) — distinct from `contactEmail` above, which is
+   * reference-only and never used to authenticate anything. Unset for a
+   * tenant that only ever uses its raw API key/magic link. Unique
+   * case-insensitively across tenants (migration 0015) so a login attempt
+   * resolves to exactly one tenant.
+   */
+  email?: string;
+  /** scrypt hash (src/password.ts) of the tenant's login password. Never the plaintext; unset until they actually set one via the emailed set-password link. */
+  passwordHash?: string;
+  /** SHA-256 hash of the current password-reset/set-password token, if one was issued and not yet used or expired. Never the raw token — see src/routes/auth.ts. */
+  passwordResetTokenHash?: string;
+  /** When passwordResetTokenHash stops being valid (ISO date). */
+  passwordResetExpiresAt?: string;
+  /**
+   * Low-privilege token safe to embed in the tenant's own public website
+   * (see POST /public/leads/:tenantId and public/settings.html's "Capture
+   * leads from your website" panel) — unlike `apiKey`, it can only ever be
+   * used to create a lead through that one endpoint. Generated at creation;
+   * lazily backfilled for a pre-existing tenant the first time GET
+   * /tenants/me reads it.
+   */
+  publicFormKey?: string;
   createdAt: string;
 }
 
 /** Tenant fields safe to expose over the API (no secrets). */
-export type PublicTenant = Omit<Tenant, "channels" | "apiKey"> & {
+export type PublicTenant = Omit<Tenant, "channels" | "apiKey" | "passwordHash" | "passwordResetTokenHash"> & {
   channels: { sms: boolean; whatsapp: boolean; email: boolean };
+  hasPassword: boolean;
 };
 
 export function toPublicTenant(tenant: Tenant): PublicTenant {
-  const { channels, apiKey: _apiKey, ...rest } = tenant;
+  const { channels, apiKey: _apiKey, passwordHash, passwordResetTokenHash: _resetHash, ...rest } = tenant;
   return {
     ...rest,
     channels: {
@@ -332,6 +357,7 @@ export function toPublicTenant(tenant: Tenant): PublicTenant {
       whatsapp: Boolean(channels.whatsapp),
       email: Boolean(channels.email),
     },
+    hasPassword: Boolean(passwordHash),
   };
 }
 

@@ -68,3 +68,41 @@ export function createTenantLimiter() {
     store: distributedStoreIfConfigured("tenant"),
   });
 }
+
+/**
+ * Guards the unauthenticated email/password sign-in endpoints
+ * (src/routes/auth.ts) — a login attempt is exactly the kind of request a
+ * brute-force/credential-stuffing attempt looks like, so this is
+ * deliberately tighter than createTenantLimiter's already-authenticated
+ * ceiling. Fails closed (no passOnStoreError) like createAdminLimiter/
+ * createTenantLimiter: an uncertain store state should never widen a login
+ * endpoint's rate limit.
+ */
+export function createAuthLimiter() {
+  return rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: Number(process.env.LEADRECOVERY_AUTH_RATE_LIMIT ?? 10),
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: distributedStoreIfConfigured("auth"),
+  });
+}
+
+/**
+ * Guards the public lead-capture endpoint (POST /public/leads/:tenantId) —
+ * unauthenticated by design (it's meant to be called from a tenant's own
+ * public website), so this is its only real defense against a flood of
+ * junk leads. `passOnStoreError: true` for the same reason as
+ * createWebhookLimiter: a transient store error should never silently drop
+ * a real website visitor's submission.
+ */
+export function createPublicFormLimiter() {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    limit: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: distributedStoreIfConfigured("public-form"),
+    passOnStoreError: true,
+  });
+}

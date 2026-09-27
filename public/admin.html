@@ -217,6 +217,21 @@
           leads still needs a real Twilio/SendGrid account below.
         </div>
 
+        <div class="form-grid" style="margin-top:12px;">
+          <div class="span-2">
+            <label for="new-login-email">Sign-in email (optional)</label>
+            <input id="new-login-email" placeholder="owner@acmeplumbing.com" />
+          </div>
+        </div>
+        <div class="hint">
+          If set, this client can sign in with an email + password instead
+          of only the API key/magic link below — they'll get an email to
+          set their password once created (or, in test mode with no
+          SendGrid configured, the link appears in the reveal panel after
+          creation). Leave blank to keep this client on the API key/magic
+          link only.
+        </div>
+
         <label class="checkbox-row">
           <input type="checkbox" id="new-skip-channels" checked />
           Skip provider setup for now (test mode — messages log to the
@@ -467,7 +482,20 @@
     return `${base}/index.html?key=${encodeURIComponent(apiKey)}`;
   }
 
-  function showReveal(title, key, magicLink) {
+  // POST /admin/tenants's passwordSetupLink (src/routes/tenants.ts) is only
+  // ever a full URL when PUBLIC_BASE_URL is configured server-side —
+  // otherwise it's a bare "/reset-password.html?token=..." path (see
+  // src/routes/auth.ts's buildResetLink), which still works for this
+  // reveal-panel display if resolved against this admin session's own
+  // base URL, same as buildMagicLink does for the API key.
+  function resolvePasswordSetupLink(link) {
+    if (!link) return undefined;
+    if (/^https?:\/\//.test(link)) return link;
+    const base = (document.getElementById("base-url").value.trim() || window.location.origin).replace(/\/$/, "");
+    return base + link;
+  }
+
+  function showReveal(title, key, magicLink, passwordSetupLink) {
     document.getElementById("reveal-panel").innerHTML = `
       <div class="reveal">
         <strong>${escapeHtml(title)}</strong><br />
@@ -483,20 +511,31 @@
                </div>`
             : ""
         }
+        ${
+          passwordSetupLink
+            ? `<div style="margin-top:10px;">
+                 This client also has a sign-in email set — normally
+                 they'd get this link by email; it's shown here too since
+                 no platform email provider is configured (test mode):
+                 <div class="magic-link-value">${escapeHtml(passwordSetupLink)}</div>
+               </div>`
+            : ""
+        }
       </div>`;
-    if (!magicLink) return;
-    document.getElementById("reveal-copy-btn").addEventListener("click", async () => {
-      const btn = document.getElementById("reveal-copy-btn");
-      try {
-        await navigator.clipboard.writeText(magicLink);
-        btn.textContent = "Copied!";
-      } catch {
-        // Clipboard API unavailable (e.g. an insecure context) — the link
-        // text itself is still selectable (user-select:all via .key), so
-        // this button is a convenience, not the only way to get it.
-        btn.textContent = "Select the link above to copy";
-      }
-    });
+    if (magicLink) {
+      document.getElementById("reveal-copy-btn").addEventListener("click", async () => {
+        const btn = document.getElementById("reveal-copy-btn");
+        try {
+          await navigator.clipboard.writeText(magicLink);
+          btn.textContent = "Copied!";
+        } catch {
+          // Clipboard API unavailable (e.g. an insecure context) — the link
+          // text itself is still selectable (user-select:all via .key), so
+          // this button is a convenience, not the only way to get it.
+          btn.textContent = "Select the link above to copy";
+        }
+      });
+    }
   }
 
   function clearReveal() {
@@ -533,6 +572,11 @@
         ${
           t.contactPhone || t.contactEmail || t.website
             ? `<div class="meta">${[t.contactPhone, t.contactEmail, t.website].filter(Boolean).map(escapeHtml).join(" &middot; ")}</div>`
+            : ""
+        }
+        ${
+          t.email
+            ? `<div class="meta">Sign-in: ${escapeHtml(t.email)}${t.hasPassword ? "" : " (password not yet set)"}</div>`
             : ""
         }
         <div class="actions">
@@ -726,6 +770,7 @@
     "new-phone",
     "new-email",
     "new-website",
+    "new-login-email",
     "new-twilio-number",
     "new-twilio-sid",
     "new-twilio-token",
@@ -750,9 +795,11 @@
     const contactPhone = document.getElementById("new-phone").value.trim();
     const contactEmail = document.getElementById("new-email").value.trim();
     const website = document.getElementById("new-website").value.trim();
+    const loginEmail = document.getElementById("new-login-email").value.trim();
     if (contactPhone) body.contactPhone = contactPhone;
     if (contactEmail) body.contactEmail = contactEmail;
     if (website) body.website = website;
+    if (loginEmail) body.email = loginEmail;
 
     if (skipChannelsCheckbox.checked) {
       body.devMode = true;
@@ -812,7 +859,12 @@
       updateChannelFieldsVisibility();
       consentBasisCheckbox.checked = false;
       createBtn.disabled = true;
-      showReveal(`"${created.name}" is ready`, created.apiKey, buildMagicLink(created.apiKey));
+      showReveal(
+        `"${created.name}" is ready`,
+        created.apiKey,
+        buildMagicLink(created.apiKey),
+        resolvePasswordSetupLink(created.passwordSetupLink)
+      );
       await loadAll(session);
     } catch (err) {
       createError.textContent = err.message;

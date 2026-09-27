@@ -13,6 +13,15 @@ export const DEMO_TENANT: Tenant = {
   timezone: "Africa/Johannesburg",
   devMode: true,
   channels: {},
+  // A zero-width window disables quiet hours entirely (see
+  // isWithinQuietHours in src/quietHours.ts) — without this, the demo (and
+  // every e2e test that runs its recovery workflow) would silently defer
+  // every send whenever it happens to run between 8pm-8am Johannesburg
+  // time (the DEFAULT_QUIET_HOURS a tenant with no override gets), which
+  // directly contradicts "the bundled demo should work out of the box"
+  // above: a demo that only sends messages during specific hours of the
+  // day isn't that.
+  quietHours: { startHour: 0, endHour: 0 },
   // Grandfathered — see migration 0013's own comment: a brand-new tenant
   // must accept the Terms of Service before anything actually sends, but
   // the bundled demo should work out of the box with no extra click.
