@@ -232,14 +232,18 @@
   <div style="text-align:center; margin-top:10px;">
     <a href="reset-password.html" class="secondary" style="font-size:12px; text-decoration:underline; border:none; background:none; padding:0;">Forgot password?</a>
   </div>
-  <div style="text-align:center; color:var(--muted); font-size:12px; margin:14px 0;">— or use an API key —</div>
-  <label for="base-url">API base URL</label>
-  <input id="base-url" placeholder="http://localhost:3000" />
-  <label for="api-key">Tenant API key</label>
-  <input id="api-key" type="password" placeholder="lr_..." />
-  <div style="margin-top:16px;">
-    <button id="connect-btn" class="secondary">Connect</button>
-  </div>
+  <details style="margin-top:18px;">
+    <summary id="advanced-toggle" style="cursor:pointer; color:var(--muted); font-size:11px; text-align:center;">Advanced: sign in with an API key instead</summary>
+    <div style="margin-top:14px;">
+      <label for="base-url">API base URL</label>
+      <input id="base-url" placeholder="http://localhost:3000" />
+      <label for="api-key">Tenant API key</label>
+      <input id="api-key" type="password" placeholder="lr_..." />
+      <div style="margin-top:16px;">
+        <button id="connect-btn" class="secondary">Connect</button>
+      </div>
+    </div>
+  </details>
   <div style="text-align:center; color:var(--muted); font-size:12px; margin:14px 0;">— or —</div>
   <button type="button" class="secondary" id="demo-btn" style="width:100%;">Explore the bundled demo</button>
   <div id="auth-error" class="error" role="alert"></div>

@@ -30,6 +30,8 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
     await expect(page.locator("#gate")).toBeVisible();
     await expect(page.locator("#tenant-label")).toHaveText("NOT CONNECTED");
 
+    await page.click("#advanced-toggle");
+
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
 
@@ -99,6 +101,7 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
 
   test("clicking a node opens the detail panel with its leads", async ({ page }) => {
     await page.goto("/");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#gate")).toBeHidden();
@@ -132,6 +135,7 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
 
   test("category nodes are keyboard-operable: Enter opens, Escape closes and returns focus", async ({ page }) => {
     await page.goto("/");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#gate")).toBeHidden();
@@ -166,6 +170,7 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
 
   test("shows an error and stays on the gate for a bad API key", async ({ page }) => {
     await page.goto("/");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "not-a-real-key");
     await page.click("#connect-btn");
 
@@ -175,6 +180,7 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
 
   test("reconnects automatically on reload using the persisted session", async ({ page }) => {
     await page.goto("/");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#gate")).toBeHidden();
@@ -186,6 +192,7 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
 
   test("never flashes the login gate while reconnecting with a persisted session", async ({ page }) => {
     await page.goto("/");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#gate")).toBeHidden();
@@ -262,6 +269,8 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
     await expect(page.locator("#auth")).toBeVisible();
     await expect(page.locator("#app")).toBeHidden();
 
+    await page.click("#advanced-toggle");
+
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
 
@@ -277,6 +286,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
     // comment. dashboard.html/settings.html/reports.html share the same
     // reconnect-before-hiding-the-panel logic.
     await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#auth")).toBeHidden();
@@ -291,6 +301,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
 
   test("shows an error for a bad API key", async ({ page }) => {
     await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "not-a-real-key");
     await page.click("#connect-btn");
 
@@ -300,6 +311,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
 
   test("disconnect returns to the auth panel and clears the session", async ({ page }) => {
     await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#app")).toBeVisible();
@@ -314,6 +326,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
 
   test("links back to the Command Center", async ({ page }) => {
     await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#app")).toBeVisible();
@@ -324,6 +337,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
 
   test("renders the All leads list after connecting", async ({ page }) => {
     await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#app")).toBeVisible();
@@ -335,6 +349,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
 
   test("clicking a lead row opens the detail dialog with its conversation", async ({ page }) => {
     await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#app")).toBeVisible();
@@ -359,6 +374,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
     page,
   }) => {
     await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#app")).toBeVisible();
@@ -378,6 +394,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
 
   test("saving an appointment shows a success message and the appt badge in the list", async ({ page }) => {
     await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#app")).toBeVisible();
@@ -406,6 +423,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
 
   test("imports leads from an uploaded CSV file", async ({ page }) => {
     await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#app")).toBeVisible();
@@ -454,6 +472,7 @@ test.describe("Reports (public/reports.html, ROI/activity view)", () => {
 
   test("shows an error for a bad API key", async ({ page }) => {
     await page.goto("/reports.html");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "not-a-real-key");
     await page.click("#connect-btn");
 
@@ -465,6 +484,7 @@ test.describe("Reports (public/reports.html, ROI/activity view)", () => {
     // Run the workflow from the list dashboard first so there's outbound
     // activity to report on, then confirm the reports page picks it up.
     await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
     await page.fill("#api-key", "demo-key");
     await page.click("#connect-btn");
     await expect(page.locator("#app")).toBeVisible();

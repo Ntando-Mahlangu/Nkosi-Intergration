@@ -319,7 +319,7 @@
 <div id="gate">
   <div class="panel">
     <h1>Command Center Access</h1>
-    <div class="tag">tenant uplink required</div>
+    <div class="tag">sign in to continue</div>
     <label for="login-email">Email</label>
     <input id="login-email" type="email" placeholder="you@business.com" />
     <label for="login-password">Password</label>
@@ -328,12 +328,16 @@
     <div style="text-align:center; margin-top:10px;">
       <a href="reset-password.html" class="nav-link" style="font-size:10px;">Forgot password?</a>
     </div>
-    <div class="or-divider">— or use an API key —</div>
-    <label for="base-url">API base URL</label>
-    <input id="base-url" placeholder="http://localhost:3000" />
-    <label for="api-key">Tenant API key</label>
-    <input id="api-key" type="password" placeholder="lr_..." />
-    <button id="connect-btn" class="ghost">Establish Link</button>
+    <details style="margin-top:16px;">
+      <summary id="advanced-toggle" style="cursor:pointer; color:var(--cyan-dim); font-size:10.5px; text-align:center;">Advanced: sign in with an API key instead</summary>
+      <div style="margin-top:14px;">
+        <label for="base-url">API base URL</label>
+        <input id="base-url" placeholder="http://localhost:3000" />
+        <label for="api-key">Tenant API key</label>
+        <input id="api-key" type="password" placeholder="lr_..." />
+        <button id="connect-btn" class="ghost">Connect</button>
+      </div>
+    </details>
     <div class="or-divider">— or —</div>
     <button type="button" id="demo-btn" class="ghost demo-btn">Explore the bundled demo</button>
     <div class="err" id="gate-err" role="alert"></div>
