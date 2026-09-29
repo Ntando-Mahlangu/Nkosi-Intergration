@@ -191,6 +191,42 @@
     background: #1b1e27;
     box-shadow: 0 20px 60px rgba(0,0,0,0.45);
   }
+  /* Isometric "cube" treatment: two shaded faces extending past the panel's
+     own top/right edges, skewed to read as a box's top and side in a
+     single light source (brighter top-face, darker side-face) — same
+     illusion as any isometric-card design, just applied to the sign-in panel. */
+  #gate .panel {
+    position: relative;
+    border-radius: 3px;
+  }
+  #gate .panel::before,
+  #gate .panel::after {
+    content: "";
+    position: absolute;
+    background: inherit;
+  }
+  #gate .panel::before {
+    top: 0;
+    right: -28px;
+    width: 28px;
+    height: 100%;
+    transform-origin: top left;
+    transform: skewY(45deg);
+    background: #2a2019;
+    border: 1px solid var(--line);
+    border-left: none;
+  }
+  #gate .panel::after {
+    top: -28px;
+    left: 0;
+    width: 100%;
+    height: 28px;
+    transform-origin: bottom left;
+    transform: skewX(45deg);
+    background: #4a4230;
+    border: 1px solid var(--line);
+    border-bottom: none;
+  }
   #gate h1, #terms-gate h1 {
     font-family: var(--serif);
     font-size: 20px;
