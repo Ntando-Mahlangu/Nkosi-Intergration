@@ -441,6 +441,81 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /admin/tenants/{id}/connect-number:
+    post:
+      tags: [admin]
+      summary: Connect a client's existing number (missedcall.io-style, see src/numberHosting.ts)
+      description: >
+        Hosts SMS on the phone number this client already gives out to
+        customers, on the shared Twilio account (DEFAULT_TWILIO_ACCOUNT_SID/
+        DEFAULT_TWILIO_AUTH_TOKEN) — the alternative to assigning a brand new
+        number. Ownership is proven by an automated Twilio verification call
+        to that number, not a code entered here; the order can then take from
+        minutes to several business days to fully complete (carrier
+        processing, and possibly an emailed Letter of Authorization to sign).
+      security: [{ adminAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phoneNumber, contactEmail, address]
+              properties:
+                phoneNumber: { type: string, description: "E.164, e.g. +15551234567 — the client's own existing number." }
+                contactEmail: { type: string }
+                address:
+                  type: object
+                  required: [customerName, street, city, region, postalCode, isoCountry]
+                  properties:
+                    customerName: { type: string }
+                    street: { type: string }
+                    city: { type: string }
+                    region: { type: string }
+                    postalCode: { type: string }
+                    isoCountry: { type: string, description: "Two-letter country code, e.g. US." }
+      responses:
+        "201":
+          description: Order started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicTenant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: Twilio rejected the request (e.g. shared account not configured, invalid address) }
+
+  /admin/tenants/{id}/connect-number/refresh:
+    post:
+      tags: [admin]
+      summary: Re-check an in-progress connect-number order's status with Twilio
+      description: >
+        Once status reaches "completed", this automatically turns on the sms
+        channel using the client's own number (via the same shared-account
+        resolution POST /admin/tenants already applies) — no separate manual
+        step needed.
+      security: [{ adminAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Status refreshed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicTenant" }
+        "400": { description: This tenant has no number-hosting order in progress }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: Twilio rejected the status-check request }
+
   /admin/notifications/failed:
     get:
       tags: [admin]
@@ -1050,7 +1125,26 @@ components:
         email: { type: string, description: "The tenant's login identity for /auth/login, if set." }
         hasPassword: { type: boolean, description: "Whether this tenant has ever set a password — settings.html uses this to show \"Set password\" vs \"Change password\"." }
         publicFormKey: { type: string, description: "Low-privilege token for POST /public/leads/{tenantId} — safe to publish in the tenant's own website (see public/settings.html's embed snippet)." }
+        numberHostingOrder: { $ref: "#/components/schemas/NumberHostingOrder" }
         createdAt: { type: string, format: date-time }
+
+    NumberHostingOrder:
+      type: object
+      description: >
+        An in-progress or completed "connect this client's existing number"
+        request (see src/numberHosting.ts) — the missedcall.io-style
+        alternative to assigning a brand new number.
+      properties:
+        orderSid: { type: string }
+        phoneNumber: { type: string }
+        status:
+          type: string
+          description: Mirrors Twilio's own HostedNumberOrder status values verbatim.
+          enum: [received, pending-verification, verified, pending-loa, carrier-processing, testing, completed, action-required, failed]
+        nextStep: { type: string, description: "Twilio's own description of what happens next." }
+        failureReason: { type: string, description: 'Only set once status is "action-required" or "failed".' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
 
     Lead:
       type: object

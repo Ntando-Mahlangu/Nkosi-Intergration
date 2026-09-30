@@ -159,6 +159,16 @@ deployment serves many clients with fully isolated data.
   from-email — instead of re-entering the same credentials every time. A
   client bringing their own account still works: supply that channel's
   full credentials directly and the shared default is never consulted.
+- **`src/numberHosting.ts`** — the missedcall.io-style alternative to
+  assigning a client a brand new number: `POST /admin/tenants/:id/connect-number`
+  (wired into `public/admin.html`'s per-tenant "Connect their number" button)
+  hosts SMS on the number the client *already* gives out to customers, on the
+  same shared Twilio account above. Ownership is proven by an automated
+  Twilio verification call to that number, not a code typed into this app;
+  `POST .../connect-number/refresh` re-checks status and automatically turns
+  on the sms channel once it reaches `"completed"`. The remaining steps
+  (carrier processing, possibly an emailed Letter of Authorization to sign)
+  are Twilio's own process and can take from minutes to a few business days.
 - **`src/security.ts`**, **`src/crypto.ts`** — constant-time secret
   comparison and AES-256-GCM encryption for tenant provider credentials at
   rest (required in Postgres mode — see Environment variables below).
@@ -403,6 +413,8 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | POST | `/admin/tenants` | Create a tenant (admin); returns the API key once. Also accepts `consentBasisConfirmed`/`carrierApprovalConfirmed` (recorded attestations — see `COMPLIANCE.md`) and any self-service field |
 | PATCH | `/admin/tenants/:id` | Admin update: any self-service field, plus `status` (`"active"` \| `"suspended"`) and `carrierApprovalConfirmed` (admin-only — the only way to clear an sms/whatsapp send block for a tenant) |
 | POST | `/admin/tenants/:id/rotate-key` | Issue a new API key for a tenant (admin); the old key stops working immediately |
+| POST | `/admin/tenants/:id/connect-number` | `{phoneNumber, contactEmail, address}` — starts hosting SMS on the client's own existing number (admin), see `src/numberHosting.ts` |
+| POST | `/admin/tenants/:id/connect-number/refresh` | Re-checks the order's status with Twilio; turns on the sms channel automatically once it's `"completed"` |
 | DELETE | `/admin/tenants/:id` | Permanently delete a tenant (admin) — cascades to its leads/messages in Postgres; no undo |
 | GET | `/admin/notifications/failed` | Notifications ("interested"/escalation) that failed to reach `notifyWebhookUrl` even after retries — `pending` ones are still being retried by the worker, `dead` ones gave up and need attention |
 | GET | `/admin/audit-log` | Admin action history (tenant create/update/delete/key-rotation), newest first. Optional `?limit=&offset=` |

@@ -54,7 +54,12 @@ export interface AuditLogEntry {
   id: string;
   tenantId?: string;
   action:
-    "tenant.create" | "tenant.admin_update" | "tenant.delete" | "tenant.key_rotate" | "tenant.paddle_status_change";
+    | "tenant.create"
+    | "tenant.admin_update"
+    | "tenant.delete"
+    | "tenant.key_rotate"
+    | "tenant.paddle_status_change"
+    | "tenant.connect_number";
   actor: string;
   details?: Record<string, unknown>;
   createdAt: string;

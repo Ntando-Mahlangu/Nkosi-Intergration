@@ -157,6 +157,25 @@ export interface ChannelCredentials {
   email?: SendGridCredentials;
 }
 
+/**
+ * Tracks an in-progress or completed "connect this client's existing number"
+ * request (see src/numberHosting.ts) — the missedcall.io-style alternative
+ * to assigning the client a brand new number from the agency's Twilio pool.
+ * `status` mirrors Twilio's own HostedNumberOrder status values verbatim
+ * (e.g. "received", "pending-verification", "verified", "pending-loa",
+ * "carrier-processing", "completed", "action-required", "failed") so the
+ * admin UI can show Twilio's real progress rather than a re-interpreted one.
+ */
+export interface NumberHostingOrder {
+  orderSid: string;
+  phoneNumber: string;
+  status: string;
+  nextStep?: string;
+  failureReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface QuietHours {
   /** Local hour (0-23) quiet hours begin. */
   startHour: number;
@@ -339,6 +358,13 @@ export interface Tenant {
    * /tenants/me reads it.
    */
   publicFormKey?: string;
+  /**
+   * Set once an admin starts "connect this client's existing number"
+   * (POST /admin/tenants/:id/connect-number) — see NumberHostingOrder.
+   * Unset for a tenant using an assigned/purchased number instead (the
+   * original flow: channels.sms.fromNumber with no hosting order behind it).
+   */
+  numberHostingOrder?: NumberHostingOrder;
   createdAt: string;
 }
 

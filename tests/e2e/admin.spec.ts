@@ -103,6 +103,55 @@ test.describe("Admin UI (public/admin.html)", () => {
     await expect(page.locator("#tenants")).not.toContainText(name);
   });
 
+  test("'Connect their number' opens the connect form, and submitting it surfaces the real not-configured error (no DEFAULT_TWILIO_* set on this test server)", async ({
+    page,
+  }) => {
+    await connect(page);
+    const name = uniqueName("E2E Connect Number");
+
+    await page.fill("#new-name", name);
+    await page.fill("#new-timezone", "UTC");
+    await page.check("#new-skip-channels");
+    await page.check("#new-consent-basis");
+    await page.click("#create-btn");
+    await expect(page.locator(".reveal .key")).toContainText("lr_");
+
+    const card = page.locator(`.card:has-text("${name}")`);
+    const form = card.locator(".connect-number-form");
+    await expect(form).toBeHidden();
+    await card.getByRole("button", { name: "Connect their number" }).click();
+    await expect(form).toBeVisible();
+
+    await form.locator('[data-field="phoneNumber"]').fill("+15551234567");
+    await form.locator('[data-field="contactEmail"]').fill("owner@example.com");
+    await form.locator('[data-field="customerName"]').fill("Acme Plumbing LLC");
+    await form.locator('[data-field="street"]').fill("1 Main St");
+    await form.locator('[data-field="city"]').fill("Springfield");
+    await form.locator('[data-field="region"]').fill("IL");
+    await form.locator('[data-field="postalCode"]').fill("62704");
+    await form.locator('[data-field="isoCountry"]').fill("US");
+
+    let dialogMessage = "";
+    page.once("dialog", (d) => {
+      dialogMessage = d.message();
+      void d.accept();
+    });
+    await form.getByRole("button", { name: "Start connecting" }).click();
+    await expect.poll(() => dialogMessage).toMatch(/shared agency Twilio account/);
+
+    // The form stays open with its values intact after a failed submit — a
+    // client-side loadAll() refresh only ever happens on a successful call.
+    await expect(form).toBeVisible();
+    await expect(form.locator('[data-field="phoneNumber"]')).toHaveValue("+15551234567");
+
+    await form.getByRole("button", { name: "Cancel" }).click();
+    await expect(form).toBeHidden();
+
+    page.once("dialog", (d) => d.accept());
+    await card.getByRole("button", { name: "Delete" }).click();
+    await expect(page.locator("#tenants")).not.toContainText(name);
+  });
+
   test("shows the Twilio/SendGrid fields by default — 'skip provider setup' hides them for test mode", async ({
     page,
   }) => {

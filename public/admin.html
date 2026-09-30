@@ -542,6 +542,12 @@
     document.getElementById("reveal-panel").innerHTML = "";
   }
 
+  function numberHostingBadgeClass(status) {
+    if (status === "completed") return "active";
+    if (status === "failed" || status === "action-required") return "dead";
+    return "pending";
+  }
+
   function renderTenants(tenants) {
     const el = document.getElementById("tenants");
     renderPager(
@@ -579,6 +585,11 @@
             ? `<div class="meta">Sign-in: ${escapeHtml(t.email)}${t.hasPassword ? "" : " (password not yet set)"}</div>`
             : ""
         }
+        ${
+          t.numberHostingOrder
+            ? `<div class="meta">Own number ${escapeHtml(t.numberHostingOrder.phoneNumber)}: <span class="badge ${numberHostingBadgeClass(t.numberHostingOrder.status)}">${escapeHtml(t.numberHostingOrder.status)}</span>${t.numberHostingOrder.nextStep ? ` — ${escapeHtml(t.numberHostingOrder.nextStep)}` : ""}${t.numberHostingOrder.failureReason ? ` (${escapeHtml(t.numberHostingOrder.failureReason)})` : ""}</div>`
+            : ""
+        }
         <div class="actions">
           ${
             t.status === "suspended"
@@ -586,8 +597,42 @@
               : `<button class="secondary" data-action="suspend">Suspend</button>`
           }
           <button class="secondary" data-action="rotate-key">Rotate key</button>
+          ${
+            !t.numberHostingOrder
+              ? `<button class="secondary" data-action="connect-number-toggle">Connect their number</button>`
+              : t.numberHostingOrder.status !== "completed"
+                ? `<button class="secondary" data-action="connect-number-refresh">Check status</button>`
+                : ""
+          }
           <button class="danger" data-action="delete">Delete</button>
         </div>
+        ${
+          !t.numberHostingOrder
+            ? `<div class="connect-number-form" style="display:none; margin-top:10px; border-top:1px solid var(--line); padding-top:10px;">
+          <div class="hint">
+            Enter the phone number this business already gives customers — not a new one.
+            Twilio verifies ownership with an automated call to that number (someone should
+            be ready to answer it); SMS starts working once the order completes, which can
+            take anywhere from minutes to a few business days and may require an emailed
+            authorization letter to sign.
+          </div>
+          <div class="form-grid" style="margin-top:8px;">
+            <div><label>Client's existing phone number</label><input data-field="phoneNumber" placeholder="+15551234567" /></div>
+            <div><label>Contact email</label><input data-field="contactEmail" placeholder="owner@acmeplumbing.com" /></div>
+            <div><label>Business/customer name</label><input data-field="customerName" placeholder="Acme Plumbing LLC" /></div>
+            <div><label>Street address</label><input data-field="street" placeholder="1 Main St" /></div>
+            <div><label>City</label><input data-field="city" placeholder="Springfield" /></div>
+            <div><label>State/region</label><input data-field="region" placeholder="IL" /></div>
+            <div><label>Postal code</label><input data-field="postalCode" placeholder="62704" /></div>
+            <div><label>Country (ISO)</label><input data-field="isoCountry" placeholder="US" value="US" /></div>
+          </div>
+          <div style="margin-top:8px;">
+            <button data-action="connect-number-submit">Start connecting</button>
+            <button class="secondary" data-action="connect-number-cancel">Cancel</button>
+          </div>
+        </div>`
+            : ""
+        }
       </div>`
       )
       .join("");
@@ -880,6 +925,17 @@
     if (!session) return;
 
     const action = button.dataset.action;
+
+    if (action === "connect-number-toggle") {
+      const form = card.querySelector(".connect-number-form");
+      form.style.display = form.style.display === "block" ? "none" : "block";
+      return;
+    }
+    if (action === "connect-number-cancel") {
+      card.querySelector(".connect-number-form").style.display = "none";
+      return;
+    }
+
     try {
       if (action === "suspend" || action === "reactivate") {
         await api(session, `/admin/tenants/${tenantId}`, {
@@ -895,6 +951,29 @@
       } else if (action === "delete") {
         if (!confirm("Permanently delete this tenant? This cascades to its leads/messages and cannot be undone.")) return;
         await api(session, `/admin/tenants/${tenantId}`, { method: "DELETE" });
+        clearReveal();
+      } else if (action === "connect-number-submit") {
+        const form = card.querySelector(".connect-number-form");
+        const field = (name) => form.querySelector(`[data-field="${name}"]`).value.trim();
+        await api(session, `/admin/tenants/${tenantId}/connect-number`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phoneNumber: field("phoneNumber"),
+            contactEmail: field("contactEmail"),
+            address: {
+              customerName: field("customerName"),
+              street: field("street"),
+              city: field("city"),
+              region: field("region"),
+              postalCode: field("postalCode"),
+              isoCountry: field("isoCountry"),
+            },
+          }),
+        });
+        clearReveal();
+      } else if (action === "connect-number-refresh") {
+        await api(session, `/admin/tenants/${tenantId}/connect-number/refresh`, { method: "POST" });
         clearReveal();
       }
       await loadAll(session);

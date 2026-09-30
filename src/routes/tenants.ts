@@ -15,6 +15,12 @@ import { generateFormKey } from "../idgen.js";
 import { hashPassword, verifyPassword } from "../password.js";
 import { buildResetLink, issuePasswordResetToken, MIN_PASSWORD_LENGTH } from "./auth.js";
 import { sendAccountEmail } from "../authEmail.js";
+import {
+  NUMBER_HOSTING_COMPLETE_STATUS,
+  refreshNumberHostingStatus,
+  startNumberHosting,
+  type NumberHostingAddress,
+} from "../numberHosting.js";
 
 const MAX_KNOWLEDGE_BASE_LENGTH = 20_000;
 
@@ -289,6 +295,40 @@ async function checkPaddleSubscriptionIdConflict(
   const existing = await tenantStore.getTenantByPaddleSubscriptionId(trimmed);
   if (existing && existing.id !== excludeTenantId) {
     return `paddleSubscriptionId "${trimmed}" is already assigned to tenant ${existing.id}`;
+  }
+  return undefined;
+}
+
+interface ConnectNumberBody {
+  /** The client's own existing number, in E.164 format — this is what gets hosted, never a newly purchased one. */
+  phoneNumber?: string;
+  contactEmail?: string;
+  address?: Partial<NumberHostingAddress>;
+}
+
+function isValidE164(value: unknown): value is string {
+  return typeof value === "string" && /^\+[1-9]\d{6,14}$/.test(value);
+}
+
+/** Validates POST /admin/tenants/:id/connect-number's body. Returns an error message, or undefined if valid. */
+function validateConnectNumberBody(body: ConnectNumberBody): string | undefined {
+  if (!isValidE164(body.phoneNumber)) {
+    return "phoneNumber must be in E.164 format (e.g. +15551234567) — the client's own existing number, not a new one";
+  }
+  if (!isValidEmail(body.contactEmail) || !body.contactEmail) {
+    return "contactEmail is required — Twilio uses it for order updates and, if required, a Letter of Authorization to sign";
+  }
+  const a = body.address;
+  if (
+    !a ||
+    !isNonEmptyString(a.customerName) ||
+    !isNonEmptyString(a.street) ||
+    !isNonEmptyString(a.city) ||
+    !isNonEmptyString(a.region) ||
+    !isNonEmptyString(a.postalCode) ||
+    !isNonEmptyString(a.isoCountry)
+  ) {
+    return "address.customerName/street/city/region/postalCode/isoCountry are all required (the business's registered address, for Twilio's regulatory record)";
   }
   return undefined;
 }
@@ -703,6 +743,121 @@ export function createTenantRoutes({
       });
       // Only place the new raw API key is ever returned — the client must save it now.
       res.json({ ...toPublicTenant(updated!), apiKey: updated!.apiKey });
+    })
+  );
+
+  // "Connect this client's existing number" — the missedcall.io-style
+  // alternative to assigning a brand new number from the agency's Twilio
+  // pool: hosts SMS on the number the client already gives out to
+  // customers, on the shared Twilio account. Ownership/consent is proven by
+  // Twilio's own verification call to that number, not a code typed into
+  // this app — see src/numberHosting.ts's own comment for the full flow and
+  // why the remaining steps (LOA e-sign if required, carrier processing)
+  // can take real time.
+  router.post(
+    "/admin/tenants/:id/connect-number",
+    createAdminLimiter(),
+    adminAuth,
+    asyncHandler(async (req, res) => {
+      const existing = await tenantStore.getTenant(req.params.id);
+      if (!existing) {
+        res.status(404).json({ error: "no such tenant" });
+        return;
+      }
+      const body = (req.body ?? {}) as ConnectNumberBody;
+      const error = validateConnectNumberBody(body);
+      if (error) {
+        res.status(400).json({ error });
+        return;
+      }
+
+      let result;
+      try {
+        result = await startNumberHosting({
+          phoneNumber: body.phoneNumber!,
+          contactEmail: body.contactEmail!,
+          address: body.address as NumberHostingAddress,
+        });
+      } catch (err) {
+        res
+          .status(502)
+          .json({ error: err instanceof Error ? err.message : "failed to start number hosting with Twilio" });
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const updated = await tenantStore.updateTenant(existing.id, {
+        numberHostingOrder: {
+          orderSid: result.orderSid,
+          phoneNumber: result.phoneNumber,
+          status: result.status,
+          nextStep: result.nextStep,
+          failureReason: result.failureReason,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      await recordAudit(auditLogStore, {
+        tenantId: existing.id,
+        action: "tenant.connect_number",
+        actor: req.adminActor ?? "admin",
+        details: { phoneNumber: result.phoneNumber, orderSid: result.orderSid },
+      });
+      res.status(201).json(toPublicTenant(updated!));
+    })
+  );
+
+  // Re-checks an in-progress order's status with Twilio. Once it reaches
+  // "completed", the client's own number is live for SMS — this immediately
+  // starts using it (same shared-account resolution POST /admin/tenants
+  // already applies to a manually-assigned number) instead of requiring a
+  // second manual step to actually turn the channel on.
+  router.post(
+    "/admin/tenants/:id/connect-number/refresh",
+    createAdminLimiter(),
+    adminAuth,
+    asyncHandler(async (req, res) => {
+      const existing = await tenantStore.getTenant(req.params.id);
+      if (!existing) {
+        res.status(404).json({ error: "no such tenant" });
+        return;
+      }
+      if (!existing.numberHostingOrder) {
+        res.status(400).json({ error: "this tenant has no number-hosting order in progress" });
+        return;
+      }
+
+      let result;
+      try {
+        result = await refreshNumberHostingStatus(existing.numberHostingOrder.orderSid);
+      } catch (err) {
+        res.status(502).json({ error: err instanceof Error ? err.message : "failed to check status with Twilio" });
+        return;
+      }
+
+      const patch: Partial<Tenant> = {
+        numberHostingOrder: {
+          ...existing.numberHostingOrder,
+          status: result.status,
+          nextStep: result.nextStep,
+          failureReason: result.failureReason,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+      if (result.status === NUMBER_HOSTING_COMPLETE_STATUS && !existing.channels.sms) {
+        // resolveChannelDefaults's own runtime logic (resolveTwilioChannel)
+        // accepts a bare fromNumber and fills in the shared account's
+        // accountSid/authToken — its declared parameter type just doesn't
+        // reflect that partial-input tolerance, hence the cast.
+        const { channels, error: channelsError } = resolveChannelDefaults({
+          ...existing.channels,
+          sms: { fromNumber: result.phoneNumber } as Tenant["channels"]["sms"],
+        });
+        if (!channelsError) patch.channels = channels;
+      }
+
+      const updated = await tenantStore.updateTenant(existing.id, patch);
+      res.json(toPublicTenant(updated!));
     })
   );
 

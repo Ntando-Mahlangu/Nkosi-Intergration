@@ -199,7 +199,7 @@ const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_ho
   notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at,
   contact_phone, contact_email, website, terms_accepted_at, terms_version,
   consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days,
-  email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key`;
+  email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, number_hosting_order`;
 
 /**
  * Tenant provider credentials (Twilio auth tokens, SendGrid API keys) are
@@ -289,6 +289,7 @@ export class PostgresTenantStore implements TenantStore {
         ? new Date(row.password_reset_expires_at as string).toISOString()
         : undefined,
       publicFormKey: (row.public_form_key as string | null) ?? undefined,
+      numberHostingOrder: (row.number_hosting_order as Tenant["numberHostingOrder"] | null) ?? undefined,
       createdAt: new Date(row.created_at as string).toISOString(),
     };
   }
@@ -428,6 +429,9 @@ export class PostgresTenantStore implements TenantStore {
     if ("passwordResetTokenHash" in patch) push("password_reset_token_hash", patch.passwordResetTokenHash ?? null);
     if ("passwordResetExpiresAt" in patch) push("password_reset_expires_at", patch.passwordResetExpiresAt ?? null);
     if ("publicFormKey" in patch) push("public_form_key", patch.publicFormKey ?? null);
+    if ("numberHostingOrder" in patch) {
+      push("number_hosting_order", patch.numberHostingOrder ? JSON.stringify(patch.numberHostingOrder) : null);
+    }
     if ("createdAt" in patch) push("created_at", patch.createdAt);
 
     if (setClauses.length === 0) return this.getTenant(id);
