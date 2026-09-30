@@ -48,6 +48,7 @@ test.describe("Admin UI (public/admin.html)", () => {
 
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "Africa/Johannesburg");
+    await page.check("#new-skip-channels");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
@@ -84,6 +85,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-phone", "(555) 123-4567");
     await page.fill("#new-email", "owner@example.com");
     await page.fill("#new-website", "https://example.com");
+    await page.check("#new-skip-channels");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
@@ -101,18 +103,18 @@ test.describe("Admin UI (public/admin.html)", () => {
     await expect(page.locator("#tenants")).not.toContainText(name);
   });
 
-  test("skips provider setup by default (test mode) — the Twilio/SendGrid fields only appear once unchecked", async ({
+  test("shows the Twilio/SendGrid fields by default — 'skip provider setup' hides them for test mode", async ({
     page,
   }) => {
     await connect(page);
-    await expect(page.locator("#new-skip-channels")).toBeChecked();
-    await expect(page.locator("#channel-fields")).toBeHidden();
-
-    await page.click("#new-skip-channels");
+    await expect(page.locator("#new-skip-channels")).not.toBeChecked();
     await expect(page.locator("#channel-fields")).toBeVisible();
 
     await page.click("#new-skip-channels");
     await expect(page.locator("#channel-fields")).toBeHidden();
+
+    await page.click("#new-skip-channels");
+    await expect(page.locator("#channel-fields")).toBeVisible();
   });
 
   test("rejects a partially-filled 'own Twilio account' override instead of silently dropping it", async ({ page }) => {
@@ -121,7 +123,6 @@ test.describe("Admin UI (public/admin.html)", () => {
 
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
-    await page.click("#new-skip-channels"); // uncheck: show channel fields
     await page.fill("#new-twilio-number", "+15551234567");
     await page.click("#new-twilio-advanced");
     await page.fill("#new-twilio-sid", "AC123");
@@ -139,7 +140,6 @@ test.describe("Admin UI (public/admin.html)", () => {
 
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
-    await page.click("#new-skip-channels"); // uncheck: show channel fields
     await page.fill("#new-twilio-number", "+15551234567");
     // No DEFAULT_TWILIO_ACCOUNT_SID/DEFAULT_TWILIO_AUTH_TOKEN configured for this test server,
     // and the "own account" override was never checked.
@@ -164,6 +164,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     const name = uniqueName("E2E Suspend");
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
+    await page.check("#new-skip-channels");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator(".reveal .key")).toContainText("lr_");
@@ -189,6 +190,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     const name = uniqueName("E2E Billing");
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
+    await page.check("#new-skip-channels");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator(".reveal .key")).toContainText("lr_");
@@ -241,6 +243,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     const name = uniqueName("E2E Rotate");
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
+    await page.check("#new-skip-channels");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
@@ -260,6 +263,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     const name = uniqueName("E2E Delete");
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
+    await page.check("#new-skip-channels");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator("#tenants")).toContainText(name);
@@ -279,6 +283,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     const name = uniqueName("E2E Audit");
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
+    await page.check("#new-skip-channels");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator("#audit-log")).toContainText("Tenant Create");
