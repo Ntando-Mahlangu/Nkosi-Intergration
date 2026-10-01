@@ -488,7 +488,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "502": { description: Twilio rejected the request (e.g. shared account not configured, invalid address) }
+        "502": { description: "Twilio rejected the request (e.g. shared account not configured, invalid address)" }
 
   /admin/tenants/{id}/connect-number/refresh:
     post:
@@ -511,10 +511,10 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PublicTenant" }
-        "400": { description: This tenant has no number-hosting order in progress }
+        "400": { description: "This tenant has no number-hosting order in progress" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "502": { description: Twilio rejected the status-check request }
+        "502": { description: "Twilio rejected the status-check request" }
 
   /admin/notifications/failed:
     get:
