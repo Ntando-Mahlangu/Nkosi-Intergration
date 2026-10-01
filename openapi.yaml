@@ -184,6 +184,78 @@ paths:
                   apiKey: { type: string }
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /auth/request-code:
+    post:
+      tags: [auth]
+      summary: "Phone-number sign-in, step 1: request a one-time code"
+      description: >
+        The primary sign-in path going forward — no password to set or
+        forget. Always the same generic response whether or not the phone
+        matches a tenant's loginPhone — see /auth/login's own note on why.
+        Texts a 6-digit code (via PLATFORM_SMS_FROM_NUMBER, or logged to the
+        console if unset) that POST /auth/verify-code's code is good for 10
+        minutes. The code itself is never returned here, unlike the
+        password-setup link POST /admin/tenants can return — this endpoint
+        takes only a phone number, so echoing the code back would let
+        anyone with a phone number log in as that tenant.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone: { type: string, description: "E.164, e.g. +15551234567." }
+      responses:
+        "200":
+          description: Generic success — check your phone
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/verify-code:
+    post:
+      tags: [auth]
+      summary: "Phone-number sign-in, step 2: verify the code"
+      description: >
+        Resolves phone+code to the tenant's real API key, same pattern as
+        /auth/login. Locks out after 5 wrong attempts since the last
+        requested code until a fresh one is requested (a 6-digit code has
+        far less entropy than a password). The same generic 401 covers an
+        unknown phone, an expired code, a locked-out attempt count, and a
+        wrong code.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code]
+              properties:
+                phone: { type: string }
+                code: { type: string }
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKey: { type: string }
+                  tenant: { $ref: "#/components/schemas/PublicTenant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+
   /tenants/me:
     get:
       tags: [tenant-self-service]
@@ -1086,6 +1158,16 @@ components:
             (or an empty string) to remove email/password sign-in. Setting
             it on POST /admin/tenants emails a set-password link (see
             /auth/reset-password).
+        loginPhone:
+          type: string
+          nullable: true
+          description: >-
+            The tenant's phone-based login identity (see /auth/request-code,
+            /auth/verify-code) — the primary sign-in path going forward, no
+            password involved. Distinct from contactPhone (reference-only)
+            and from channels.sms.fromNumber (the number *leads* are texted
+            from). E.164 format. Set null (or an empty string) to remove
+            phone sign-in.
 
     PublicTenant:
       type: object
@@ -1123,6 +1205,7 @@ components:
         botDisclosureEnabled: { type: boolean, description: "Whether the chatbot's first auto-reply per conversation proactively discloses it's automated. Defaults to true when unset." }
         dataRetentionDays: { type: integer, description: "Days after a lead closes out before the worker auto-purges it. Defaults to 365 when unset." }
         email: { type: string, description: "The tenant's login identity for /auth/login, if set." }
+        loginPhone: { type: string, description: "The tenant's phone-based login identity for /auth/request-code + /auth/verify-code, if set — the primary sign-in path going forward." }
         hasPassword: { type: boolean, description: "Whether this tenant has ever set a password — settings.html uses this to show \"Set password\" vs \"Change password\"." }
         publicFormKey: { type: string, description: "Low-privilege token for POST /public/leads/{tenantId} — safe to publish in the tenant's own website (see public/settings.html's embed snippet)." }
         numberHostingOrder: { $ref: "#/components/schemas/NumberHostingOrder" }

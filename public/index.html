@@ -356,14 +356,14 @@
   <div class="panel">
     <h1>Command Center Access</h1>
     <div class="tag">sign in to continue</div>
-    <label for="login-email">Email</label>
-    <input id="login-email" type="email" placeholder="you@business.com" />
-    <label for="login-password">Password</label>
-    <input id="login-password" type="password" placeholder="••••••••" />
-    <button id="login-btn">Sign In</button>
-    <div style="text-align:center; margin-top:10px;">
-      <a href="reset-password.html" class="nav-link" style="font-size:10px;">Forgot password?</a>
+    <label for="login-phone">Phone number</label>
+    <input id="login-phone" type="tel" placeholder="+15551234567" />
+    <div id="login-code-row" style="display:none; margin-top:10px;">
+      <label for="login-code">Code</label>
+      <input id="login-code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" />
     </div>
+    <button id="login-send-code-btn">Send code</button>
+    <button id="login-verify-btn" style="display:none;">Sign In</button>
     <details style="margin-top:16px;">
       <summary id="advanced-toggle" style="cursor:pointer; color:var(--cyan-dim); font-size:10.5px; text-align:center;">Advanced: sign in with an API key instead</summary>
       <div style="margin-top:14px;">
@@ -443,20 +443,48 @@
     connect(baseUrl, apiKey);
   });
 
-  document.getElementById("login-btn").addEventListener("click", async () => {
+  const loginCodeRow = document.getElementById("login-code-row");
+  const loginSendCodeBtn = document.getElementById("login-send-code-btn");
+  const loginVerifyBtn = document.getElementById("login-verify-btn");
+
+  loginSendCodeBtn.addEventListener("click", async () => {
     const baseUrl = document.getElementById("base-url").value.trim() || window.location.origin;
-    const email = document.getElementById("login-email").value.trim();
-    const password = document.getElementById("login-password").value;
+    const phone = document.getElementById("login-phone").value.trim();
     gateErr.textContent = "";
-    if (!email || !password) {
-      gateErr.textContent = "Email and password are required.";
+    if (!phone) {
+      gateErr.textContent = "Phone number is required.";
       return;
     }
     try {
-      const res = await fetch(baseUrl.replace(/\/$/, "") + "/auth/login", {
+      const res = await fetch(baseUrl.replace(/\/$/, "") + "/auth/request-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ phone }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      loginCodeRow.style.display = "block";
+      loginVerifyBtn.style.display = "";
+      loginSendCodeBtn.textContent = "Resend code";
+    } catch (err) {
+      gateErr.textContent = "Could not send code: " + err.message;
+    }
+  });
+
+  loginVerifyBtn.addEventListener("click", async () => {
+    const baseUrl = document.getElementById("base-url").value.trim() || window.location.origin;
+    const phone = document.getElementById("login-phone").value.trim();
+    const code = document.getElementById("login-code").value.trim();
+    gateErr.textContent = "";
+    if (!code) {
+      gateErr.textContent = "Enter the code you were texted.";
+      return;
+    }
+    try {
+      const res = await fetch(baseUrl.replace(/\/$/, "") + "/auth/verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, code }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || res.statusText);

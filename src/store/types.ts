@@ -111,6 +111,8 @@ export interface TenantStore {
   getTenantByEmail(email: string): Promise<Tenant | undefined>;
   /** Lookup by the SHA-256 hash of a password-reset/set-password token (src/routes/auth.ts) — never by the raw token. */
   getTenantByPasswordResetTokenHash(tokenHash: string): Promise<Tenant | undefined>;
+  /** Lookup by phone-login identity (src/routes/auth.ts's /auth/request-code, /auth/verify-code). */
+  getTenantByLoginPhone(phone: string): Promise<Tenant | undefined>;
   listTenants(): Promise<Tenant[]>;
   createTenant(tenant: Tenant): Promise<Tenant>;
   updateTenant(id: string, patch: Partial<Tenant>): Promise<Tenant | undefined>;

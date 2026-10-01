@@ -199,7 +199,8 @@ const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_ho
   notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at,
   contact_phone, contact_email, website, terms_accepted_at, terms_version,
   consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days,
-  email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, number_hosting_order`;
+  email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, number_hosting_order,
+  login_phone, otp_code_hash, otp_expires_at, otp_attempts`;
 
 /**
  * Tenant provider credentials (Twilio auth tokens, SendGrid API keys) are
@@ -290,6 +291,16 @@ export class PostgresTenantStore implements TenantStore {
         : undefined,
       publicFormKey: (row.public_form_key as string | null) ?? undefined,
       numberHostingOrder: (row.number_hosting_order as Tenant["numberHostingOrder"] | null) ?? undefined,
+      loginPhone: (row.login_phone as string | null) ?? undefined,
+      otpCodeHash: (row.otp_code_hash as string | null) ?? undefined,
+      otpExpiresAt: (row.otp_expires_at as string | null)
+        ? new Date(row.otp_expires_at as string).toISOString()
+        : undefined,
+      // otp_attempts is NOT NULL DEFAULT 0 at the DB layer (so a counter
+      // always exists to increment), but only meaningful while an OTP cycle
+      // is actually in progress — surfacing a stray `otpAttempts: 0` on
+      // every tenant that's never requested a code would be noise.
+      otpAttempts: row.otp_code_hash ? ((row.otp_attempts as number | null) ?? 0) : undefined,
       createdAt: new Date(row.created_at as string).toISOString(),
     };
   }
@@ -326,6 +337,11 @@ export class PostgresTenantStore implements TenantStore {
     return rows[0] ? this.fromRow(rows[0]) : undefined;
   }
 
+  async getTenantByLoginPhone(phone: string): Promise<Tenant | undefined> {
+    const { rows } = await this.pool.query(`SELECT ${TENANT_COLUMNS} FROM tenants WHERE login_phone = $1`, [phone]);
+    return rows[0] ? this.fromRow(rows[0]) : undefined;
+  }
+
   async listTenants(): Promise<Tenant[]> {
     // `id` as a tiebreaker (not just created_at) so two tenants created in
     // the same instant still sort deterministically — GET /admin/tenants
@@ -338,8 +354,8 @@ export class PostgresTenantStore implements TenantStore {
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days, email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days, email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, login_phone)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)`,
       [
         tenant.id,
         tenant.name,
@@ -372,6 +388,7 @@ export class PostgresTenantStore implements TenantStore {
         tenant.passwordResetTokenHash ?? null,
         tenant.passwordResetExpiresAt ?? null,
         tenant.publicFormKey ?? null,
+        tenant.loginPhone ?? null,
       ]
     );
     return tenant;
@@ -432,6 +449,10 @@ export class PostgresTenantStore implements TenantStore {
     if ("numberHostingOrder" in patch) {
       push("number_hosting_order", patch.numberHostingOrder ? JSON.stringify(patch.numberHostingOrder) : null);
     }
+    if ("loginPhone" in patch) push("login_phone", patch.loginPhone ?? null);
+    if ("otpCodeHash" in patch) push("otp_code_hash", patch.otpCodeHash ?? null);
+    if ("otpExpiresAt" in patch) push("otp_expires_at", patch.otpExpiresAt ?? null);
+    if ("otpAttempts" in patch) push("otp_attempts", patch.otpAttempts ?? 0);
     if ("createdAt" in patch) push("created_at", patch.createdAt);
 
     if (setClauses.length === 0) return this.getTenant(id);

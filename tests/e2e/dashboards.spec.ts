@@ -22,6 +22,14 @@ async function createUnacceptedTenant(name: string): Promise<string> {
   return body.apiKey;
 }
 
+async function createTenantWithLoginPhone(name: string, loginPhone: string): Promise<void> {
+  await fetch(`${BASE_URL}/admin/tenants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${ADMIN_KEY}` },
+    body: JSON.stringify({ name, timezone: "UTC", loginPhone }),
+  });
+}
+
 test.describe("Command Center (public/index.html, the default landing page)", () => {
   test("connects with a valid API key and renders live category nodes", async ({ page }) => {
     await page.goto("/");
@@ -176,6 +184,29 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
 
     await expect(page.locator("#gate")).toBeVisible();
     await expect(page.locator("#gate-err")).toContainText("Link failed");
+  });
+
+  test("phone sign-in: requesting a code reveals the code field, and a wrong code is rejected", async ({ page }) => {
+    const loginPhone = `+1555${Date.now().toString().slice(-7)}`;
+    await createTenantWithLoginPhone("E2E Phone Sign-in", loginPhone);
+
+    await page.goto("/");
+    await page.fill("#login-phone", loginPhone);
+    await expect(page.locator("#login-code-row")).toBeHidden();
+    await page.click("#login-send-code-btn");
+
+    // The real code only ever reaches an actual phone (or the server's own
+    // log, when no Twilio is configured, as here) — never the API response
+    // (see src/routes/auth.ts) — so this proves the request-code leg and the
+    // UI's reveal of the code field, and that a guessed code is rejected,
+    // without depending on an unobservable value.
+    await expect(page.locator("#login-code-row")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resend code" })).toBeVisible();
+
+    await page.fill("#login-code", "000000");
+    await page.click("#login-verify-btn");
+    await expect(page.locator("#gate-err")).toContainText("invalid or expired code");
+    await expect(page.locator("#gate")).toBeVisible();
   });
 
   test("reconnects automatically on reload using the persisted session", async ({ page }) => {

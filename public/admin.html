@@ -219,17 +219,15 @@
 
         <div class="form-grid" style="margin-top:12px;">
           <div class="span-2">
-            <label for="new-login-email">Sign-in email (optional)</label>
-            <input id="new-login-email" placeholder="owner@acmeplumbing.com" />
+            <label for="new-login-phone">Sign-in phone number (optional)</label>
+            <input id="new-login-phone" placeholder="+15551234567" />
           </div>
         </div>
         <div class="hint">
-          If set, this client can sign in with an email + password instead
-          of only the API key/magic link below — they'll get an email to
-          set their password once created (or, in test mode with no
-          SendGrid configured, the link appears in the reveal panel after
-          creation). Leave blank to keep this client on the API key/magic
-          link only.
+          If set, this client signs in with just this phone number — no
+          password to set or forget. They'll request a one-time code by
+          text and enter it to get in. Leave blank to keep this client on
+          the API key/magic link only.
         </div>
 
         <label class="checkbox-row">
@@ -495,7 +493,7 @@
     return base + link;
   }
 
-  function showReveal(title, key, magicLink, passwordSetupLink) {
+  function showReveal(title, key, magicLink, passwordSetupLink, loginPhone) {
     document.getElementById("reveal-panel").innerHTML = `
       <div class="reveal">
         <strong>${escapeHtml(title)}</strong><br />
@@ -518,6 +516,15 @@
                  they'd get this link by email; it's shown here too since
                  no platform email provider is configured (test mode):
                  <div class="magic-link-value">${escapeHtml(passwordSetupLink)}</div>
+               </div>`
+            : ""
+        }
+        ${
+          loginPhone
+            ? `<div style="margin-top:10px;">
+                 This client can now sign in with just ${escapeHtml(loginPhone)} — no
+                 password needed. They request a one-time code by text on the
+                 sign-in screen and enter it to get in.
                </div>`
             : ""
         }
@@ -585,6 +592,7 @@
             ? `<div class="meta">Sign-in: ${escapeHtml(t.email)}${t.hasPassword ? "" : " (password not yet set)"}</div>`
             : ""
         }
+        ${t.loginPhone ? `<div class="meta">Sign-in: ${escapeHtml(t.loginPhone)} (one-time code by text)</div>` : ""}
         ${
           t.numberHostingOrder
             ? `<div class="meta">Own number ${escapeHtml(t.numberHostingOrder.phoneNumber)}: <span class="badge ${numberHostingBadgeClass(t.numberHostingOrder.status)}">${escapeHtml(t.numberHostingOrder.status)}</span>${t.numberHostingOrder.nextStep ? ` — ${escapeHtml(t.numberHostingOrder.nextStep)}` : ""}${t.numberHostingOrder.failureReason ? ` (${escapeHtml(t.numberHostingOrder.failureReason)})` : ""}</div>`
@@ -815,7 +823,7 @@
     "new-phone",
     "new-email",
     "new-website",
-    "new-login-email",
+    "new-login-phone",
     "new-twilio-number",
     "new-twilio-sid",
     "new-twilio-token",
@@ -840,11 +848,11 @@
     const contactPhone = document.getElementById("new-phone").value.trim();
     const contactEmail = document.getElementById("new-email").value.trim();
     const website = document.getElementById("new-website").value.trim();
-    const loginEmail = document.getElementById("new-login-email").value.trim();
+    const loginPhone = document.getElementById("new-login-phone").value.trim();
     if (contactPhone) body.contactPhone = contactPhone;
     if (contactEmail) body.contactEmail = contactEmail;
     if (website) body.website = website;
-    if (loginEmail) body.email = loginEmail;
+    if (loginPhone) body.loginPhone = loginPhone;
 
     if (skipChannelsCheckbox.checked) {
       body.devMode = true;
@@ -908,7 +916,8 @@
         `"${created.name}" is ready`,
         created.apiKey,
         buildMagicLink(created.apiKey),
-        resolvePasswordSetupLink(created.passwordSetupLink)
+        resolvePasswordSetupLink(created.passwordSetupLink),
+        created.loginPhone
       );
       await loadAll(session);
     } catch (err) {

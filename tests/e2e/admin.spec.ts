@@ -103,6 +103,29 @@ test.describe("Admin UI (public/admin.html)", () => {
     await expect(page.locator("#tenants")).not.toContainText(name);
   });
 
+  test("setting a sign-in phone number lets the client sign in by phone, no password involved", async ({ page }) => {
+    await connect(page);
+    const name = uniqueName("E2E Phone Login");
+
+    await page.fill("#new-name", name);
+    await page.fill("#new-timezone", "UTC");
+    await page.fill("#new-login-phone", "+15557654321");
+    await page.check("#new-skip-channels");
+    await page.check("#new-consent-basis");
+    await page.click("#create-btn");
+
+    await expect(page.locator(".reveal .key")).toContainText("lr_");
+    await expect(page.locator(".reveal")).toContainText("+15557654321");
+    await expect(page.locator(".reveal")).toContainText("no password needed");
+
+    const card = page.locator(`.card:has-text("${name}")`);
+    await expect(card).toContainText("Sign-in: +15557654321 (one-time code by text)");
+
+    page.once("dialog", (d) => d.accept());
+    await card.getByRole("button", { name: "Delete" }).click();
+    await expect(page.locator("#tenants")).not.toContainText(name);
+  });
+
   test("'Connect their number' opens the connect form, and submitting it surfaces the real not-configured error (no DEFAULT_TWILIO_* set on this test server)", async ({
     page,
   }) => {

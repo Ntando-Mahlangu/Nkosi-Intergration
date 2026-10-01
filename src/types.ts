@@ -350,6 +350,23 @@ export interface Tenant {
   /** When passwordResetTokenHash stops being valid (ISO date). */
   passwordResetExpiresAt?: string;
   /**
+   * The tenant's phone-based login identity (E.164) — the primary way a
+   * client signs in: request a one-time code texted to this number, then
+   * enter it (see POST /auth/request-code, /auth/verify-code in
+   * src/routes/auth.ts). Set at creation instead of `email`/a password for
+   * a client who should never need to remember a password at all. Unique
+   * across tenants (migration 0017) so a code request resolves to exactly
+   * one tenant. Distinct from `contactPhone` (reference-only) and from
+   * `channels.sms.fromNumber` (the number *leads* are texted from).
+   */
+  loginPhone?: string;
+  /** SHA-256 hash of the current login one-time code, if one was issued and not yet used or expired. Never the raw code. */
+  otpCodeHash?: string;
+  /** When otpCodeHash stops being valid (ISO date) — a short window (see src/routes/auth.ts), unlike the 24-hour password-reset token. */
+  otpExpiresAt?: string;
+  /** Failed verify-code attempts since the current code was issued — locks out (requires requesting a fresh code) past a small limit, since a 6-digit code has far less entropy than a password-reset token. */
+  otpAttempts?: number;
+  /**
    * Low-privilege token safe to embed in the tenant's own public website
    * (see POST /public/leads/:tenantId and public/settings.html's "Capture
    * leads from your website" panel) — unlike `apiKey`, it can only ever be
@@ -369,13 +386,23 @@ export interface Tenant {
 }
 
 /** Tenant fields safe to expose over the API (no secrets). */
-export type PublicTenant = Omit<Tenant, "channels" | "apiKey" | "passwordHash" | "passwordResetTokenHash"> & {
+export type PublicTenant = Omit<
+  Tenant,
+  "channels" | "apiKey" | "passwordHash" | "passwordResetTokenHash" | "otpCodeHash"
+> & {
   channels: { sms: boolean; whatsapp: boolean; email: boolean };
   hasPassword: boolean;
 };
 
 export function toPublicTenant(tenant: Tenant): PublicTenant {
-  const { channels, apiKey: _apiKey, passwordHash, passwordResetTokenHash: _resetHash, ...rest } = tenant;
+  const {
+    channels,
+    apiKey: _apiKey,
+    passwordHash,
+    passwordResetTokenHash: _resetHash,
+    otpCodeHash: _otpCodeHash,
+    ...rest
+  } = tenant;
   return {
     ...rest,
     channels: {

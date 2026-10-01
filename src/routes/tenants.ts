@@ -47,6 +47,8 @@ interface TenantConfigBody {
   dataRetentionDays?: number;
   /** The tenant's SaaS-style login identity (src/routes/auth.ts) — distinct from contactEmail, see Tenant.email. Settable by the tenant itself or an admin; `null` clears it. */
   email?: string | null;
+  /** The tenant's phone-based login identity (src/routes/auth.ts's /auth/request-code, /auth/verify-code) — distinct from contactPhone, see Tenant.loginPhone. Settable by the tenant itself or an admin; `null` clears it. */
+  loginPhone?: string | null;
 }
 
 const MAX_CONTACT_FIELD_LENGTH = 320;
@@ -85,6 +87,18 @@ const MAX_EMAIL_LENGTH = 320;
 function isValidEmail(value: unknown): boolean {
   if (value === undefined || value === null) return true;
   return typeof value === "string" && value.length <= MAX_EMAIL_LENGTH && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+/**
+ * `loginPhone` is the tenant's actual login identity (like `email` above) —
+ * a malformed one is unusable, since the one-time code (src/routes/auth.ts)
+ * is texted to it. Requires strict E.164 (same check as POST
+ * /admin/tenants/:id/connect-number's phoneNumber — see isValidE164 below)
+ * since Twilio's SMS API requires it anyway.
+ */
+function isValidLoginPhone(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  return isValidE164(value);
 }
 
 function isValidQuietHours(quietHours: unknown): quietHours is Tenant["quietHours"] {
@@ -201,6 +215,9 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   if (!isValidEmail(body.email)) {
     return `email must look like a real email address, up to ${MAX_EMAIL_LENGTH} characters`;
   }
+  if (!isValidLoginPhone(body.loginPhone)) {
+    return "loginPhone must be in E.164 format (e.g. +15551234567)";
+  }
   // null is allowed through (same precedent as templates above) so the
   // admin API has a way to explicitly clear a tenant's subscription link.
   if (
@@ -241,6 +258,7 @@ function buildTenantPatch(
   // below; null/empty clears it (same "explicitly clear" precedent as
   // templates/paddleSubscriptionId elsewhere in this function).
   if (body.email !== undefined) patch.email = body.email ? body.email.trim() : undefined;
+  if (body.loginPhone !== undefined) patch.loginPhone = body.loginPhone ? body.loginPhone.trim() : undefined;
   // Admin-only (gated the same as status/paddleSubscriptionId below) — the
   // agency operator sets this after independently verifying 10DLC/WhatsApp
   // approval with the client, not something a tenant self-attests via
@@ -344,6 +362,21 @@ async function checkEmailConflict(
   const existing = await tenantStore.getTenantByEmail(trimmed);
   if (existing && existing.id !== excludeTenantId) {
     return `email "${trimmed}" is already in use by another tenant`;
+  }
+  return undefined;
+}
+
+/** Same idea as checkEmailConflict, for `loginPhone` — migration 0017's unique index backs this up at the DB layer too. */
+async function checkLoginPhoneConflict(
+  tenantStore: Stores["tenantStore"],
+  loginPhone: string | null | undefined,
+  excludeTenantId?: string
+): Promise<string | undefined> {
+  const trimmed = typeof loginPhone === "string" ? loginPhone.trim() : undefined;
+  if (!trimmed) return undefined;
+  const existing = await tenantStore.getTenantByLoginPhone(trimmed);
+  if (existing && existing.id !== excludeTenantId) {
+    return `loginPhone "${trimmed}" is already in use by another tenant`;
   }
   return undefined;
 }
@@ -538,6 +571,11 @@ export function createTenantRoutes({
         res.status(400).json({ error: emailConflict });
         return;
       }
+      const loginPhoneConflict = await checkLoginPhoneConflict(tenantStore, body.loginPhone, tenant.id);
+      if (loginPhoneConflict) {
+        res.status(400).json({ error: loginPhoneConflict });
+        return;
+      }
       // Same validation/shared-default-filling POST /admin/tenants already
       // applies to `channels` — without this, a PATCH could store a channel
       // POST would have rejected (e.g. fromNumber with no accountSid/
@@ -596,6 +634,11 @@ export function createTenantRoutes({
         res.status(400).json({ error: emailConflict });
         return;
       }
+      const loginPhoneConflict = await checkLoginPhoneConflict(tenantStore, body.loginPhone);
+      if (loginPhoneConflict) {
+        res.status(400).json({ error: loginPhoneConflict });
+        return;
+      }
 
       const { channels, error: channelsError } = resolveChannelDefaults(body.channels);
       if (channelsError) {
@@ -633,6 +676,7 @@ export function createTenantRoutes({
         botDisclosureEnabled: body.botDisclosureEnabled,
         dataRetentionDays: body.dataRetentionDays,
         email: typeof body.email === "string" ? body.email.trim() : undefined,
+        loginPhone: typeof body.loginPhone === "string" ? body.loginPhone.trim() : undefined,
         // Every tenant gets one at creation — see Tenant.publicFormKey.
         publicFormKey: generateFormKey(),
         createdAt: new Date().toISOString(),
@@ -695,6 +739,11 @@ export function createTenantRoutes({
       const emailConflict = await checkEmailConflict(tenantStore, body.email, existing.id);
       if (emailConflict) {
         res.status(400).json({ error: emailConflict });
+        return;
+      }
+      const loginPhoneConflict = await checkLoginPhoneConflict(tenantStore, body.loginPhone, existing.id);
+      if (loginPhoneConflict) {
+        res.status(400).json({ error: loginPhoneConflict });
         return;
       }
       // Same validation/shared-default-filling as POST /admin/tenants and

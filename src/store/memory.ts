@@ -94,6 +94,10 @@ export class InMemoryTenantStore implements TenantStore {
     return Array.from(this.tenants.values()).find((tenant) => tenant.passwordResetTokenHash === tokenHash);
   }
 
+  async getTenantByLoginPhone(phone: string): Promise<Tenant | undefined> {
+    return Array.from(this.tenants.values()).find((tenant) => tenant.loginPhone === phone);
+  }
+
   async listTenants(): Promise<Tenant[]> {
     return Array.from(this.tenants.values());
   }

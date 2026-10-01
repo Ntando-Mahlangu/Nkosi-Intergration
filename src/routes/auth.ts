@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { Stores } from "../store/index.js";
 import type { TenantStore } from "../store/types.js";
@@ -7,14 +7,30 @@ import { asyncHandler } from "../middleware/asyncHandler.js";
 import { createAuthLimiter } from "../middleware/rateLimit.js";
 import { hashPassword, verifyPassword } from "../password.js";
 import { sendAccountEmail } from "../authEmail.js";
+import { sendAccountSms } from "../authSms.js";
 import { publicBaseUrl } from "../publicUrl.js";
 
 const RESET_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 /** Exported so routes/tenants.ts's self-service change-password endpoint enforces the exact same minimum. */
 export const MIN_PASSWORD_LENGTH = 8;
 
+/**
+ * Deliberately short compared to RESET_TOKEN_TTL_MS — a 6-digit code is
+ * meant to be read off a text message and entered within a couple of
+ * minutes, not saved for later the way a password-reset link might be.
+ */
+const OTP_TTL_MS = 10 * 60 * 1000;
+/** Failed verify-code attempts allowed before a fresh code must be requested — see Tenant.otpAttempts. */
+const MAX_OTP_ATTEMPTS = 5;
+/** Same generic response for "no such phone", "code expired", "too many attempts", and "wrong code" — a distinguishable response for any one of these is exactly what lets an attacker enumerate valid phone numbers or brute-force a code. */
+const INVALID_CODE_ERROR = "invalid or expired code";
+
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+function generateOtpCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 /**
@@ -136,6 +152,86 @@ export function createAuthRoutes({ tenantStore }: Stores): Router {
         passwordResetExpiresAt: undefined,
       });
       res.json({ ok: true, apiKey: tenant.apiKey });
+    })
+  );
+
+  // Phone-number sign-in, step 1: texts a one-time code to a tenant's
+  // loginPhone. A client never sets or remembers a password for this path —
+  // the phone itself, freshly verified on every sign-in, is the credential.
+  router.post(
+    "/auth/request-code",
+    createAuthLimiter(),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { phone } = (req.body ?? {}) as { phone?: unknown };
+      if (typeof phone !== "string" || !phone.trim()) {
+        res.status(400).json({ error: "phone is required" });
+        return;
+      }
+
+      const tenant = await tenantStore.getTenantByLoginPhone(phone.trim());
+      if (tenant) {
+        const code = generateOtpCode();
+        await tenantStore.updateTenant(tenant.id, {
+          otpCodeHash: hashToken(code),
+          otpExpiresAt: new Date(Date.now() + OTP_TTL_MS).toISOString(),
+          otpAttempts: 0,
+        });
+        await sendAccountSms(
+          tenant.loginPhone!,
+          `Your LeadRecovery sign-in code is ${code}. It expires in 10 minutes.`
+        );
+      }
+      // Always the same response regardless of whether `tenant` was found —
+      // see /auth/forgot-password's own comment on the same principle. The
+      // raw code is never returned here even when SMS isn't configured
+      // (unlike the password-setup link, which an admin is trusted to relay
+      // manually) — this endpoint takes only a phone number, so echoing the
+      // code back would let anyone with a phone number log in as that tenant.
+      res.json({ ok: true, message: "If that phone number has an account, a code has been sent." });
+    })
+  );
+
+  // Phone-number sign-in, step 2: verifies the code and resolves to the
+  // tenant's real API key, same pattern as /auth/login.
+  router.post(
+    "/auth/verify-code",
+    createAuthLimiter(),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { phone, code } = (req.body ?? {}) as { phone?: unknown; code?: unknown };
+      if (typeof phone !== "string" || !phone.trim() || typeof code !== "string" || !code.trim()) {
+        res.status(400).json({ error: "phone and code are required" });
+        return;
+      }
+
+      const tenant = await tenantStore.getTenantByLoginPhone(phone.trim());
+      if (
+        !tenant ||
+        !tenant.otpCodeHash ||
+        !tenant.otpExpiresAt ||
+        Date.parse(tenant.otpExpiresAt) < Date.now() ||
+        (tenant.otpAttempts ?? 0) >= MAX_OTP_ATTEMPTS
+      ) {
+        res.status(401).json({ error: INVALID_CODE_ERROR });
+        return;
+      }
+      if (hashToken(code.trim()) !== tenant.otpCodeHash) {
+        await tenantStore.updateTenant(tenant.id, { otpAttempts: (tenant.otpAttempts ?? 0) + 1 });
+        res.status(401).json({ error: INVALID_CODE_ERROR });
+        return;
+      }
+      if (tenant.status === "suspended") {
+        res.status(403).json({ error: "this tenant has been suspended" });
+        return;
+      }
+
+      // Single-use: clears the code so it can't be replayed, the same
+      // principle as a password-reset token.
+      await tenantStore.updateTenant(tenant.id, {
+        otpCodeHash: undefined,
+        otpExpiresAt: undefined,
+        otpAttempts: 0,
+      });
+      res.json({ apiKey: tenant.apiKey, tenant: toPublicTenant(tenant) });
     })
   );
 
