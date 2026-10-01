@@ -177,7 +177,7 @@
     <button id="login-verify-btn" style="display:none;">Sign In</button>
   </div>
   <details style="margin-top:18px;">
-    <summary id="advanced-toggle" style="cursor:pointer; color:var(--muted); font-size:11px; text-align:center;">Advanced: sign in with an API key instead</summary>
+    <summary id="advanced-toggle" style="cursor:pointer; color:var(--muted); font-size:11px; text-align:center;">Advanced: sign in with an API key or email instead</summary>
     <div style="margin-top:14px;">
       <label for="base-url">API base URL</label>
       <input id="base-url" placeholder="http://localhost:3000" />
@@ -185,6 +185,18 @@
       <input id="api-key" type="password" placeholder="lr_..." />
       <div style="margin-top:16px;">
         <button id="connect-btn" class="secondary">Connect</button>
+      </div>
+    </div>
+    <div style="margin-top:14px;">
+      <label for="login-email">Email</label>
+      <input id="login-email" type="email" placeholder="you@business.com" />
+      <label for="login-password">Password</label>
+      <input id="login-password" type="password" placeholder="••••••••" />
+      <div style="margin-top:16px;">
+        <button id="login-btn" class="secondary">Sign in with email</button>
+      </div>
+      <div style="text-align:center; margin-top:10px;">
+        <a href="reset-password.html" class="secondary" style="font-size:12px; text-decoration:underline; border:none; background:none; padding:0;">Forgot password?</a>
       </div>
     </div>
   </details>
@@ -645,6 +657,32 @@ document.getElementById("leadrecovery-form").addEventListener("submit", function
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone, code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      connect(baseUrl, data.apiKey);
+    } catch (err) {
+      authError.textContent = "Sign-in failed: " + err.message;
+    }
+  });
+
+  // Secondary path (behind "Advanced") for a tenant that already has an
+  // email/password set — phone sign-in above is the primary flow for new
+  // clients, but this still works for anyone already using it.
+  document.getElementById("login-btn").addEventListener("click", async () => {
+    const baseUrl = document.getElementById("base-url").value.trim() || window.location.origin;
+    const email = document.getElementById("login-email").value.trim();
+    const password = document.getElementById("login-password").value;
+    authError.textContent = "";
+    if (!email || !password) {
+      authError.textContent = "Email and password are required.";
+      return;
+    }
+    try {
+      const res = await fetch(baseUrl.replace(/\/$/, "") + "/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || res.statusText);

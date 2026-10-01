@@ -219,18 +219,22 @@ export function createAuthRoutes({ tenantStore }: Stores): Router {
         res.status(401).json({ error: INVALID_CODE_ERROR });
         return;
       }
-      if (tenant.status === "suspended") {
-        res.status(403).json({ error: "this tenant has been suspended" });
-        return;
-      }
 
       // Single-use: clears the code so it can't be replayed, the same
-      // principle as a password-reset token.
+      // principle as a password-reset token. Done as soon as the code is
+      // confirmed correct — before the suspended check below — so a
+      // correct code is consumed exactly once regardless of outcome,
+      // rather than staying valid and reusable for the rest of its TTL
+      // whenever the tenant happens to be suspended.
       await tenantStore.updateTenant(tenant.id, {
         otpCodeHash: undefined,
         otpExpiresAt: undefined,
         otpAttempts: 0,
       });
+      if (tenant.status === "suspended") {
+        res.status(403).json({ error: "this tenant has been suspended" });
+        return;
+      }
       res.json({ apiKey: tenant.apiKey, tenant: toPublicTenant(tenant) });
     })
   );

@@ -176,4 +176,19 @@ describe("POST /auth/request-code + POST /auth/verify-code", () => {
     const res = await request(app).post("/auth/verify-code").send({ phone: tenant.loginPhone, code });
     expect(res.status).toBe(403);
   });
+
+  it("still consumes the code on a suspended tenant's correct attempt — it can't be replayed once unsuspended", async () => {
+    const tenant = makeTenantWithPhone({ status: "suspended" });
+    const stores = buildStores([tenant]);
+    const app = buildApp(stores);
+    await request(app).post("/auth/request-code").send({ phone: tenant.loginPhone });
+    const code = extractCode();
+
+    const blocked = await request(app).post("/auth/verify-code").send({ phone: tenant.loginPhone, code });
+    expect(blocked.status).toBe(403);
+
+    await stores.tenantStore.updateTenant(tenant.id, { status: "active" });
+    const replay = await request(app).post("/auth/verify-code").send({ phone: tenant.loginPhone, code });
+    expect(replay.status).toBe(401);
+  });
 });

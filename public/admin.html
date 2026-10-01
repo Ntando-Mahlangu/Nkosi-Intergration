@@ -615,14 +615,16 @@
           ${
             !t.numberHostingOrder
               ? `<button class="secondary" data-action="connect-number-toggle">Connect their number</button>`
-              : t.numberHostingOrder.status !== "completed"
-                ? `<button class="secondary" data-action="connect-number-refresh">Check status</button>`
-                : ""
+              : t.numberHostingOrder.status === "completed"
+                ? ""
+                : numberHostingBadgeClass(t.numberHostingOrder.status) === "dead"
+                  ? `<button class="secondary" data-action="connect-number-toggle">Start over</button>`
+                  : `<button class="secondary" data-action="connect-number-refresh">Check status</button>`
           }
           <button class="danger" data-action="delete">Delete</button>
         </div>
         ${
-          !t.numberHostingOrder
+          !t.numberHostingOrder || numberHostingBadgeClass(t.numberHostingOrder.status) === "dead"
             ? `<div class="connect-number-form" style="display:none; margin-top:10px; border-top:1px solid var(--line); padding-top:10px;">
           <div class="hint">
             Enter the phone number this business already gives customers — not a new one.

@@ -30,6 +30,21 @@ async function createTenantWithLoginPhone(name: string, loginPhone: string): Pro
   });
 }
 
+/** A tenant on the older email+password path (see /auth/login), still reachable via each gate's "Advanced" fallback even though phone sign-in is now primary. */
+async function createTenantWithEmailPassword(name: string, email: string, password: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/admin/tenants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${ADMIN_KEY}` },
+    body: JSON.stringify({ name, timezone: "UTC", email }),
+  });
+  const { apiKey } = (await res.json()) as { apiKey: string };
+  await fetch(`${BASE_URL}/tenants/me/change-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ newPassword: password }),
+  });
+}
+
 test.describe("Command Center (public/index.html, the default landing page)", () => {
   test("connects with a valid API key and renders live category nodes", async ({ page }) => {
     await page.goto("/");
@@ -207,6 +222,19 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
     await page.click("#login-verify-btn");
     await expect(page.locator("#gate-err")).toContainText("invalid or expired code");
     await expect(page.locator("#gate")).toBeVisible();
+  });
+
+  test("email+password sign-in still works behind 'Advanced', for a tenant already using it", async ({ page }) => {
+    const email = `e2e-${Date.now()}@example.com`;
+    await createTenantWithEmailPassword("E2E Email Sign-in", email, "correct-password-1");
+
+    await page.goto("/");
+    await page.click("#advanced-toggle");
+    await page.fill("#login-email", email);
+    await page.fill("#login-password", "correct-password-1");
+    await page.click("#login-btn");
+
+    await expect(page.locator("#gate")).toBeHidden();
   });
 
   test("reconnects automatically on reload using the persisted session", async ({ page }) => {
