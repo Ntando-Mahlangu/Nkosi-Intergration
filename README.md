@@ -412,7 +412,7 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | POST | `/tenants/me/change-password` | `{currentPassword?, newPassword}` — self-service while already signed in; `currentPassword` is only required if one is already set |
 | POST | `/public/leads/:tenantId` | Public, no tenant-auth — a lead-capture form embedded on the tenant's own website posts here with `{formKey, name?, phone?, email?, requestedService?, notes?}` (`formKey` is `Tenant.publicFormKey`, safe to publish — it can only ever create a lead through this one endpoint) |
 | GET | `/admin/tenants` | List tenants (admin) |
-| POST | `/admin/tenants` | Create a tenant (admin); returns the API key once. Also accepts `consentBasisConfirmed`/`carrierApprovalConfirmed` (recorded attestations — see `COMPLIANCE.md`) and any self-service field |
+| POST | `/admin/tenants` | Create a tenant (admin); returns the API key once. Also accepts `consentBasisConfirmed`/`termsAttested`/`carrierApprovalConfirmed` (recorded attestations — see `COMPLIANCE.md`) and any self-service field |
 | PATCH | `/admin/tenants/:id` | Admin update: any self-service field, plus `status` (`"active"` \| `"suspended"`) and `carrierApprovalConfirmed` (admin-only — the only way to clear an sms/whatsapp send block for a tenant) |
 | POST | `/admin/tenants/:id/rotate-key` | Issue a new API key for a tenant (admin); the old key stops working immediately |
 | POST | `/admin/tenants/:id/connect-number` | `{phoneNumber, contactEmail, address}` — starts hosting SMS on the client's own existing number (admin), see `src/numberHosting.ts` |

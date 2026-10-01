@@ -305,6 +305,18 @@ export interface Tenant {
    */
   consentBasisConfirmedAt?: string;
   /**
+   * When the agency operator confirmed (on the client's behalf, at
+   * onboarding) that the client has already reviewed and agreed to
+   * LeadRecovery's own Terms of Service/Privacy Policy — e.g. during a
+   * sales call or contract signing, before they have login credentials at
+   * all. This is an onboarding audit record only — it does NOT satisfy the
+   * client's own required in-app acceptance (see `termsAcceptedAt` above),
+   * which still gates every outbound send and still shows as a blocking
+   * gate the first time the client signs in themselves. See
+   * COMPLIANCE.md "Your own Terms of Service / Privacy Policy".
+   */
+  termsAttestedAt?: string;
+  /**
    * When the agency operator confirmed this client has completed the
    * carrier-side approval required to send SMS/WhatsApp at volume — 10DLC
    * registration (US) and/or WhatsApp Business template approval via

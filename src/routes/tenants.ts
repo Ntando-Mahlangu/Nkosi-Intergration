@@ -41,6 +41,13 @@ interface TenantConfigBody {
   website?: string;
   /** Admin-only, required at creation — see validateTenantConfig/POST /admin/tenants. */
   consentBasisConfirmed?: boolean;
+  /**
+   * Admin-only — an onboarding attestation that the client already agreed
+   * to LeadRecovery's Terms of Service/Privacy Policy outside the app. Does
+   * NOT set Tenant.termsAcceptedAt — the client's own required in-app
+   * acceptance is untouched. See Tenant.termsAttestedAt.
+   */
+  termsAttested?: boolean;
   /** Admin-only — see PATCH /admin/tenants/:id. */
   carrierApprovalConfirmed?: boolean;
   botDisclosureEnabled?: boolean;
@@ -201,6 +208,9 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   }
   if (body.carrierApprovalConfirmed !== undefined && typeof body.carrierApprovalConfirmed !== "boolean") {
     return "carrierApprovalConfirmed must be a boolean";
+  }
+  if (body.termsAttested !== undefined && typeof body.termsAttested !== "boolean") {
+    return "termsAttested must be a boolean";
   }
   if (!isValidTemplates(body.templates)) {
     return "templates.initialGrounded/initialUngrounded/notInterestedCloser must be non-empty strings, and followUps (if set) an array of non-empty strings";
@@ -672,6 +682,11 @@ export function createTenantRoutes({
         // (GET /admin/tenants shows consentBasisConfirmedAt: null) rather
         // than silently assuming it was checked. See COMPLIANCE.md "Consent basis".
         consentBasisConfirmedAt: body.consentBasisConfirmed ? new Date().toISOString() : undefined,
+        // Same "UI-level gate, not an API-level hard-block" treatment as
+        // consentBasisConfirmed above — and this specifically does NOT set
+        // termsAcceptedAt, which stays gated behind the client's own
+        // required in-app acceptance. See Tenant.termsAttestedAt.
+        termsAttestedAt: body.termsAttested ? new Date().toISOString() : undefined,
         carrierApprovalConfirmedAt: body.carrierApprovalConfirmed ? new Date().toISOString() : undefined,
         botDisclosureEnabled: body.botDisclosureEnabled,
         dataRetentionDays: body.dataRetentionDays,

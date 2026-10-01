@@ -102,6 +102,7 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     await tenantStore.createTenant({
       ...TENANT,
       consentBasisConfirmedAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
+      termsAttestedAt: new Date("2026-01-01T12:00:00.000Z").toISOString(),
       carrierApprovalConfirmedAt: new Date("2026-01-02T00:00:00.000Z").toISOString(),
       botDisclosureEnabled: false,
       dataRetentionDays: 90,
@@ -109,6 +110,7 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
 
     const reread = await tenantStore.getTenant(TENANT.id);
     expect(reread?.consentBasisConfirmedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(reread?.termsAttestedAt).toBe("2026-01-01T12:00:00.000Z");
     expect(reread?.carrierApprovalConfirmedAt).toBe("2026-01-02T00:00:00.000Z");
     expect(reread?.botDisclosureEnabled).toBe(false);
     expect(reread?.dataRetentionDays).toBe(90);

@@ -328,6 +328,34 @@ describe("tenant management routes", () => {
     delete process.env.ADMIN_API_KEY;
   });
 
+  it("records termsAttested as an onboarding attestation, distinct from (and never setting) the client's own required termsAcceptedAt", async () => {
+    process.env.ADMIN_API_KEY = "admin-secret";
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const withAttestation = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Acme Plumbing", timezone: "UTC", termsAttested: true });
+    expect(withAttestation.status).toBe(201);
+    expect(withAttestation.body.termsAttestedAt).toBeTruthy();
+    // The admin's onboarding attestation never substitutes for the client's
+    // own required in-app acceptance — that still has to come from the
+    // client themselves, on their own first login.
+    expect(withAttestation.body.termsAcceptedAt).toBeFalsy();
+
+    const withoutAttestation = await request(app)
+      .post("/admin/tenants")
+      .set("Authorization", "Bearer admin-secret")
+      .send({ name: "Other Biz", timezone: "UTC" });
+    expect(withoutAttestation.status).toBe(201);
+    expect(withoutAttestation.body.termsAttestedAt).toBeFalsy();
+
+    delete process.env.ADMIN_API_KEY;
+  });
+
   it("gates carrierApprovalConfirmed to the admin API, timestamping true and clearing on false", async () => {
     process.env.ADMIN_API_KEY = "admin-secret";
     const stores = buildStores();

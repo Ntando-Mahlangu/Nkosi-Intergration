@@ -1134,6 +1134,15 @@ components:
             onboarding CLI/CI/direct integrations aren't hard-blocked), but
             recorded as consentBasisConfirmedAt when true — see
             COMPLIANCE.md "Consent basis".
+        termsAttested:
+          type: boolean
+          description: >-
+            POST /admin/tenants only. An onboarding attestation that the
+            client already agreed to the Terms of Service/Privacy Policy
+            outside the app — recorded as termsAttestedAt when true. Does
+            NOT set termsAcceptedAt: the client's own required in-app
+            acceptance (see /tenants/me/accept-terms) is untouched. See
+            COMPLIANCE.md "Your own Terms of Service / Privacy Policy".
         carrierApprovalConfirmed:
           type: boolean
           description: >-
@@ -1201,6 +1210,7 @@ components:
         termsAcceptedAt: { type: string, format: date-time, description: "When this tenant accepted the Terms of Service/Privacy Policy. Unset blocks all outbound sending." }
         termsVersion: { type: string, description: "Which CURRENT_TERMS_VERSION was accepted, or \"grandfathered\" for a tenant that predates this field." }
         consentBasisConfirmedAt: { type: string, format: date-time, description: "When the agency confirmed this client has a lawful basis to contact its leads. An audit record, not enforced server-side." }
+        termsAttestedAt: { type: string, format: date-time, description: "When the agency recorded that this client already agreed to the Terms of Service/Privacy Policy outside the app. An onboarding record only — does not substitute for termsAcceptedAt." }
         carrierApprovalConfirmedAt: { type: string, format: date-time, description: "When the agency confirmed 10DLC/WhatsApp carrier approval. Unset blocks the sms/whatsapp channels (falls back to email, or skips the lead)." }
         botDisclosureEnabled: { type: boolean, description: "Whether the chatbot's first auto-reply per conversation proactively discloses it's automated. Defaults to true when unset." }
         dataRetentionDays: { type: integer, description: "Days after a lead closes out before the worker auto-purges it. Defaults to 365 when unset." }

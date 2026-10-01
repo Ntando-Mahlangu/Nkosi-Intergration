@@ -25,6 +25,16 @@ and their own leads.
   behalf during onboarding. `POST /workflow/run`, the worker, and every
   inbound webhook's auto-reply all refuse to send for a tenant that
   hasn't accepted, so this isn't just a UI formality.
+- The admin UI's "Add new client" form separately requires checking a
+  "Client has reviewed and agreed to the Terms of Service and Privacy
+  Policy" box before it will create the tenant at all — a recorded
+  onboarding attestation (`Tenant.termsAttestedAt`) that the agreement
+  already happened outside the app (a sales call, a signed contract).
+  This is a record for your own files, **not** a substitute for the
+  client's own in-app acceptance above: it never sets
+  `termsAcceptedAt`, so the client still sees the real blocking gate —
+  and still has to click through it themselves — the first time they
+  sign in.
 - A pre-existing tenant (from before this consent step existed) is
   grandfathered rather than retroactively blocked — see migration 0013.
 - Bump `CURRENT_TERMS_VERSION` (`src/terms.ts`) and update both pages

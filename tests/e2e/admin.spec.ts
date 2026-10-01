@@ -49,6 +49,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "Africa/Johannesburg");
     await page.check("#new-skip-channels");
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
@@ -62,13 +63,22 @@ test.describe("Admin UI (public/admin.html)", () => {
     await expect(page.locator("#tenants")).not.toContainText(name);
   });
 
-  test("disables Create client until the consent-basis attestation is checked", async ({ page }) => {
+  test("disables Create client until both the terms-attestation and consent-basis boxes are checked", async ({
+    page,
+  }) => {
     await connect(page);
     await page.fill("#new-name", uniqueName("E2E Consent Gate"));
     await page.fill("#new-timezone", "UTC");
 
     await expect(page.locator("#create-btn")).toBeDisabled();
+    await page.check("#new-terms-attested");
+    await expect(page.locator("#create-btn")).toBeDisabled();
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
+    await expect(page.locator("#create-btn")).toBeEnabled();
+    await page.uncheck("#new-terms-attested");
+    await expect(page.locator("#create-btn")).toBeDisabled();
+    await page.check("#new-terms-attested");
     await expect(page.locator("#create-btn")).toBeEnabled();
     await page.uncheck("#new-consent-basis");
     await expect(page.locator("#create-btn")).toBeDisabled();
@@ -86,6 +96,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-email", "owner@example.com");
     await page.fill("#new-website", "https://example.com");
     await page.check("#new-skip-channels");
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
@@ -111,6 +122,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-timezone", "UTC");
     await page.fill("#new-login-phone", "+15557654321");
     await page.check("#new-skip-channels");
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
@@ -135,6 +147,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
     await page.check("#new-skip-channels");
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator(".reveal .key")).toContainText("lr_");
@@ -199,6 +212,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.click("#new-twilio-advanced");
     await page.fill("#new-twilio-sid", "AC123");
     // authToken left blank on purpose
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
@@ -215,6 +229,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-twilio-number", "+15551234567");
     // No DEFAULT_TWILIO_ACCOUNT_SID/DEFAULT_TWILIO_AUTH_TOKEN configured for this test server,
     // and the "own account" override was never checked.
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
@@ -226,6 +241,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await connect(page);
     await page.fill("#new-name", "");
     await page.fill("#new-timezone", "");
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator("#create-error")).toContainText("required");
@@ -237,6 +253,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
     await page.check("#new-skip-channels");
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator(".reveal .key")).toContainText("lr_");
@@ -263,6 +280,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
     await page.check("#new-skip-channels");
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator(".reveal .key")).toContainText("lr_");
@@ -316,6 +334,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
     await page.check("#new-skip-channels");
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
 
@@ -336,6 +355,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
     await page.check("#new-skip-channels");
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator("#tenants")).toContainText(name);
@@ -356,6 +376,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.fill("#new-name", name);
     await page.fill("#new-timezone", "UTC");
     await page.check("#new-skip-channels");
+    await page.check("#new-terms-attested");
     await page.check("#new-consent-basis");
     await page.click("#create-btn");
     await expect(page.locator("#audit-log")).toContainText("Tenant Create");

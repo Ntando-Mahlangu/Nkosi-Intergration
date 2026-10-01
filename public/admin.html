@@ -307,6 +307,13 @@
         </div>
 
         <label class="checkbox-row" style="margin-top:16px;">
+          <input type="checkbox" id="new-terms-attested" />
+          Client has reviewed and agreed to the
+          <a href="terms.html" target="_blank" rel="noopener" style="color:var(--accent);">Terms of Service</a>
+          and
+          <a href="privacy.html" target="_blank" rel="noopener" style="color:var(--accent);">Privacy Policy</a>
+        </label>
+        <label class="checkbox-row">
           <input type="checkbox" id="new-consent-basis" />
           Client has a documented lawful basis to contact its leads (see COMPLIANCE.md "Consent basis")
         </label>
@@ -784,16 +791,23 @@
     loadAll(session).catch((err) => alert(err.message));
   });
 
-  // Required before a tenant can be created at all — see COMPLIANCE.md
+  // Both required before a tenant can be created at all — see
+  // COMPLIANCE.md "Your own Terms of Service / Privacy Policy" and
   // "Consent basis". Calling POST /admin/tenants directly without
-  // consentBasisConfirmed still works (this button is a UI-level gate, not
-  // an API-level one — see routes/tenants.ts), but this form never lets you
-  // skip it.
+  // termsAttested/consentBasisConfirmed still works (this button is a
+  // UI-level gate, not an API-level one — see routes/tenants.ts), but this
+  // form never lets you skip either. Attesting terms here is an onboarding
+  // record only — it does not substitute for the client's own required
+  // in-app acceptance, which still gates every outbound send and still
+  // appears as a blocking gate the first time the client signs in.
+  const termsAttestedCheckbox = document.getElementById("new-terms-attested");
   const consentBasisCheckbox = document.getElementById("new-consent-basis");
   const createBtn = document.getElementById("create-btn");
-  consentBasisCheckbox.addEventListener("change", () => {
-    createBtn.disabled = !consentBasisCheckbox.checked;
-  });
+  function updateCreateBtnEnabled() {
+    createBtn.disabled = !(termsAttestedCheckbox.checked && consentBasisCheckbox.checked);
+  }
+  termsAttestedCheckbox.addEventListener("change", updateCreateBtnEnabled);
+  consentBasisCheckbox.addEventListener("change", updateCreateBtnEnabled);
 
   const skipChannelsCheckbox = document.getElementById("new-skip-channels");
   const channelFields = document.getElementById("channel-fields");
@@ -844,7 +858,12 @@
       return;
     }
 
-    const body = { name, timezone, consentBasisConfirmed: consentBasisCheckbox.checked };
+    const body = {
+      name,
+      timezone,
+      termsAttested: termsAttestedCheckbox.checked,
+      consentBasisConfirmed: consentBasisCheckbox.checked,
+    };
     const contactPhone = document.getElementById("new-phone").value.trim();
     const contactEmail = document.getElementById("new-email").value.trim();
     const website = document.getElementById("new-website").value.trim();
@@ -910,6 +929,7 @@
       sendgridAdvancedFields.style.display = "none";
       skipChannelsCheckbox.checked = true;
       updateChannelFieldsVisibility();
+      termsAttestedCheckbox.checked = false;
       consentBasisCheckbox.checked = false;
       createBtn.disabled = true;
       showReveal(

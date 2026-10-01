@@ -198,7 +198,7 @@ export class PostgresLeadStore implements LeadStore {
 const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at,
   notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at,
   contact_phone, contact_email, website, terms_accepted_at, terms_version,
-  consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days,
+  consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days,
   email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, number_hosting_order,
   login_phone, otp_code_hash, otp_expires_at, otp_attempts`;
 
@@ -278,6 +278,9 @@ export class PostgresTenantStore implements TenantStore {
       consentBasisConfirmedAt: (row.consent_basis_confirmed_at as string | null)
         ? new Date(row.consent_basis_confirmed_at as string).toISOString()
         : undefined,
+      termsAttestedAt: (row.terms_attested_at as string | null)
+        ? new Date(row.terms_attested_at as string).toISOString()
+        : undefined,
       carrierApprovalConfirmedAt: (row.carrier_approval_confirmed_at as string | null)
         ? new Date(row.carrier_approval_confirmed_at as string).toISOString()
         : undefined,
@@ -354,8 +357,8 @@ export class PostgresTenantStore implements TenantStore {
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days, email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, login_phone)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days, email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, login_phone)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)`,
       [
         tenant.id,
         tenant.name,
@@ -380,6 +383,7 @@ export class PostgresTenantStore implements TenantStore {
         tenant.termsAcceptedAt ?? null,
         tenant.termsVersion ?? null,
         tenant.consentBasisConfirmedAt ?? null,
+        tenant.termsAttestedAt ?? null,
         tenant.carrierApprovalConfirmedAt ?? null,
         tenant.botDisclosureEnabled ?? null,
         tenant.dataRetentionDays ?? null,
@@ -436,6 +440,7 @@ export class PostgresTenantStore implements TenantStore {
     if ("termsAcceptedAt" in patch) push("terms_accepted_at", patch.termsAcceptedAt ?? null);
     if ("termsVersion" in patch) push("terms_version", patch.termsVersion ?? null);
     if ("consentBasisConfirmedAt" in patch) push("consent_basis_confirmed_at", patch.consentBasisConfirmedAt ?? null);
+    if ("termsAttestedAt" in patch) push("terms_attested_at", patch.termsAttestedAt ?? null);
     if ("carrierApprovalConfirmedAt" in patch) {
       push("carrier_approval_confirmed_at", patch.carrierApprovalConfirmedAt ?? null);
     }
