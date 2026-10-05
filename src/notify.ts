@@ -160,8 +160,16 @@ export async function flagNeedsAttention(
   body: string,
   reason: NotifyReason
 ): Promise<void> {
+  // Re-reads the lead's current needsAttentionAt right before deciding,
+  // rather than trusting the `lead` the caller already loaded earlier in
+  // its own request — without this, a concurrent clear (an operator's
+  // POST /leads/:id/reply racing this exact inbound message) could write
+  // back the caller's stale needsAttentionAt instead of starting a fresh
+  // clock for what is, from the operator's point of view, a brand-new,
+  // separate occurrence.
+  const current = (await stores.leadStore.getLeadById(tenant.id, lead.id)) ?? lead;
   await stores.leadStore.updateLead(tenant.id, lead.id, {
-    needsAttentionAt: lead.needsAttentionAt ?? new Date().toISOString(),
+    needsAttentionAt: current.needsAttentionAt ?? new Date().toISOString(),
     needsAttentionReason: reason,
   });
   void notifyHumanAttention(stores.notificationStore, tenant, lead, channel, body, reason);

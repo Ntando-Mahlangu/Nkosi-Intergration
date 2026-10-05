@@ -249,6 +249,33 @@ describe("flagNeedsAttention", () => {
     expect(updated?.needsAttentionAt).toBe(firstFlaggedAt);
     expect(updated?.needsAttentionReason).toBe("interested");
   });
+
+  it("regression: re-reads the lead's current state instead of trusting a stale caller-held snapshot (a concurrent clear via POST /leads/:id/reply racing this exact classification)", async () => {
+    // The lead object the caller (recordInboundAndClassify/answerChatMessage)
+    // already loaded earlier in its own request — stale by the time this
+    // runs, carrying an old, already-resolved needsAttentionAt.
+    const staleSnapshot: Lead = {
+      ...LEAD,
+      needsAttentionAt: "2020-01-01T00:00:00.000Z",
+      needsAttentionReason: "needs_human_reply",
+    };
+    // The lead's actual current state in the store: an operator already
+    // replied/marked it handled concurrently, clearing both fields.
+    const currentlyClearedLead: Lead = { ...LEAD, needsAttentionAt: undefined, needsAttentionReason: undefined };
+    const leadStore = new InMemoryLeadStore([currentlyClearedLead]);
+    const stores = { leadStore, notificationStore: undefined };
+
+    const done = flagNeedsAttention(stores, TENANT, staleSnapshot, "sms", "yes please", "interested");
+    await vi.runAllTimersAsync();
+    await done;
+
+    const updated = await leadStore.getLeadById(TENANT.id, LEAD.id);
+    // Must start a fresh clock for this new occurrence, never resurrect
+    // the stale (already-resolved) timestamp from the caller's snapshot.
+    expect(updated?.needsAttentionAt).toBeDefined();
+    expect(updated?.needsAttentionAt).not.toBe("2020-01-01T00:00:00.000Z");
+    expect(updated?.needsAttentionReason).toBe("interested");
+  });
 });
 
 describe("InMemoryNotificationStore redelivery bookkeeping", () => {

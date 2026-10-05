@@ -11,7 +11,7 @@ import { acquireWorkerLockOrExit } from "./workerLock.js";
 import { withTenantWorkflowLock } from "./workflowLock.js";
 import { sendOperatorAlert } from "./operatorAlert.js";
 import { isPastRetention, retentionDaysFor } from "./dataRetention.js";
-import { isStaleAttentionItem } from "./attentionSla.js";
+import { alertStaleAttentionItems } from "./attentionSlaAlert.js";
 import type { Tenant } from "./types.js";
 
 // This file is always run directly (nothing else imports it), so this is
@@ -120,48 +120,6 @@ async function purgeExpiredLeads(tenants: Tenant[], now: Date): Promise<void> {
   }
 }
 
-/**
- * Fires a one-time operator alert (src/operatorAlert.ts — agency-facing,
- * not the tenant's own notifyWebhookUrl) for every lead still unresolved in
- * the needs-attention inbox past its tenant's configured SLA
- * (Tenant.attentionSlaHours). Runs for every tenant regardless of
- * status/terms-acceptance, same as purgeExpiredLeads above — this is an
- * agency monitoring concern, not a "send" gated by whether the agency is
- * currently allowed to message the tenant's leads. Sets
- * Lead.attentionAlertedAt so the same stale item never re-alerts on a
- * later tick; cleared along with needsAttentionAt once the lead is
- * replied to or marked handled (POST /leads/:id/reply, /mark-handled).
- */
-async function alertStaleAttentionItems(tenants: Tenant[], now: Date): Promise<void> {
-  for (const tenant of tenants) {
-    if (!tenant.attentionSlaHours) continue;
-    let leads: Awaited<ReturnType<typeof stores.leadStore.getAllLeads>>;
-    try {
-      leads = await stores.leadStore.getAllLeads(tenant.id);
-    } catch (err) {
-      logger.error("attention_sla_list_failed", { tenantId: tenant.id, error: (err as Error).message });
-      continue;
-    }
-    for (const lead of leads) {
-      if (!isStaleAttentionItem(lead, tenant, now)) continue;
-      const waitHours = Math.round((now.getTime() - new Date(lead.needsAttentionAt!).getTime()) / (60 * 60 * 1000));
-      void sendOperatorAlert(
-        `Lead "${lead.name ?? lead.id}" for tenant "${tenant.name}" has been needing attention for ${waitHours}h (SLA: ${tenant.attentionSlaHours}h)`,
-        { tenantId: tenant.id, leadId: lead.id, reason: lead.needsAttentionReason, waitHours }
-      );
-      try {
-        await stores.leadStore.updateLead(tenant.id, lead.id, { attentionAlertedAt: now.toISOString() });
-      } catch (err) {
-        logger.error("attention_sla_mark_failed", {
-          tenantId: tenant.id,
-          leadId: lead.id,
-          error: (err as Error).message,
-        });
-      }
-    }
-  }
-}
-
 async function runOnce(): Promise<void> {
   const allTenants = await stores.tenantStore.listTenants();
   const now = new Date();
@@ -192,7 +150,7 @@ async function runOnce(): Promise<void> {
 
   await redeliverFailedNotifications(stores);
   await purgeExpiredLeads(allTenants, now);
-  await alertStaleAttentionItems(allTenants, now);
+  await alertStaleAttentionItems(stores.leadStore, allTenants, now);
 
   if (process.env.DATABASE_URL) {
     await cleanupExpiredRateLimitCounters(getPool());
