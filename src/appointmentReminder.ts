@@ -1,5 +1,6 @@
 import type { ComposedMessage, ContactReason, Lead, Tenant } from "./types.js";
 import { substituteTemplate } from "./templateSubstitute.js";
+import { isHardStopped } from "./compliance.js";
 
 /** How far ahead of the appointment the reminder goes out. */
 export const APPOINTMENT_REMINDER_HOURS_BEFORE = 24;
@@ -12,16 +13,6 @@ export const APPOINTMENT_REMINDER_HOURS_BEFORE = 24;
  * genuinely never sending it at all.
  */
 export const APPOINTMENT_REMINDER_LAST_CHANCE_HOURS = 2;
-
-/**
- * Deliberately narrower than compliance.ts's checkSuppression, which also
- * treats "booked" (among others) as a hard stop — appropriate for recovery
- * outreach ("don't keep chasing someone who already booked"), but wrong
- * here: a reminder's entire purpose is to reach exactly the leads booked
- * appointmentStatus="booked" implies. Only the genuine "never contact this
- * person again" signals apply to a reminder too.
- */
-const HARD_STOP_STATUSES: ReadonlySet<Lead["status"]> = new Set(["opted_out", "do_not_contact", "fraudulent"]);
 
 function firstName(lead: Lead): string {
   if (!lead.name) return "there";
@@ -43,7 +34,7 @@ function firstName(lead: Lead): string {
  * sending it again.
  */
 export function isDueForAppointmentReminder(lead: Lead, now: Date = new Date()): boolean {
-  if (HARD_STOP_STATUSES.has(lead.status)) return false;
+  if (isHardStopped(lead)) return false;
   if (lead.appointmentStatus !== "booked") return false;
   if (!lead.appointmentAt) return false;
   if (lead.appointmentReminderSentAt) return false;

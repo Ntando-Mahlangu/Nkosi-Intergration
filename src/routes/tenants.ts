@@ -411,16 +411,31 @@ function validateConnectNumberBody(body: ConnectNumberBody): string | undefined 
 }
 
 /** Same idea as checkPaddleSubscriptionIdConflict, for `email` — migration 0015's partial unique index backs this up at the DB layer too. */
+/**
+ * Checked against both the tenant-owner login table AND the team-member
+ * table (see "Team accounts") — without the second check, a tenant could
+ * set its own login email to one a `TenantUser` already owns in a
+ * *different* tenant. `/auth/login`/`/auth/forgot-password` both resolve
+ * the tenant-owner table first, so that collision wouldn't just break the
+ * team member's own login — a forgot-password request from their own inbox
+ * would hand them a reset link for the *other* tenant's real apiKey
+ * instead, a genuine cross-tenant access violation, not merely a lockout.
+ */
 async function checkEmailConflict(
   tenantStore: Stores["tenantStore"],
+  tenantUserStore: Stores["tenantUserStore"],
   email: string | null | undefined,
   excludeTenantId?: string
 ): Promise<string | undefined> {
   const trimmed = typeof email === "string" ? email.trim() : undefined;
   if (!trimmed) return undefined;
-  const existing = await tenantStore.getTenantByEmail(trimmed);
-  if (existing && existing.id !== excludeTenantId) {
+  const existingTenant = await tenantStore.getTenantByEmail(trimmed);
+  if (existingTenant && existingTenant.id !== excludeTenantId) {
     return `email "${trimmed}" is already in use by another tenant`;
+  }
+  const existingTenantUser = await tenantUserStore.getTenantUserByEmail(trimmed);
+  if (existingTenantUser) {
+    return `email "${trimmed}" is already in use by a team account`;
   }
   return undefined;
 }
@@ -629,7 +644,7 @@ export function createTenantRoutes({
         res.status(400).json({ error });
         return;
       }
-      const emailConflict = await checkEmailConflict(tenantStore, body.email, tenant.id);
+      const emailConflict = await checkEmailConflict(tenantStore, tenantUserStore, body.email, tenant.id);
       if (emailConflict) {
         res.status(400).json({ error: emailConflict });
         return;
@@ -692,7 +707,7 @@ export function createTenantRoutes({
         res.status(400).json({ error: conflict });
         return;
       }
-      const emailConflict = await checkEmailConflict(tenantStore, body.email);
+      const emailConflict = await checkEmailConflict(tenantStore, tenantUserStore, body.email);
       if (emailConflict) {
         res.status(400).json({ error: emailConflict });
         return;
@@ -807,7 +822,7 @@ export function createTenantRoutes({
         res.status(400).json({ error: conflict });
         return;
       }
-      const emailConflict = await checkEmailConflict(tenantStore, body.email, existing.id);
+      const emailConflict = await checkEmailConflict(tenantStore, tenantUserStore, body.email, existing.id);
       if (emailConflict) {
         res.status(400).json({ error: emailConflict });
         return;

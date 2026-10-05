@@ -10,6 +10,8 @@ import { createLeadsDeduped, parseLeadsCsv } from "../leadImport.js";
 import { buildFollowUpPlans, buildRecoveryPlans, buildWinBackPlans } from "../workflow.js";
 import { hasCarrierApproval, safeSend, selectChannel } from "../channels/index.js";
 import { generateId } from "../idgen.js";
+import { hardStopReason, isHardStopped } from "../compliance.js";
+import { isWithinQuietHours } from "../quietHours.js";
 
 /** Clears the three needs-attention fields in one patch — shared by both /leads/:id/reply and /leads/:id/mark-handled below. */
 const CLEAR_ATTENTION: Pick<Lead, "needsAttentionAt" | "needsAttentionReason" | "attentionAlertedAt"> = {
@@ -252,9 +254,28 @@ export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, mess
     ...auth,
     asyncHandler(async (req: Request, res: Response) => {
       const tenant = req.tenant!;
+      // Same gate every other send path in this app already enforces
+      // (worker.ts, POST /workflow/run, every webhook auto-reply/closer,
+      // the chat widget) — this is a real outbound send on the tenant's
+      // behalf, not exempt just because a human typed it.
+      if (!tenant.termsAcceptedAt) {
+        res.status(403).json({ error: "this tenant must accept the Terms of Service before sending anything" });
+        return;
+      }
+
       const existing = await leadStore.getLeadById(tenant.id, req.params.id);
       if (!existing) {
         res.status(404).json({ error: "no such lead" });
+        return;
+      }
+      // Narrower than the workflow's own checkSuppression (which also
+      // treats converted/booked/active_conversation as "don't contact" —
+      // the wrong rule here, since this endpoint exists specifically to
+      // let an operator reply to one of those leads). Only a genuine
+      // never-contact-again signal (STOP, do-not-contact, fraudulent)
+      // blocks a manual reply too — see compliance.ts's own comment.
+      if (isHardStopped(existing)) {
+        res.status(403).json({ error: `cannot message this lead — ${hardStopReason(existing)}` });
         return;
       }
 
@@ -270,9 +291,21 @@ export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, mess
         res.status(400).json({ error: "channel must be one of sms/whatsapp/email/chat" });
         return;
       }
+      if (body?.channel === "chat" && !existing.chatTokenHash) {
+        res.status(422).json({ error: "this lead has no chat-widget conversation to reply on" });
+        return;
+      }
       const channel = (body?.channel as Channel | "chat" | undefined) ?? selectChannel(tenant, existing);
       if (!channel) {
         res.status(422).json({ error: "no usable channel for this lead — configure one in tenant settings" });
+        return;
+      }
+      // Same quiet-hours policy every batch send in workflow.ts already
+      // applies, channel-agnostic there too — a manual reply has no
+      // "retry next run" the way a deferred automated send does, so this
+      // just asks the operator to try again once quiet hours end.
+      if (isWithinQuietHours(tenant)) {
+        res.status(422).json({ error: "cannot send right now — it's within this tenant's quiet hours" });
         return;
       }
 

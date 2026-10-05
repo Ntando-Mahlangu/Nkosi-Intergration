@@ -418,8 +418,9 @@ describe("POST /leads/:id/reply", () => {
 
   it("logs a chat-channel reply without attempting a real send", async () => {
     const app = createApp();
-    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
-    const leadId = leads.body[0].id;
+    const tenant = await request(app).get("/tenants/me").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const chatSession = await request(app).post("/public/chat/demo/start").send({ formKey: tenant.body.publicFormKey });
+    const leadId = chatSession.body.leadId;
 
     const res = await request(app)
       .post(`/leads/${leadId}/reply`)
@@ -430,6 +431,18 @@ describe("POST /leads/:id/reply", () => {
     const messages = await request(app).get(`/leads/${leadId}/messages`).set("Authorization", `Bearer ${DEMO_API_KEY}`);
     const manualReply = messages.body.find((m: { kind?: string }) => m.kind === "manual_reply");
     expect(manualReply.channel).toBe("chat");
+  });
+
+  it("rejects a chat-channel reply for a lead with no chat-widget conversation", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id; // a plain sample lead, never chatted
+
+    const res = await request(app)
+      .post(`/leads/${leadId}/reply`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ message: "hi there", channel: "chat" });
+    expect(res.status).toBe(422);
   });
 });
 

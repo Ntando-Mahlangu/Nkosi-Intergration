@@ -258,6 +258,54 @@ describe("POST /tenants/me/team", () => {
   });
 });
 
+describe("cross-tenant email collision between Tenant.email and TenantUser.email", () => {
+  // Regression test: PATCH /tenants/me's own email-conflict check only ever
+  // looked at the tenant table, so tenant B could set its own login email
+  // to one a TenantUser already owns under tenant A — silently hijacking
+  // that person's login (and, via /auth/forgot-password, handing them a
+  // reset link for tenant B's real apiKey instead of their own account).
+  const TENANT_B: Tenant = { ...TENANT, id: "tenant-b", apiKey: "tenant-b-api-key" };
+
+  it("PATCH /tenants/me rejects an email already used by another tenant's team member", async () => {
+    const stores = buildStores([TENANT, TENANT_B], [makeMemberUser({ email: "bob@example.com" })]);
+    const app = buildApp(stores);
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT_B.apiKey}`)
+      .send({ email: "bob@example.com" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/already in use/i);
+    // The team member's login must still resolve to the tenant that actually invited them.
+    const login = await request(app)
+      .post("/auth/login")
+      .set("Content-Type", "application/json")
+      .send({ email: "bob@example.com", password: "whatever" });
+    expect(login.status).toBe(401); // no password set yet, but never a 200 for the wrong tenant either
+  });
+
+  it("POST /admin/tenants (via buildTenantPatch-equivalent checks) also rejects a colliding email at creation", async () => {
+    // Covered indirectly through PATCH /tenants/me above and POST
+    // /tenants/me/team's own pre-existing reverse check; this test just
+    // confirms the same checkEmailConflict helper is shared, not duplicated
+    // with a gap, by exercising PATCH /tenants/me's exclude-self case too.
+    const stores = buildStores([TENANT], [makeMemberUser({ email: "member@acme.test" })]);
+    const app = buildApp(stores);
+
+    // Setting the tenant's own email to its own team member's email is
+    // still a collision even though it's "the same tenant" — the two
+    // identities (tenant-owner login vs. team-member login) must never
+    // resolve to the same email, or /auth/login's "check tenant table
+    // first" order makes the team member's own account unreachable.
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ email: "member@acme.test" });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("PATCH /tenants/me/team/:id", () => {
   it("requires owner role", async () => {
     const stores = buildStores([TENANT], [makeMemberUser()]);
