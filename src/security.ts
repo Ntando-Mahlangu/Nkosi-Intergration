@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 /**
  * Constant-time string comparison for secrets (admin key, webhook shared
@@ -18,4 +18,16 @@ export function safeCompare(a: string, b: string): boolean {
     return false;
   }
   return timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * One-way hash for a short-lived bearer token (an OTP code, a password-reset
+ * token, a chat-widget session token) before storing it — the raw token is
+ * never persisted, only this hash, the same way a password is never stored
+ * in plaintext. Not a password hash (no per-value salt/cost): these tokens
+ * are already high-entropy random values, not user-chosen secrets, so a fast
+ * hash is the right tradeoff — verifying it on every request stays cheap.
+ */
+export function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }

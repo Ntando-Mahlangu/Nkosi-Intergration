@@ -18,6 +18,7 @@ tags:
   - name: tenant-self-service
   - name: admin
   - name: leads
+  - name: chat
   - name: webhooks
 
 security: []
@@ -907,6 +908,156 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /public/chat/{tenantId}/start:
+    post:
+      tags: [chat]
+      summary: Start a new website-chat-widget conversation
+      description: >
+        Public, no tenant-auth — the first call the embeddable widget
+        (public/chat-widget.js) makes. Creates a real Lead (source "chat")
+        and a second, per-conversation chatToken distinct from formKey — see
+        README.md "Website chat widget". Any origin may call this, same as
+        /public/leads/{tenantId}.
+      security: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [formKey]
+              properties:
+                formKey: { type: string }
+                name: { type: string }
+                phone: { type: string }
+                email: { type: string }
+      responses:
+        "201":
+          description: Conversation started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  leadId: { type: string }
+                  chatToken: { type: string, description: "Never stored raw server-side (only its hash) — keep this client-side only." }
+        "401":
+          description: Invalid tenantId or formKey
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Tenant is suspended
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /public/chat/{tenantId}/message:
+    post:
+      tags: [chat]
+      summary: Send a message in an existing chat-widget conversation
+      description: >
+        Public — requires both formKey and the conversation's own
+        chatToken (from /start). Runs the same classify → auto-reply/
+        escalate pipeline as an inbound SMS/WhatsApp/email reply
+        (src/chatWidget.ts), but returns the reply synchronously instead of
+        sending through a channel adapter.
+      security: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [formKey, leadId, chatToken, body]
+              properties:
+                formKey: { type: string }
+                leadId: { type: string }
+                chatToken: { type: string }
+                body: { type: string, maxLength: 4000 }
+      responses:
+        "200":
+          description: The bot's reply (or a fixed hand-off/stop notice)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  classification:
+                    type: string
+                    enum: [stop, interested, not_interested, question, unknown]
+                  displayText:
+                    type: string
+                    description: Always populated — show this directly in the widget.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Invalid formKey/leadId/chatToken combination
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Tenant is suspended
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Tenant hasn't accepted LeadRecovery's own Terms of Service yet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /public/chat/{tenantId}/history:
+    get:
+      tags: [chat]
+      summary: This conversation's message history
+      description: Lets the widget resume a conversation across page reloads. Scoped strictly to channel "chat" — never surfaces any other channel's history for the same lead.
+      security: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: formKey
+          in: query
+          required: true
+          schema: { type: string }
+        - name: leadId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: chatToken
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: This conversation's messages, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    direction: { type: string, enum: [inbound, outbound] }
+                    body: { type: string }
+                    at: { type: string, format: date-time }
+        "401":
+          description: Invalid formKey/leadId/chatToken combination
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /webhooks/lead:
     post:
       tags: [webhooks]
@@ -1298,7 +1449,7 @@ components:
         email: { type: string }
         source:
           type: string
-          enum: [crm, website_form, missed_call, booking_software, email, sms, whatsapp, spreadsheet, customer_database, other]
+          enum: [crm, website_form, missed_call, booking_software, email, sms, whatsapp, chat, spreadsheet, customer_database, other]
         createdAt: { type: string, format: date-time }
         status:
           type: string
@@ -1343,6 +1494,9 @@ components:
           type: string
           format: date-time
           description: When the last win-back check-in was actually sent.
+        chatTokenHash:
+          type: string
+          description: Hash only (never the raw token) of this lead's chat-widget session token, if it was created that way. See POST /public/chat/{tenantId}/start.
 
     LeadPatchBody:
       type: object

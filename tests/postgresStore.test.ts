@@ -321,6 +321,20 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(reread?.lastWinBackAt).toBe("2026-07-01T00:00:00.000Z");
   });
 
+  it("round-trips a lead's chatTokenHash (chat widget session)", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant(TENANT);
+    const leadStore = new PostgresLeadStore(pool);
+    await leadStore.createLead({ ...LEAD, source: "chat", chatTokenHash: "abc123hash" });
+
+    const reread = await leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(reread?.source).toBe("chat");
+    expect(reread?.chatTokenHash).toBe("abc123hash");
+
+    const updated = await leadStore.updateLead(TENANT.id, LEAD.id, { chatTokenHash: "newhash456" });
+    expect(updated?.chatTokenHash).toBe("newhash456");
+  });
+
   it("round-trips a tenant's reference-only contactPhone/contactEmail/website", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant({

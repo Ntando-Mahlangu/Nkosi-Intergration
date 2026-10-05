@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { safeCompare } from "../src/security.js";
+import { hashToken, safeCompare } from "../src/security.js";
 import { decryptSecret, encryptSecret, generateEncryptionKey } from "../src/crypto.js";
 
 describe("safeCompare", () => {
@@ -18,6 +18,20 @@ describe("safeCompare", () => {
   it("returns false comparing against an empty string", () => {
     expect(safeCompare("", "nonempty")).toBe(false);
     expect(safeCompare("nonempty", "")).toBe(false);
+  });
+});
+
+describe("hashToken", () => {
+  it("is deterministic for the same input", () => {
+    expect(hashToken("abc123")).toBe(hashToken("abc123"));
+  });
+
+  it("produces different hashes for different inputs", () => {
+    expect(hashToken("abc123")).not.toBe(hashToken("abc124"));
+  });
+
+  it("never returns the raw token itself", () => {
+    expect(hashToken("abc123")).not.toBe("abc123");
   });
 });
 

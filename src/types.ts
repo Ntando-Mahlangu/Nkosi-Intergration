@@ -6,6 +6,7 @@ export type LeadSource =
   | "email"
   | "sms"
   | "whatsapp"
+  | "chat"
   | "spreadsheet"
   | "customer_database"
   | "other";
@@ -22,6 +23,7 @@ export const LEAD_SOURCES: ReadonlySet<LeadSource> = new Set([
   "email",
   "sms",
   "whatsapp",
+  "chat",
   "spreadsheet",
   "customer_database",
   "other",
@@ -111,6 +113,15 @@ export interface Lead {
   marketingOptIn?: boolean;
   /** When the last win-back check-in was actually sent (ISO date) — see src/winback.ts. */
   lastWinBackAt?: string;
+  /**
+   * SHA-256 hash of this lead's website-chat-widget session token, if it was
+   * created that way (src/chatWidget.ts, POST /public/chat/:tenantId/start).
+   * Never the raw token. Lets the widget resume the same conversation across
+   * page loads/visits without any real login — the token is the visitor's
+   * only credential for continuing *this specific* conversation, so it's
+   * hashed at rest the same way otpCodeHash/passwordResetTokenHash are.
+   */
+  chatTokenHash?: string;
 }
 
 export interface ScoredLead {
@@ -468,7 +479,8 @@ export interface Message {
   id: string;
   tenantId: string;
   leadId: string;
-  channel: Channel;
+  /** "chat" is the website chat widget (src/chatWidget.ts) — never a real outbound-send channel, just where this particular message came in/out on. */
+  channel: Channel | "chat";
   direction: MessageDirection;
   body: string;
   at: string; // ISO date

@@ -212,6 +212,15 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
 - Auto-replies still go out through the same SMS/WhatsApp/Email channels
   as everything else in this system, so every item above (10DLC,
   WhatsApp template approval, CAN-SPAM, STOP handling) applies to them too.
+- **The website chat widget** (`public/chat-widget.js`, see README
+  "Website chat widget") is a fourth channel the same bot disclosure logic
+  covers — a visitor chatting through it gets the exact same proactive
+  disclosure, knowledge-base-only answers, and escalation behavior as an
+  SMS/WhatsApp/email reply. It has no 10DLC/WhatsApp-template/CAN-SPAM
+  requirements of its own (there's no carrier or email provider in the
+  loop — it's a direct HTTP request/response on the client's own website),
+  but STOP/opt-out handling and the compliance boundary above both still
+  apply identically.
 
 ## Data handling
 

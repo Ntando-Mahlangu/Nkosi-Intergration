@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomInt } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { Stores } from "../store/index.js";
 import type { TenantStore } from "../store/types.js";
@@ -9,6 +9,7 @@ import { hashPassword, verifyPassword } from "../password.js";
 import { sendAccountEmail } from "../authEmail.js";
 import { sendAccountSms } from "../authSms.js";
 import { publicBaseUrl } from "../publicUrl.js";
+import { hashToken } from "../security.js";
 
 const RESET_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 /** Exported so routes/tenants.ts's self-service change-password endpoint enforces the exact same minimum. */
@@ -24,10 +25,6 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 5;
 /** Same generic response for "no such phone", "code expired", "too many attempts", and "wrong code" — a distinguishable response for any one of these is exactly what lets an attacker enumerate valid phone numbers or brute-force a code. */
 const INVALID_CODE_ERROR = "invalid or expired code";
-
-function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
 
 function generateOtpCode(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");

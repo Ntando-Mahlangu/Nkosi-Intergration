@@ -18,7 +18,7 @@ import { verifyPaddleSignature, compareIsoTimestamps } from "../paddleVerify.js"
 import { recordAudit } from "../audit.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { logger } from "../logger.js";
-import type { ComposedMessage, Lead, LeadSource, Message, Tenant } from "../types.js";
+import type { Channel, ComposedMessage, Lead, LeadSource, Message, Tenant } from "../types.js";
 import { isLeadSource } from "../types.js";
 
 const upload = multer();
@@ -85,7 +85,7 @@ function firstName(lead: Lead): string {
   return lead.name.trim().split(/\s+/)[0];
 }
 
-function composeCloserBody(lead: Lead, tenant: Tenant): string {
+export function composeCloserBody(lead: Lead, tenant: Tenant): string {
   const template = tenant.templates?.notInterestedCloser ?? DEFAULT_NOT_INTERESTED_CLOSER;
   return substituteTemplate(template, { name: firstName(lead), businessName: tenant.name });
 }
@@ -150,7 +150,7 @@ async function recordInboundAndClassify(
   stores: Stores,
   tenant: Tenant,
   lead: Lead,
-  channel: Message["channel"],
+  channel: Channel,
   body: string,
   providerMessageId?: string
 ): Promise<{ classification: Awaited<ReturnType<typeof classifyReply>> }> {

@@ -437,6 +437,25 @@
       </div>
     </section>
 
+    <section>
+      <h2>Add a chat box to your website</h2>
+      <div class="desc">
+        A floating chat widget visitors can talk to live — answered by the
+        same knowledge-base auto-reply above (set "Knowledge base" and turn
+        on "Turn on auto-reply" for it to answer questions automatically;
+        otherwise every message is simply flagged for a human). Same safe-
+        to-publish key as the capture form above — it can only ever create
+        or continue a chat conversation through this one widget.
+      </div>
+      <div class="field">
+        <label for="chat-widget-snippet">Embeddable script tag</label>
+        <textarea id="chat-widget-snippet" rows="3" readonly style="font-family: ui-monospace, monospace; font-size:11px;"></textarea>
+        <div style="margin-top:8px;">
+          <button type="button" class="secondary" id="chat-widget-copy-btn">Copy snippet</button>
+        </div>
+      </div>
+    </section>
+
     <div id="load-error" class="error" role="alert"></div>
   </main>
 </div>
@@ -515,6 +534,7 @@
       : "Current password (not set yet — leave blank)";
     document.getElementById("account-password-btn").textContent = tenant.hasPassword ? "Change password" : "Set password";
     fillCaptureSnippet(tenant);
+    fillChatWidgetSnippet(tenant);
     const t = tenant.templates || {};
     document.getElementById("tpl-grounded").value = t.initialGrounded || "";
     document.getElementById("tpl-ungrounded").value = t.initialUngrounded || "";
@@ -571,6 +591,13 @@ document.getElementById("leadrecovery-form").addEventListener("submit", function
 });
 <\/script>`;
     document.getElementById("capture-snippet").value = snippet;
+  }
+
+  function fillChatWidgetSnippet(tenant) {
+    const session = getSession();
+    const base = (session ? session.baseUrl : window.location.origin).replace(/\/$/, "");
+    const snippet = `<script src="${base}/chat-widget.js" data-tenant="${tenant.id}" data-form-key="${tenant.publicFormKey || ""}"><\/script>`;
+    document.getElementById("chat-widget-snippet").value = snippet;
   }
 
   function updateKbCounter() {
@@ -898,6 +925,17 @@ document.getElementById("leadrecovery-form").addEventListener("submit", function
     } catch {
       // Clipboard API unavailable (e.g. an insecure context) — the
       // textarea's own content is still selectable manually.
+      btn.textContent = "Select the text above to copy";
+    }
+  });
+
+  document.getElementById("chat-widget-copy-btn").addEventListener("click", async () => {
+    const btn = document.getElementById("chat-widget-copy-btn");
+    try {
+      await navigator.clipboard.writeText(document.getElementById("chat-widget-snippet").value);
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = "Copy snippet"; }, 1500);
+    } catch {
       btn.textContent = "Select the text above to copy";
     }
   });

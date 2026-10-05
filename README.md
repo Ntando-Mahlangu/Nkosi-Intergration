@@ -98,6 +98,11 @@ deployment serves many clients with fully isolated data.
   (price negotiation, complaints, complex requests, an explicit ask for a
   human) — any API error, missing config, or non-clean response also fails
   safe to escalate rather than risk a fabricated answer reaching a customer.
+- **`src/chatWidget.ts`** / **`src/routes/publicChat.ts`** / `public/chat-widget.js` —
+  the embeddable website chat widget. Reuses the exact same classify →
+  escalate-or-reply pipeline as an SMS/WhatsApp/email reply, but answers
+  synchronously in the HTTP response instead of pushing a send through a
+  channel adapter. See "Website chat widget" below.
 - **`src/notify.ts`** — POSTs to the tenant's `notifyWebhookUrl` (e.g. a
   Slack incoming webhook) when a reply is `interested` or the chatbot
   escalates — the two moments a human should act promptly. Retries once
@@ -417,6 +422,9 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | POST | `/tenants/me/accept-terms` | Records the tenant's acceptance of the current Terms of Service/Privacy Policy version — required before `POST /workflow/run`, the worker, or any inbound webhook auto-reply will actually send anything |
 | POST | `/tenants/me/change-password` | `{currentPassword?, newPassword}` — self-service while already signed in; `currentPassword` is only required if one is already set |
 | POST | `/public/leads/:tenantId` | Public, no tenant-auth — a lead-capture form embedded on the tenant's own website posts here with `{formKey, name?, phone?, email?, requestedService?, notes?}` (`formKey` is `Tenant.publicFormKey`, safe to publish — it can only ever create a lead through this one endpoint) |
+| POST | `/public/chat/:tenantId/start` | Public — the chat widget's first call: `{formKey, name?, phone?, email?}` → `{leadId, chatToken}`. Creates a real lead (`source: "chat"`); `chatToken` is a second, per-conversation secret distinct from `formKey` — see "Website chat widget" above |
+| POST | `/public/chat/:tenantId/message` | Public — `{formKey, leadId, chatToken, body}` → `{classification, displayText}`. Same classify/auto-reply/escalate pipeline as an inbound SMS/WhatsApp/email reply, answered synchronously in the response instead of over a provider |
+| GET | `/public/chat/:tenantId/history` | Public — `?formKey=&leadId=&chatToken=` → this one conversation's messages, oldest first. Lets the widget resume across page reloads |
 | GET | `/admin/tenants` | List tenants (admin) |
 | POST | `/admin/tenants` | Create a tenant (admin); returns the API key once. Also accepts `consentBasisConfirmed`/`termsAttested`/`carrierApprovalConfirmed` (recorded attestations — see `COMPLIANCE.md`) and any self-service field |
 | PATCH | `/admin/tenants/:id` | Admin update: any self-service field, plus `status` (`"active"` \| `"suspended"`) and `carrierApprovalConfirmed` (admin-only — the only way to clear an sms/whatsapp send block for a tenant) |
@@ -498,6 +506,34 @@ automated by default (some jurisdictions require this — see "Bot
 disclosure" in `COMPLIANCE.md`); set `{"botDisclosureEnabled": false}` via
 `PATCH /tenants/me` only after confirming the client's jurisdiction doesn't
 require it.
+
+## Website chat widget
+
+A floating, embeddable chat box a client pastes onto their own website —
+`public/settings.html`'s "Add a chat box to your website" panel gives the
+exact snippet for a specific tenant:
+
+```html
+<script src="https://<host>/chat-widget.js" data-tenant="<tenantId>" data-form-key="<formKey>"></script>
+```
+
+`formKey` is `Tenant.publicFormKey` — the same safe-to-publish token the
+lead-capture form above uses, scoped to only this purpose. A visitor's
+first message creates a real `Lead` (`source: "chat"`); every message after
+that is answered by the exact same auto-reply chatbot above (same
+knowledge-base grounding, same escalation rules, same proactive bot
+disclosure) — the only difference is the reply comes back synchronously in
+the widget itself instead of over SMS/WhatsApp/email, since there's no
+provider in the loop to push an async send through. `src/chatWidget.ts` is
+the shared classify → branch → compose pipeline (mirrors
+`recordInboundAndClassify` in `src/webhooks/index.ts`); `src/routes/publicChat.ts`
+is the three public endpoints it's wired into (`POST .../start`,
+`POST .../message`, `GET .../history`). A second, per-conversation
+`chatToken` (returned by `.../start`, stored by the widget in
+`localStorage`) keeps one visitor's conversation private from every other
+visitor to the same site — `formKey` alone only scopes a caller to *a*
+tenant's widget, not to one specific thread. See COMPLIANCE.md "Bot
+disclosure" for what applies to this channel.
 
 ## Localization
 
