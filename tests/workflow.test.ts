@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryLeadStore, InMemoryMessageStore } from "../src/store/memory.js";
-import { buildRecoveryPlans, runRecoveryWorkflow } from "../src/workflow.js";
+import { buildRecoveryPlans, buildWinBackPlans, runRecoveryWorkflow } from "../src/workflow.js";
+import { DEFAULT_WIN_BACK_COOLDOWN_DAYS } from "../src/winback.js";
 import type { Lead, Tenant } from "../src/types.js";
 
 const NOW = new Date("2026-09-12T00:00:00.000Z");
@@ -327,5 +328,65 @@ describe("runRecoveryWorkflow", () => {
 
     const updated = await store.getLeadById(TENANT.id, "booked-lead");
     expect(updated?.appointmentReminderSentAt).toBe(NOW.toISOString());
+  });
+});
+
+describe("win-back", () => {
+  const WIN_BACK_TENANT: Tenant = { ...TENANT, winBackEnabled: true };
+
+  function makeConvertedLead(overrides: Partial<Lead>): Lead {
+    return {
+      id: "converted-1",
+      tenantId: TENANT.id,
+      name: "Priya Naidoo",
+      phone: "+27821119999",
+      source: "crm",
+      createdAt: new Date(NOW.getTime() - 400 * 86400000).toISOString(),
+      status: "converted",
+      convertedAt: new Date(NOW.getTime() - (DEFAULT_WIN_BACK_COOLDOWN_DAYS + 1) * 86400000).toISOString(),
+      marketingOptIn: true,
+      ...overrides,
+    };
+  }
+
+  it("buildWinBackPlans never includes a lead the tenant hasn't enabled win-back for", () => {
+    const { plans } = buildWinBackPlans(TENANT, [makeConvertedLead({})], NOW);
+    expect(plans).toHaveLength(0);
+  });
+
+  it("buildWinBackPlans includes a due, opted-in converted lead", () => {
+    const { plans } = buildWinBackPlans(WIN_BACK_TENANT, [makeConvertedLead({})], NOW);
+    expect(plans).toHaveLength(1);
+    expect(plans[0].lead.id).toBe("converted-1");
+    expect(plans[0].priority).toBe("LOW");
+  });
+
+  it("runRecoveryWorkflow sends a win-back check-in, sets lastWinBackAt, and never touches status/followUpCount", async () => {
+    const store = new InMemoryLeadStore([makeConvertedLead({})]);
+    const messages = new InMemoryMessageStore();
+    const result = await runRecoveryWorkflow(WIN_BACK_TENANT, store, messages, NOW);
+
+    const sentWinBack = result.sent.find((s) => s.plan.lead.id === "converted-1");
+    expect(sentWinBack?.result.ok).toBe(true);
+
+    const updated = await store.getLeadById(TENANT.id, "converted-1");
+    expect(updated?.status).toBe("converted"); // never flipped to contacted_no_response
+    expect(updated?.followUpCount).toBeUndefined();
+    expect(updated?.lastWinBackAt).toBe(NOW.toISOString());
+
+    const logged = await messages.getMessagesForLead(TENANT.id, "converted-1");
+    expect(logged).toHaveLength(1);
+    expect(logged[0].kind).toBe("win_back");
+  });
+
+  it("defers a win-back send during quiet hours instead of sending", async () => {
+    const quietTenant: Tenant = { ...WIN_BACK_TENANT, quietHours: { startHour: 0, endHour: 24 } };
+    const store = new InMemoryLeadStore([makeConvertedLead({})]);
+    const result = await runRecoveryWorkflow(quietTenant, store, undefined, NOW);
+
+    expect(result.sent.some((s) => s.plan.lead.id === "converted-1")).toBe(false);
+    expect(result.deferred.some((d) => d.lead.id === "converted-1")).toBe(true);
+    const updated = await store.getLeadById(TENANT.id, "converted-1");
+    expect(updated?.lastWinBackAt).toBeUndefined();
   });
 });

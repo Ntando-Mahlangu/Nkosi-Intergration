@@ -480,6 +480,40 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
     await expect(page.locator("#detail-appt-at")).toHaveValue("2030-06-15T14:30");
   });
 
+  test("marking a lead converted hides the button, shows the converted timestamp, and persists the marketing opt-in", async ({
+    page,
+  }) => {
+    await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
+    await page.fill("#api-key", "demo-key");
+    await page.click("#connect-btn");
+    await expect(page.locator("#app")).toBeVisible();
+
+    const firstRow = page.locator("#all-leads .lead-row").first();
+    await firstRow.click();
+    await expect(page.locator("#overlay")).toHaveClass(/open/);
+
+    await expect(page.locator("#detail-convert-btn")).toBeVisible();
+    await expect(page.locator("#detail-converted-row")).toBeHidden();
+
+    await page.check("#detail-marketing-opt-in");
+    await page.click("#detail-convert-btn");
+
+    await expect(page.locator("#detail-convert-status-msg")).toHaveText("Marked as converted.");
+    await expect(page.locator("#detail-convert-btn")).toBeHidden();
+    await expect(page.locator("#detail-converted-row")).toContainText("Converted");
+    await expect(firstRow).toContainText("Converted");
+
+    await page.click("#detail-close-btn");
+    await expect(page.locator("#overlay")).not.toHaveClass(/open/);
+
+    // Re-opening confirms both the conversion and the opt-in persisted server-side.
+    await firstRow.click();
+    await expect(page.locator("#detail-convert-btn")).toBeHidden();
+    await expect(page.locator("#detail-converted-row")).toContainText("Converted");
+    await expect(page.locator("#detail-marketing-opt-in")).toBeChecked();
+  });
+
   test("imports leads from an uploaded CSV file", async ({ page }) => {
     await page.goto("/dashboard.html");
     await page.click("#advanced-toggle");

@@ -304,6 +304,15 @@
           dashboard.
         </div>
       </div>
+
+      <div class="field">
+        <label for="tpl-winback">Win-back check-in</label>
+        <textarea id="tpl-winback" rows="2" placeholder="Uses the default wording if left blank"></textarea>
+        <div class="hint">
+          Sent to a past customer under "Win-back messaging" below — see that
+          section for the opt-in it requires first.
+        </div>
+      </div>
     </section>
 
     <section>
@@ -339,6 +348,32 @@
         says up front that it's an automated assistant. Some jurisdictions
         require this (e.g. California's B.O.T. Act) — only turn it off after
         confirming your jurisdiction doesn't.
+      </div>
+    </section>
+
+    <section>
+      <h2>Win-back messaging</h2>
+      <div class="desc">
+        Periodic check-ins to past customers — distinct from the recovery
+        messaging every lead already gets, which never contacts someone once
+        they've converted. Turning this on only ever messages a specific
+        lead once <em>you've</em> recorded that they personally agreed to it
+        (the "agreed to occasional win-back messages" checkbox on their own
+        detail view in the list dashboard) — this toggle alone messages no
+        one. See COMPLIANCE.md "Win-back messaging for past customers" before
+        turning this on: most jurisdictions treat this as direct marketing to
+        an existing customer, which commonly needs its own opt-in distinct
+        from whatever let you message them the first time.
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="win-back-enabled" />
+        <label for="win-back-enabled">Turn on win-back check-ins</label>
+      </div>
+
+      <div class="field" style="margin-top:14px;">
+        <label for="win-back-cooldown-days">Days between check-ins</label>
+        <input type="number" id="win-back-cooldown-days" min="30" max="3650" placeholder="180 (default)" />
       </div>
     </section>
 
@@ -485,6 +520,7 @@
     document.getElementById("tpl-ungrounded").value = t.initialUngrounded || "";
     document.getElementById("tpl-closer").value = t.notInterestedCloser || "";
     document.getElementById("tpl-reminder").value = t.appointmentReminder || "";
+    document.getElementById("tpl-winback").value = t.winBack || "";
     const fu = t.followUps || [];
     document.getElementById("tpl-fu-0").value = fu[0] || "";
     document.getElementById("tpl-fu-1").value = fu[1] || "";
@@ -493,6 +529,8 @@
     document.getElementById("auto-reply-enabled").checked = Boolean(tenant.autoReplyEnabled);
     document.getElementById("bot-disclosure-enabled").checked = tenant.botDisclosureEnabled !== false;
     document.getElementById("data-retention-days").value = tenant.dataRetentionDays || "";
+    document.getElementById("win-back-enabled").checked = Boolean(tenant.winBackEnabled);
+    document.getElementById("win-back-cooldown-days").value = tenant.winBackCooldownDays || "";
     updateKbCounter();
     updateAutoReplyAvailability();
   }
@@ -563,10 +601,12 @@ document.getElementById("leadrecovery-form").addEventListener("submit", function
     const ungrounded = val("tpl-ungrounded");
     const closer = val("tpl-closer");
     const reminder = val("tpl-reminder");
+    const winBack = val("tpl-winback");
     if (grounded) templates.initialGrounded = grounded;
     if (ungrounded) templates.initialUngrounded = ungrounded;
     if (closer) templates.notInterestedCloser = closer;
     if (reminder) templates.appointmentReminder = reminder;
+    if (winBack) templates.winBack = winBack;
 
     const fu = [val("tpl-fu-0"), val("tpl-fu-1"), val("tpl-fu-2")];
     const filledCount = fu.filter(Boolean).length;
@@ -763,8 +803,16 @@ document.getElementById("leadrecovery-form").addEventListener("submit", function
     const knowledgeBase = val("knowledge-base");
     const autoReplyEnabled = document.getElementById("auto-reply-enabled").checked;
     const botDisclosureEnabled = document.getElementById("bot-disclosure-enabled").checked;
+    const winBackEnabled = document.getElementById("win-back-enabled").checked;
 
-    const patchBody = { templates, knowledgeBase, autoReplyEnabled, botDisclosureEnabled, email: val("account-email") || null };
+    const patchBody = {
+      templates,
+      knowledgeBase,
+      autoReplyEnabled,
+      botDisclosureEnabled,
+      winBackEnabled,
+      email: val("account-email") || null,
+    };
     const retentionRaw = val("data-retention-days");
     if (retentionRaw) {
       const retentionDays = Number(retentionRaw);
@@ -774,6 +822,16 @@ document.getElementById("leadrecovery-form").addEventListener("submit", function
         return;
       }
       patchBody.dataRetentionDays = retentionDays;
+    }
+    const winBackCooldownRaw = val("win-back-cooldown-days");
+    if (winBackCooldownRaw) {
+      const winBackCooldownDays = Number(winBackCooldownRaw);
+      if (!Number.isInteger(winBackCooldownDays) || winBackCooldownDays < 30 || winBackCooldownDays > 3650) {
+        saveStatus.textContent = "Days between win-back check-ins must be a whole number from 30 to 3650.";
+        saveStatus.className = "save-status err";
+        return;
+      }
+      patchBody.winBackCooldownDays = winBackCooldownDays;
     }
 
     btn.disabled = true;

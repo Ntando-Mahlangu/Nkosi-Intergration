@@ -33,6 +33,11 @@ export default defineConfig({
       // (create/suspend/rotate/delete, repeated across tests, all from the
       // same loopback IP) — well beyond the production default of 30/15min.
       LEADRECOVERY_ADMIN_RATE_LIMIT: "1000",
+      // Same reasoning as LEADRECOVERY_ADMIN_RATE_LIMIT above — the dashboard/
+      // settings/reports e2e specs all share one demo-tenant API key from one
+      // loopback IP across many tests in a single run, well beyond the
+      // production default of 60/min for a single real tenant.
+      LEADRECOVERY_TENANT_RATE_LIMIT: "1000",
       // Fixed test-only value, never a real secret — lets the admin.html e2e
       // suite POST a genuinely signed request straight at /webhooks/paddle
       // to exercise the real billing-suspend-badge wiring end to end.

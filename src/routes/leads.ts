@@ -7,7 +7,7 @@ import { asyncHandler } from "../middleware/asyncHandler.js";
 import { parsePageParams, paginate } from "../pagination.js";
 import { leadsToCsv } from "../csv.js";
 import { parseLeadsCsv } from "../leadImport.js";
-import { buildFollowUpPlans, buildRecoveryPlans } from "../workflow.js";
+import { buildFollowUpPlans, buildRecoveryPlans, buildWinBackPlans } from "../workflow.js";
 
 /** Everything under /leads/* — CRUD, CSV export/import, dry-run planning, and per-lead message history. */
 export function createLeadRoutes({ tenantStore, leadStore, messageStore }: Stores): Router {
@@ -85,11 +85,12 @@ export function createLeadRoutes({ tenantStore, leadStore, messageStore }: Store
       const leads = await leadStore.getAllLeads(req.tenant!.id);
       const initial = buildRecoveryPlans(req.tenant!, leads);
       const followUps = buildFollowUpPlans(req.tenant!, leads);
-      const plans = [...initial.plans, ...followUps.plans];
+      const winBacks = buildWinBackPlans(req.tenant!, leads);
+      const plans = [...initial.plans, ...followUps.plans, ...winBacks.plans];
       res.set("X-Total-Count", String(plans.length));
       res.json({
         plans: paginate(plans, parsePageParams(req)),
-        skipped: [...initial.skipped, ...followUps.skipped],
+        skipped: [...initial.skipped, ...followUps.skipped, ...winBacks.skipped],
       });
     })
   );
@@ -131,8 +132,14 @@ export function createLeadRoutes({ tenantStore, leadStore, messageStore }: Store
           | "appointmentStatus"
           | "appointmentAt"
           | "preferredChannel"
+          | "marketingOptIn"
         >
       >;
+
+      if (body.marketingOptIn !== undefined && typeof body.marketingOptIn !== "boolean") {
+        res.status(400).json({ error: "marketingOptIn must be a boolean" });
+        return;
+      }
 
       const validAppointmentStatuses = new Set(["none", "requested", "abandoned", "booked"]);
       if (body.appointmentStatus !== undefined && !validAppointmentStatuses.has(body.appointmentStatus)) {
@@ -172,8 +179,46 @@ export function createLeadRoutes({ tenantStore, leadStore, messageStore }: Store
         patch.appointmentReminderSentAt = undefined;
       }
       if ("preferredChannel" in body) patch.preferredChannel = body.preferredChannel ?? undefined;
+      // A consent flag, not status/compliance-suppression machinery — safe
+      // to let the tenant toggle directly here, unlike `status` above. See
+      // Lead.marketingOptIn and src/winback.ts.
+      if ("marketingOptIn" in body) patch.marketingOptIn = body.marketingOptIn ?? undefined;
 
       const updated = await leadStore.updateLead(tenant.id, req.params.id, patch);
+      res.json(updated);
+    })
+  );
+
+  // The one, narrow, forward-only status transition this file otherwise
+  // deliberately excludes from the general PATCH above (see its own
+  // comment): marking a lead as a converted/won customer. Separate from
+  // `marketingOptIn` — converting a lead says nothing about whether they
+  // agreed to be re-contacted afterwards, so that's still an explicit,
+  // independent choice (either in this same call or later via PATCH).
+  router.post(
+    "/leads/:id/convert",
+    ...auth,
+    asyncHandler(async (req: Request, res: Response) => {
+      const tenant = req.tenant!;
+      const existing = await leadStore.getLeadById(tenant.id, req.params.id);
+      if (!existing) {
+        res.status(404).json({ error: "no such lead" });
+        return;
+      }
+
+      const body = req.body as { marketingOptIn?: unknown } | undefined;
+      if (body?.marketingOptIn !== undefined && typeof body.marketingOptIn !== "boolean") {
+        res.status(400).json({ error: "marketingOptIn must be a boolean" });
+        return;
+      }
+
+      const updated = await leadStore.updateLead(tenant.id, req.params.id, {
+        status: "converted",
+        convertedAt: new Date().toISOString(),
+        // Never assumed true by omission — see Lead.marketingOptIn's own
+        // doc comment on why this needs its own explicit opt-in.
+        marketingOptIn: body?.marketingOptIn === true ? true : undefined,
+      });
       res.json(updated);
     })
   );

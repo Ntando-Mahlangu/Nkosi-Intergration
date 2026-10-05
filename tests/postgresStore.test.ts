@@ -42,6 +42,7 @@ const TENANT: Tenant = {
   devMode: false,
   channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+15550000" } },
   autoReplyEnabled: false, // the DB column is NOT NULL DEFAULT FALSE, so a round-trip always returns a real boolean here
+  winBackEnabled: false, // ditto
   status: "active", // ditto — NOT NULL DEFAULT 'active'
   createdAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
 };
@@ -287,6 +288,37 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     const reread = await leadStore.getLeadById(TENANT.id, LEAD.id);
     expect(reread?.appointmentAt).toBe("2026-12-01T10:00:00.000Z");
     expect(reread?.appointmentReminderSentAt).toBe("2026-11-30T10:00:00.000Z");
+  });
+
+  it("round-trips a lead's convertedAt/marketingOptIn/lastWinBackAt, and a tenant's winBackEnabled/winBackCooldownDays", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant({ ...TENANT, winBackEnabled: true, winBackCooldownDays: 90 });
+    const leadStore = new PostgresLeadStore(pool);
+    await leadStore.createLead(LEAD);
+
+    const rereadTenant = await tenantStore.getTenant(TENANT.id);
+    expect(rereadTenant?.winBackEnabled).toBe(true);
+    expect(rereadTenant?.winBackCooldownDays).toBe(90);
+
+    const converted = await leadStore.updateLead(TENANT.id, LEAD.id, {
+      status: "converted",
+      convertedAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
+      marketingOptIn: true,
+    });
+    expect(converted?.status).toBe("converted");
+    expect(converted?.convertedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(converted?.marketingOptIn).toBe(true);
+    expect(converted?.lastWinBackAt).toBeUndefined();
+
+    const afterWinBack = await leadStore.updateLead(TENANT.id, LEAD.id, {
+      lastWinBackAt: new Date("2026-07-01T00:00:00.000Z").toISOString(),
+    });
+    expect(afterWinBack?.lastWinBackAt).toBe("2026-07-01T00:00:00.000Z");
+
+    const reread = await leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(reread?.convertedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(reread?.marketingOptIn).toBe(true);
+    expect(reread?.lastWinBackAt).toBe("2026-07-01T00:00:00.000Z");
   });
 
   it("round-trips a tenant's reference-only contactPhone/contactEmail/website", async () => {

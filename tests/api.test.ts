@@ -2310,6 +2310,42 @@ describe("tenant self-service settings", () => {
     expect(res.status).toBe(400);
   });
 
+  it("lets a tenant turn on win-back check-ins and set a cooldown", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ winBackEnabled: true, winBackCooldownDays: 90, templates: { winBack: "Miss you, {name}!" } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.winBackEnabled).toBe(true);
+    expect(res.body.winBackCooldownDays).toBe(90);
+    expect(res.body.templates.winBack).toBe("Miss you, {name}!");
+  });
+
+  it("rejects a win-back cooldown outside the allowed range", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const tooShort = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ winBackCooldownDays: 1 });
+    expect(tooShort.status).toBe(400);
+
+    const notAnInteger = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ winBackCooldownDays: 45.5 });
+    expect(notAnInteger.status).toBe(400);
+  });
+
   it("rejects an oversized knowledge base", async () => {
     const stores = buildStores();
     const app = express();

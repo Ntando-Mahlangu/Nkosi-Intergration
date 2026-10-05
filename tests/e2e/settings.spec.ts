@@ -162,4 +162,32 @@ test.describe("Settings (public/settings.html)", () => {
     await page.click("#save-btn");
     await expect(page.locator("#save-status")).toHaveText("Saved.");
   });
+
+  test("win-back enabled/cooldown/template round-trip, and the cooldown validates its range", async ({ page }) => {
+    await connect(page);
+    await expect(page.locator("#win-back-enabled")).not.toBeChecked();
+
+    await page.check("#win-back-enabled");
+    await page.fill("#win-back-cooldown-days", "90");
+    await page.fill("#tpl-winback", "Hi {name}, miss you at {businessName}!");
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toHaveText("Saved.");
+
+    await page.reload();
+    await expect(page.locator("#app")).toBeVisible();
+    await expect(page.locator("#win-back-enabled")).toBeChecked();
+    await expect(page.locator("#win-back-cooldown-days")).toHaveValue("90");
+    await expect(page.locator("#tpl-winback")).toHaveValue("Hi {name}, miss you at {businessName}!");
+
+    await page.fill("#win-back-cooldown-days", "5"); // below the 30-day floor
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toContainText("30 to 3650");
+
+    // Reset for any later run of this suite — same reasoning as the
+    // data-retention test above.
+    await page.fill("#win-back-cooldown-days", "90");
+    await page.uncheck("#win-back-enabled");
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toHaveText("Saved.");
+  });
 });

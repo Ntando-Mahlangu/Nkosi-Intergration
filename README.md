@@ -58,6 +58,12 @@ deployment serves many clients with fully isolated data.
   message and up to 3 spaced, distinctly-worded follow-up nudges (day 3, 7,
   14) for leads that never respond. Any reply or opt-out stops follow-ups
   immediately.
+- **`src/winback.ts`** — opt-in-only periodic check-ins to *converted* leads
+  (`Tenant.winBackEnabled` + the specific lead's own `marketingOptIn`), a
+  deliberately separate path from the above: ordinary recovery/follow-up
+  never touches a converted lead at all. See COMPLIANCE.md "Win-back
+  messaging for past customers" — most jurisdictions treat this as its own
+  direct-marketing consent question, distinct from the original outreach.
 - **`src/quietHours.ts`** — per-tenant local-time send window; sends outside
   it are deferred to the next run, never dropped.
 - **`src/channels/`** — `ChannelAdapter`s for SMS/WhatsApp (Twilio) and Email
@@ -407,7 +413,7 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | POST | `/auth/request-code` | Phone-number sign-in, step 1 (the primary path): `{phone}` → always the same generic response; texts a one-time code if that phone matches a tenant's `loginPhone`. The code is never returned over the API — only ever by text (or logged server-side if `PLATFORM_SMS_FROM_NUMBER` isn't configured) |
 | POST | `/auth/verify-code` | Phone-number sign-in, step 2: `{phone, code}` → `{apiKey, tenant}`. Locks out after 5 wrong attempts until a fresh code is requested |
 | GET | `/tenants/me` | The authenticated tenant's public info |
-| PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled/botDisclosureEnabled/dataRetentionDays/email |
+| PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled/botDisclosureEnabled/dataRetentionDays/email/winBackEnabled/winBackCooldownDays |
 | POST | `/tenants/me/accept-terms` | Records the tenant's acceptance of the current Terms of Service/Privacy Policy version — required before `POST /workflow/run`, the worker, or any inbound webhook auto-reply will actually send anything |
 | POST | `/tenants/me/change-password` | `{currentPassword?, newPassword}` — self-service while already signed in; `currentPassword` is only required if one is already set |
 | POST | `/public/leads/:tenantId` | Public, no tenant-auth — a lead-capture form embedded on the tenant's own website posts here with `{formKey, name?, phone?, email?, requestedService?, notes?}` (`formKey` is `Tenant.publicFormKey`, safe to publish — it can only ever create a lead through this one endpoint) |
@@ -421,14 +427,15 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | GET | `/admin/notifications/failed` | Notifications ("interested"/escalation) that failed to reach `notifyWebhookUrl` even after retries — `pending` ones are still being retried by the worker, `dead` ones gave up and need attention |
 | GET | `/admin/audit-log` | Admin action history (tenant create/update/delete/key-rotation), newest first. Optional `?limit=&offset=` |
 | GET | `/leads` | List the tenant's leads. Optional `?limit=&offset=`; always sets `X-Total-Count` |
-| GET | `/leads/plan` | Dry run: scored + composed plans, nothing sent. Same optional pagination |
+| GET | `/leads/plan` | Dry run: scored + composed initial/follow-up/win-back plans, nothing sent. Same optional pagination |
 | GET | `/leads/:id/messages` | Conversation history for one lead (includes delivery status) |
-| PATCH | `/leads/:id` | Update one lead's `name`/`requestedService`/`previousQuote`/`notes`/`preferredChannel`/`appointmentStatus`/`appointmentAt`. Never accepts `status` — that's compliance-sensitive and only ever set by the classify/workflow logic. Clearing `appointmentAt` also clears `appointmentReminderSentAt`, so rescheduling gets a fresh reminder instead of being silently blocked by the old one |
+| PATCH | `/leads/:id` | Update one lead's `name`/`requestedService`/`previousQuote`/`notes`/`preferredChannel`/`appointmentStatus`/`appointmentAt`/`marketingOptIn`. Never accepts `status` — that's compliance-sensitive and only ever set by the classify/workflow logic (except the one explicit transition below) |
+| POST | `/leads/:id/convert` | Marks a lead `status: "converted"` (+ `convertedAt`); optional `{marketingOptIn}` records this specific lead's own opt-in to later win-back messaging — see `COMPLIANCE.md` "Win-back messaging for past customers" |
 | DELETE | `/leads/:id` | Permanently delete one lead (and its messages, cascaded in Postgres) — a right-to-erasure request for a specific person, distinct from the automatic retention purge (which never touches `do_not_contact`/`opted_out` leads; see `COMPLIANCE.md`) |
 | POST | `/leads/import` | Bulk-create leads from a CSV body (`{"csv": "..."}`), same columns/validation as `npm run import-leads`; returns `{imported, skipped}`. Does not dedupe against existing leads, matching the CLI script |
 | GET | `/leads/export` | Full-fidelity export of every lead field, as CSV (default) or `?format=json` — for a client's own records or a data right-of-access request |
 | GET | `/tenants/me/report` | Activity summary for reporting/billing: lead status counts (current snapshot) + message activity (sent/replied, by kind/classification) over an optional `?since=&until=` window |
-| POST | `/workflow/run` | Sends initial outreach + due follow-ups. Serialized per tenant against the worker's own cron tick (see `workflowLock.ts`) so a manual run can never race the worker and double-send the same lead |
+| POST | `/workflow/run` | Sends initial outreach + due follow-ups + due win-back check-ins. Serialized per tenant against the worker's own cron tick (see `workflowLock.ts`) so a manual run can never race the worker and double-send the same lead |
 | POST | `/webhooks/lead` | Generic lead intake (tenant-auth) |
 | POST | `/webhooks/:tenantId/twilio/sms` | Twilio inbound SMS/WhatsApp reply (signature-verified) |
 | POST | `/webhooks/:tenantId/twilio/voice-status` | Twilio call status → missed-call detection (signature-verified) |

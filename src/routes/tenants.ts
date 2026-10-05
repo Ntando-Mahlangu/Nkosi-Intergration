@@ -56,6 +56,10 @@ interface TenantConfigBody {
   email?: string | null;
   /** The tenant's phone-based login identity (src/routes/auth.ts's /auth/request-code, /auth/verify-code) — distinct from contactPhone, see Tenant.loginPhone. Settable by the tenant itself or an admin; `null` clears it. */
   loginPhone?: string | null;
+  /** Opt-in: periodic win-back check-ins for converted, opted-in leads — see Tenant.winBackEnabled. */
+  winBackEnabled?: boolean;
+  /** Days between win-back check-ins. See Tenant.winBackCooldownDays. */
+  winBackCooldownDays?: number;
 }
 
 const MAX_CONTACT_FIELD_LENGTH = 320;
@@ -170,12 +174,29 @@ function isValidTemplates(templates: unknown): templates is Tenant["templates"] 
   // rejecting it now would be a regression, not a new safety check.
   if (templates === undefined || templates === null) return true;
   if (typeof templates !== "object") return false;
-  const { initialGrounded, initialUngrounded, followUps, notInterestedCloser } = templates as Record<string, unknown>;
+  const { initialGrounded, initialUngrounded, followUps, notInterestedCloser, winBack } = templates as Record<
+    string,
+    unknown
+  >;
   if (initialGrounded !== undefined && !isNonEmptyString(initialGrounded)) return false;
   if (initialUngrounded !== undefined && !isNonEmptyString(initialUngrounded)) return false;
   if (notInterestedCloser !== undefined && !isNonEmptyString(notInterestedCloser)) return false;
+  if (winBack !== undefined && !isNonEmptyString(winBack)) return false;
   if (followUps !== undefined && (!Array.isArray(followUps) || !followUps.every(isNonEmptyString))) return false;
   return true;
+}
+
+const MIN_WIN_BACK_COOLDOWN_DAYS = 30;
+const MAX_WIN_BACK_COOLDOWN_DAYS = 3650;
+
+function isValidWinBackCooldownDays(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= MIN_WIN_BACK_COOLDOWN_DAYS &&
+    value <= MAX_WIN_BACK_COOLDOWN_DAYS
+  );
 }
 
 /**
@@ -228,6 +249,12 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   if (!isValidLoginPhone(body.loginPhone)) {
     return "loginPhone must be in E.164 format (e.g. +15551234567)";
   }
+  if (body.winBackEnabled !== undefined && typeof body.winBackEnabled !== "boolean") {
+    return "winBackEnabled must be a boolean";
+  }
+  if (!isValidWinBackCooldownDays(body.winBackCooldownDays)) {
+    return `winBackCooldownDays must be a whole number from ${MIN_WIN_BACK_COOLDOWN_DAYS} to ${MAX_WIN_BACK_COOLDOWN_DAYS}`;
+  }
   // null is allowed through (same precedent as templates above) so the
   // admin API has a way to explicitly clear a tenant's subscription link.
   if (
@@ -269,6 +296,8 @@ function buildTenantPatch(
   // templates/paddleSubscriptionId elsewhere in this function).
   if (body.email !== undefined) patch.email = body.email ? body.email.trim() : undefined;
   if (body.loginPhone !== undefined) patch.loginPhone = body.loginPhone ? body.loginPhone.trim() : undefined;
+  if (body.winBackEnabled !== undefined) patch.winBackEnabled = body.winBackEnabled;
+  if (body.winBackCooldownDays !== undefined) patch.winBackCooldownDays = body.winBackCooldownDays;
   // Admin-only (gated the same as status/paddleSubscriptionId below) — the
   // agency operator sets this after independently verifying 10DLC/WhatsApp
   // approval with the client, not something a tenant self-attests via
@@ -692,6 +721,8 @@ export function createTenantRoutes({
         dataRetentionDays: body.dataRetentionDays,
         email: typeof body.email === "string" ? body.email.trim() : undefined,
         loginPhone: typeof body.loginPhone === "string" ? body.loginPhone.trim() : undefined,
+        winBackEnabled: body.winBackEnabled ?? false,
+        winBackCooldownDays: body.winBackCooldownDays,
         // Every tenant gets one at creation — see Tenant.publicFormKey.
         publicFormKey: generateFormKey(),
         createdAt: new Date().toISOString(),

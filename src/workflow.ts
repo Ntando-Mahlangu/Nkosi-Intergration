@@ -7,6 +7,7 @@ import { composeInitialMessage } from "./messaging.js";
 import { safeSend, selectChannel, type SendResult } from "./channels/index.js";
 import { isWithinQuietHours } from "./quietHours.js";
 import { composeFollowUpMessage, followUpReason, getLeadsDueForFollowUp } from "./followup.js";
+import { composeWinBackMessage, getLeadsDueForWinBack, winBackReason } from "./winback.js";
 import {
   appointmentReminderReason,
   composeAppointmentReminderMessage,
@@ -71,6 +72,37 @@ export function buildFollowUpPlans(tenant: Tenant, leads: Lead[], now: Date = ne
       priority,
       priorityReasons: [`Follow-up #${followUpIndex + 1}`],
       reason: followUpReason(followUpIndex),
+      message,
+    });
+  }
+
+  return { plans, skipped };
+}
+
+/**
+ * Builds periodic win-back plans for converted leads who have explicitly
+ * opted in to being re-contacted (see src/winback.ts) — distinct from
+ * initial-outreach/follow-up, which never target a converted lead at all
+ * (checkSuppression treats "converted" as a closed-out status). Opt-in and
+ * cooldown are both enforced in getLeadsDueForWinBack, not here.
+ */
+export function buildWinBackPlans(tenant: Tenant, leads: Lead[], now: Date = new Date()): WorkflowResult {
+  const skipped: SkippedLead[] = [];
+  const due = getLeadsDueForWinBack(tenant, leads, now);
+  const plans: RecoveryPlan[] = [];
+
+  for (const lead of due) {
+    const channel = selectChannel(tenant, lead);
+    if (!channel) {
+      skipped.push({ lead, reason: "no usable contact channel for win-back" });
+      continue;
+    }
+    const message = composeWinBackMessage(lead, channel, tenant);
+    plans.push({
+      lead,
+      priority: "LOW", // a past customer check-in is never more urgent than an active lead in the funnel
+      priorityReasons: ["Win-back check-in — opted-in past customer"],
+      reason: winBackReason(),
       message,
     });
   }
@@ -241,11 +273,70 @@ async function sendAppointmentReminders(
 }
 
 /**
+ * Sends win-back check-ins — kept separate from sendPlans for the same
+ * reason sendAppointmentReminders is: the bookkeeping is different
+ * (lastWinBackAt, never status/followUpCount — a win-back send must never
+ * flip a converted lead's status to "contacted_no_response", which would
+ * wrongly pull it into the ordinary follow-up sequence). Unlike appointment
+ * reminders, a win-back check-in is never time-sensitive, so quiet hours
+ * always defer it to the next run with no last-chance exception.
+ */
+async function sendWinBackPlans(
+  tenant: Tenant,
+  store: LeadStore,
+  messages: MessageStore | undefined,
+  plans: RecoveryPlan[],
+  now: Date
+): Promise<{ sent: SentPlan[]; deferred: SkippedLead[] }> {
+  const sent: SentPlan[] = [];
+  const deferred: SkippedLead[] = [];
+
+  if (isWithinQuietHours(tenant, now)) {
+    for (const plan of plans) {
+      deferred.push({ lead: plan.lead, reason: "deferred: within tenant quiet hours, will retry next run" });
+    }
+    return { sent, deferred };
+  }
+
+  for (const plan of plans) {
+    const messageId = generateId("msg");
+    const result = await safeSend(plan.message.channel, tenant, plan.lead, plan.message, messageId);
+    sent.push({ plan, result, isFollowUp: false });
+
+    if (result.ok) {
+      await messages?.logMessage({
+        id: messageId,
+        tenantId: tenant.id,
+        leadId: plan.lead.id,
+        channel: plan.message.channel,
+        direction: "outbound",
+        body: plan.message.body,
+        at: now.toISOString(),
+        providerMessageId: result.providerMessageId,
+        kind: "win_back",
+      });
+      await store.updateLead(
+        tenant.id,
+        plan.lead.id,
+        { lastWinBackAt: now.toISOString() },
+        // A STOP/opt-out reply racing this send must win — never overwrite a
+        // status change made in the meantime with a send that was planned
+        // against the lead's older "converted" state.
+        { onlyIfStatusIn: ["converted"] }
+      );
+    }
+  }
+
+  return { sent, deferred };
+}
+
+/**
  * Runs the full recovery workflow for one tenant: identify, filter
  * (compliance), score, determine reason, compose, send (respecting quiet
  * hours), and log/update status back to the store. Covers brand-new leads
- * (initial outreach), leads due for a follow-up nudge, and leads with a
- * booked appointment coming up within 24 hours.
+ * (initial outreach), leads due for a follow-up nudge, leads with a booked
+ * appointment coming up within 24 hours, and opted-in past customers due
+ * for a periodic win-back check-in.
  */
 export async function runRecoveryWorkflow(
   tenant: Tenant,
@@ -258,16 +349,23 @@ export async function runRecoveryWorkflow(
   const initial = buildRecoveryPlans(tenant, leads, now);
   const followUps = buildFollowUpPlans(tenant, leads, now);
   const reminders = buildAppointmentReminderPlans(tenant, leads, now);
+  const winBacks = buildWinBackPlans(tenant, leads, now);
 
   const initialResult = await sendPlans(tenant, store, messages, initial.plans, false, now);
   const followUpResult = await sendPlans(tenant, store, messages, followUps.plans, true, now);
   const reminderResult = await sendAppointmentReminders(tenant, store, messages, reminders.plans, now);
+  const winBackResult = await sendWinBackPlans(tenant, store, messages, winBacks.plans, now);
 
   return {
-    plans: [...initial.plans, ...followUps.plans, ...reminders.plans],
-    skipped: [...initial.skipped, ...followUps.skipped, ...reminders.skipped],
-    sent: [...initialResult.sent, ...followUpResult.sent, ...reminderResult.sent],
-    deferred: [...initialResult.deferred, ...followUpResult.deferred, ...reminderResult.deferred],
+    plans: [...initial.plans, ...followUps.plans, ...reminders.plans, ...winBacks.plans],
+    skipped: [...initial.skipped, ...followUps.skipped, ...reminders.skipped, ...winBacks.skipped],
+    sent: [...initialResult.sent, ...followUpResult.sent, ...reminderResult.sent, ...winBackResult.sent],
+    deferred: [
+      ...initialResult.deferred,
+      ...followUpResult.deferred,
+      ...reminderResult.deferred,
+      ...winBackResult.deferred,
+    ],
   };
 }
 

@@ -740,6 +740,38 @@ paths:
         "403": { $ref: "#/components/responses/Suspended" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /leads/{id}/convert:
+    post:
+      tags: [leads]
+      summary: Mark a lead as a converted/won customer
+      description: >
+        Sets `status: "converted"` and `convertedAt`. Optionally records this
+        specific lead's own `marketingOptIn` for later win-back messaging —
+        see COMPLIANCE.md "Win-back messaging for past customers". Converting
+        a lead does not by itself opt it into anything; `marketingOptIn`
+        must be explicitly true (here or via a later `PATCH /leads/{id}`).
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeadConvertBody" }
+      responses:
+        "200":
+          description: The updated lead
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lead" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /leads/import:
     post:
       tags: [leads]
@@ -1088,6 +1120,9 @@ components:
         appointmentReminder:
           type: string
           description: "Sent ~24 hours before a booked appointment. Supports {name}/{businessName}/{appointmentTime}."
+        winBack:
+          type: string
+          description: "Periodic check-in to an opted-in past customer. Supports {name}/{businessName}/{serviceClause}."
 
     TenantConfigBody:
       type: object
@@ -1177,6 +1212,18 @@ components:
             and from channels.sms.fromNumber (the number *leads* are texted
             from). E.164 format. Set null (or an empty string) to remove
             phone sign-in.
+        winBackEnabled:
+          type: boolean
+          description: >-
+            Opt-in: periodic win-back check-ins for converted leads who each
+            individually have their own marketingOptIn set (see
+            POST /leads/{id}/convert, PATCH /leads/{id}). Off by default —
+            see COMPLIANCE.md "Win-back messaging for past customers".
+        winBackCooldownDays:
+          type: integer
+          minimum: 30
+          maximum: 3650
+          description: Days between win-back check-ins for one lead. Defaults to 180 when unset.
 
     PublicTenant:
       type: object
@@ -1219,6 +1266,8 @@ components:
         hasPassword: { type: boolean, description: "Whether this tenant has ever set a password — settings.html uses this to show \"Set password\" vs \"Change password\"." }
         publicFormKey: { type: string, description: "Low-privilege token for POST /public/leads/{tenantId} — safe to publish in the tenant's own website (see public/settings.html's embed snippet)." }
         numberHostingOrder: { $ref: "#/components/schemas/NumberHostingOrder" }
+        winBackEnabled: { type: boolean, description: "Opt-in: periodic win-back check-ins for converted, opted-in leads. Off by default." }
+        winBackCooldownDays: { type: integer, description: "Days between win-back check-ins for one lead. Defaults to 180 when unset." }
         createdAt: { type: string, format: date-time }
 
     NumberHostingOrder:
@@ -1283,6 +1332,17 @@ components:
           type: string
           enum: [sms, whatsapp, email]
         notes: { type: string }
+        convertedAt:
+          type: string
+          format: date-time
+          description: When this lead's status was set to "converted" — see POST /leads/{id}/convert.
+        marketingOptIn:
+          type: boolean
+          description: This specific lead's own opt-in to win-back messaging after converting — see COMPLIANCE.md "Win-back messaging for past customers".
+        lastWinBackAt:
+          type: string
+          format: date-time
+          description: When the last win-back check-in was actually sent.
 
     LeadPatchBody:
       type: object
@@ -1303,6 +1363,17 @@ components:
           format: date-time
           nullable: true
           description: Set null to clear it (also clears appointmentReminderSentAt).
+        marketingOptIn:
+          type: boolean
+          description: This lead's own opt-in to later win-back messaging.
+
+    LeadConvertBody:
+      type: object
+      description: Body for POST /leads/{id}/convert.
+      properties:
+        marketingOptIn:
+          type: boolean
+          description: Whether this lead personally agreed to occasional win-back messages after becoming a customer. Omitted/false means not opted in.
 
     Message:
       type: object

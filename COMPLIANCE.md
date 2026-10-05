@@ -73,6 +73,46 @@ and their own leads.
 - Load any existing do-not-contact/opt-out list **before** the first import
   (see `ONBOARDING.md` step 2).
 
+## Win-back messaging for past customers
+
+Distinct from everything above: re-contacting a lead *after* it's already
+converted into a paying customer. `checkSuppression`/the ordinary
+recovery and follow-up logic never does this — a converted lead is treated
+as closed out, the same as unqualified/fraudulent — so this is a separate,
+deliberately-opt-in feature (`Tenant.winBackEnabled` +
+`Lead.marketingOptIn`, see `src/winback.ts`), off by default.
+
+- **This is direct marketing to an existing customer, not the original
+  transactional outreach** — most jurisdictions' rules for it differ from
+  the rules for the initial "you asked about X" message. Under POPIA in
+  particular, section 69's opt-in requirement applies squarely here even
+  where the client's original consent basis for the one-off recovery
+  message was lighter-touch (e.g. "they enquired, so a single factual
+  follow-up is fine"). Don't let `consentBasisConfirmedAt` (a tenant-level,
+  onboarding-time attestation about the *original* outreach) stand in for
+  this.
+- **Enforced per-lead, not just per-tenant.** Turning on
+  `Tenant.winBackEnabled` in Settings messages no one by itself — a lead is
+  only ever included once someone has separately recorded, on that specific
+  lead, that they personally agreed to it (`Lead.marketingOptIn`, settable
+  from the lead's detail view in the dashboard, or via
+  `POST /leads/:id/convert` / `PATCH /leads/:id`). There's no bulk "opt
+  everyone in" action by design — this is meant to force a real,
+  lead-by-lead decision, not a global toggle a client can flip without
+  thinking about each customer.
+- **Low-frequency by construction**: `winBackCooldownDays` (default 180,
+  minimum 30) gates how often one lead can be re-contacted this way, and a
+  win-back check-in is always deferred rather than sent during quiet hours
+  (unlike an appointment reminder, nothing about it is time-sensitive).
+- Same STOP/opt-out handling as everywhere else: a reply classified `stop`
+  flips the lead's status away from `converted` immediately, which removes
+  it from win-back eligibility (it checks `status === "converted"`
+  directly) permanently, same as it does for the ordinary follow-up queue.
+- Marking a lead "converted" (`POST /leads/:id/convert`) is otherwise a
+  simple business-outcome record — it doesn't by itself imply or grant
+  marketing consent, which is exactly why `marketingOptIn` is a separate,
+  independent field on the same request/lead rather than being bundled in.
+
 ## SMS / WhatsApp (Twilio)
 
 - **10DLC registration** (US): required before sending SMS at any volume

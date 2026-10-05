@@ -340,6 +340,19 @@
       <span class="import-status" id="detail-appt-status-msg" role="status" aria-live="polite"></span>
     </div>
 
+    <h3 style="font-size:13px; text-transform:uppercase; color:var(--muted); margin:18px 0 6px;">Customer status</h3>
+    <div id="detail-converted-row" style="display:none; color:var(--muted); font-size:12px; margin-bottom:8px;"></div>
+    <button type="button" class="secondary" id="detail-convert-btn">Mark as converted</button>
+    <label class="checkbox-row" style="margin-top:10px;">
+      <input type="checkbox" id="detail-marketing-opt-in" />
+      This person agreed to occasional win-back messages after becoming a customer
+    </label>
+    <div class="hint" style="margin-top:4px;">
+      Required (in addition to turning on win-back messaging in Settings) before this lead is ever
+      re-contacted after converting — see COMPLIANCE.md "Win-back messaging for past customers".
+    </div>
+    <span class="import-status" id="detail-convert-status-msg" role="status" aria-live="polite"></span>
+
     <h3 style="font-size:13px; text-transform:uppercase; color:var(--muted); margin:20px 0 6px;">Conversation</h3>
     <div class="thread" id="detail-thread"></div>
   </div>
@@ -501,6 +514,7 @@
   const leadDetail = document.getElementById("lead-detail");
   let detailTrigger = null;
   let detailLeadId = null;
+  let detailLead = null;
 
   function renderThread(messages) {
     const el = document.getElementById("detail-thread");
@@ -532,8 +546,26 @@
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
+  function renderConvertedState(lead) {
+    const row = document.getElementById("detail-converted-row");
+    const btn = document.getElementById("detail-convert-btn");
+    if (lead.status === "converted") {
+      row.style.display = "block";
+      row.textContent = lead.convertedAt
+        ? `Converted ${new Date(lead.convertedAt).toLocaleString()}`
+        : "Converted.";
+      btn.style.display = "none";
+    } else {
+      row.style.display = "none";
+      btn.style.display = "";
+    }
+    document.getElementById("detail-marketing-opt-in").checked = Boolean(lead.marketingOptIn);
+    document.getElementById("detail-convert-status-msg").textContent = "";
+  }
+
   async function openLeadDetail(session, lead) {
     detailLeadId = lead.id;
+    detailLead = lead;
     detailTrigger = document.activeElement;
 
     document.getElementById("detail-name").textContent = lead.name || lead.id;
@@ -542,6 +574,7 @@
     document.getElementById("detail-appt-status").value = lead.appointmentStatus || "none";
     document.getElementById("detail-appt-at").value = toDatetimeLocalValue(lead.appointmentAt);
     document.getElementById("detail-appt-status-msg").textContent = "";
+    renderConvertedState(lead);
     document.getElementById("detail-thread").innerHTML = '<div class="empty">Loading…</div>';
 
     overlay.classList.add("open");
@@ -563,6 +596,7 @@
     leadDetail.setAttribute("inert", "");
     leadDetail.setAttribute("aria-hidden", "true");
     detailLeadId = null;
+    detailLead = null;
     if (detailTrigger) detailTrigger.focus();
     detailTrigger = null;
   }
@@ -618,6 +652,53 @@
     } catch (err) {
       statusMsg.textContent = "Could not save: " + err.message;
       statusMsg.className = "import-status err";
+    }
+  });
+
+  document.getElementById("detail-convert-btn").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session || !detailLeadId) return;
+    const msg = document.getElementById("detail-convert-status-msg");
+    msg.textContent = "";
+    msg.className = "import-status";
+    try {
+      const updated = await api(session, `/leads/${encodeURIComponent(detailLeadId)}/convert`, {
+        method: "POST",
+        body: JSON.stringify({ marketingOptIn: document.getElementById("detail-marketing-opt-in").checked }),
+      });
+      detailLead = updated;
+      renderConvertedState(updated);
+      msg.textContent = "Marked as converted.";
+      msg.className = "import-status ok";
+      const idx = allLeadsCache.findIndex((l) => l.id === updated.id);
+      if (idx >= 0) allLeadsCache[idx] = updated;
+      renderAllLeads(allLeadsCache);
+    } catch (err) {
+      msg.textContent = "Could not save: " + err.message;
+      msg.className = "import-status err";
+    }
+  });
+
+  document.getElementById("detail-marketing-opt-in").addEventListener("change", async (e) => {
+    const session = getSession();
+    if (!session || !detailLeadId) return;
+    const msg = document.getElementById("detail-convert-status-msg");
+    msg.textContent = "";
+    msg.className = "import-status";
+    try {
+      const updated = await api(session, `/leads/${encodeURIComponent(detailLeadId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ marketingOptIn: e.target.checked }),
+      });
+      detailLead = updated;
+      msg.textContent = "Saved.";
+      msg.className = "import-status ok";
+      const idx = allLeadsCache.findIndex((l) => l.id === updated.id);
+      if (idx >= 0) allLeadsCache[idx] = updated;
+    } catch (err) {
+      e.target.checked = !e.target.checked; // revert the checkbox — the save didn't actually happen
+      msg.textContent = "Could not save: " + err.message;
+      msg.className = "import-status err";
     }
   });
 

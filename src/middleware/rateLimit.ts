@@ -58,11 +58,18 @@ export function createWebhookLimiter() {
   });
 }
 
-/** Guards tenant-authenticated routes so a leaked API key can't be used to hammer the API. */
+/**
+ * Guards tenant-authenticated routes so a leaked API key can't be used to
+ * hammer the API. Configurable for the same reason createAdminLimiter is —
+ * the dashboard e2e suite drives many tenant-authed actions from the same
+ * loopback IP/API key in a short span, well beyond what a real client hits
+ * in production; see playwright.config.ts, which raises this for the e2e
+ * test run only.
+ */
 export function createTenantLimiter() {
   return rateLimit({
     windowMs: 60 * 1000,
-    limit: 60,
+    limit: Number(process.env.LEADRECOVERY_TENANT_RATE_LIMIT ?? 60),
     standardHeaders: true,
     legacyHeaders: false,
     store: distributedStoreIfConfigured("tenant"),

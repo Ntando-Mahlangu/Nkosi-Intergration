@@ -90,6 +90,27 @@ export interface Lead {
    * its imported status/lastContactedAt already show a contact attempt.
    */
   firstOutreachSentAt?: string;
+  /**
+   * When this lead's status was set to "converted" (ISO date) — see
+   * `POST /leads/:id/convert`. Unset for a lead that's never converted.
+   * `status === "converted"` alone can't distinguish "just converted" from
+   * "converted a year ago" the way this timestamp can, which win-back
+   * cooldown math (src/winback.ts) needs.
+   */
+  convertedAt?: string;
+  /**
+   * This specific lead's own explicit opt-in to being periodically
+   * re-contacted *after* becoming a customer (a win-back/reactivation
+   * check-in) — distinct from the tenant-level consent-basis attestation
+   * made at onboarding, which covers the original transactional outreach
+   * only. POPIA section 69 requires opt-in for direct marketing; this field
+   * is how that consent is recorded per lead, not assumed. Unset/false means
+   * never eligible for win-back messaging, regardless of
+   * `Tenant.winBackEnabled`. See src/winback.ts.
+   */
+  marketingOptIn?: boolean;
+  /** When the last win-back check-in was actually sent (ISO date) — see src/winback.ts. */
+  lastWinBackAt?: string;
 }
 
 export interface ScoredLead {
@@ -199,6 +220,8 @@ export interface MessageTemplates {
   notInterestedCloser?: string;
   /** Sent ~24 hours before a lead's booked appointment (see src/appointmentReminder.ts). */
   appointmentReminder?: string;
+  /** Periodic win-back check-in for a converted, opted-in lead (see src/winback.ts). */
+  winBack?: string;
 }
 
 export interface Tenant {
@@ -394,6 +417,17 @@ export interface Tenant {
    * original flow: channels.sms.fromNumber with no hosting order behind it).
    */
   numberHostingOrder?: NumberHostingOrder;
+  /**
+   * Opt-in: when true, converted leads who have their own `marketingOptIn`
+   * set are periodically re-contacted with a win-back check-in (see
+   * src/winback.ts) — distinct from, and off by default alongside, the
+   * initial-outreach/follow-up messaging every tenant already gets. Off by
+   * default — a business must deliberately turn this on, the same pattern
+   * as `autoReplyEnabled`.
+   */
+  winBackEnabled?: boolean;
+  /** Days between win-back check-ins for one lead. Unset uses DEFAULT_WIN_BACK_COOLDOWN_DAYS (src/winback.ts). */
+  winBackCooldownDays?: number;
   createdAt: string;
 }
 
@@ -457,8 +491,9 @@ export interface Message {
    * recovery workflow (initial outreach or a follow-up nudge), "auto_reply"
    * = the knowledge-base-grounded chatbot, "closer" = the fixed
    * not-interested acknowledgment, "appointment_reminder" = the 24-hours-
-   * before nudge (see src/appointmentReminder.ts). Inbound messages leave
-   * this unset.
+   * before nudge (see src/appointmentReminder.ts), "win_back" = a periodic
+   * check-in to an opted-in past customer (see src/winback.ts). Inbound
+   * messages leave this unset.
    */
-  kind?: "campaign" | "auto_reply" | "closer" | "appointment_reminder";
+  kind?: "campaign" | "auto_reply" | "closer" | "appointment_reminder" | "win_back";
 }

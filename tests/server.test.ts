@@ -243,6 +243,91 @@ describe("PATCH /leads/:id", () => {
     expect(res.body.status).not.toBe("opted_out");
     expect(res.body.notes).toBe("trying to sneak a status change in"); // the field this route does own still applies
   });
+
+  it("accepts marketingOptIn — a consent flag, not status/compliance-suppression machinery", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ marketingOptIn: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.marketingOptIn).toBe(true);
+  });
+
+  it("rejects a non-boolean marketingOptIn", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ marketingOptIn: "yes" });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /leads/:id/convert", () => {
+  const DEMO_API_KEY = "demo-key";
+
+  it("requires tenant auth", async () => {
+    const res = await request(createApp()).post("/leads/some-id/convert");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 for a lead that doesn't belong to this tenant", async () => {
+    const res = await request(createApp())
+      .post("/leads/no-such-lead/convert")
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("marks the lead converted with a convertedAt timestamp, without marketingOptIn by default", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app)
+      .post(`/leads/${leadId}/convert`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("converted");
+    expect(res.body.convertedAt).toBeTruthy();
+    expect(res.body.marketingOptIn).toBeUndefined();
+  });
+
+  it("records marketingOptIn when explicitly set true in the same call", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[1].id;
+
+    const res = await request(app)
+      .post(`/leads/${leadId}/convert`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ marketingOptIn: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("converted");
+    expect(res.body.marketingOptIn).toBe(true);
+  });
+
+  it("rejects a non-boolean marketingOptIn", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app)
+      .post(`/leads/${leadId}/convert`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ marketingOptIn: "yes" });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("DELETE /leads/:id", () => {
