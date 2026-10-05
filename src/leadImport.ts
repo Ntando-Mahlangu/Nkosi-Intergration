@@ -1,6 +1,7 @@
 import { generateId } from "./idgen.js";
 import type { Lead } from "./types.js";
 import { isLeadSource } from "./types.js";
+import type { LeadStore } from "./store/types.js";
 
 /** Minimal RFC4180-ish CSV parser: handles quoted fields, escaped quotes, and CRLF/LF line endings. */
 export function parseCsv(text: string): string[][] {
@@ -125,4 +126,49 @@ export function parseLeadsCsv(text: string, tenantId: string): ParsedLeadsCsv {
   }
 
   return { leads, skippedCount };
+}
+
+export interface CreateLeadsDedupedResult {
+  imported: number;
+  /** Rows whose phone/email already matches an existing lead for this tenant (or an earlier row in the same batch) — never created as a second row. */
+  duplicates: number;
+}
+
+/**
+ * Creates each parsed lead unless its phone/email already matches an
+ * existing lead for this tenant, or an earlier lead in this same batch —
+ * shared by `POST /leads/import` and `npm run import-leads` so neither entry
+ * point can silently create duplicate rows for a contact re-imported from a
+ * refreshed CRM export or a re-uploaded spreadsheet. Deliberately skips
+ * rather than merging/updating the existing lead: a dedupe pass is not the
+ * place to silently overwrite a lead's current status/history, and "this
+ * contact already exists, nothing imported" is a safer default than
+ * guessing which fields should win.
+ */
+export async function createLeadsDeduped(
+  leadStore: LeadStore,
+  tenantId: string,
+  leads: Lead[]
+): Promise<CreateLeadsDedupedResult> {
+  const claimedInBatch = new Set<string>();
+  let imported = 0;
+  let duplicates = 0;
+
+  for (const lead of leads) {
+    const contactKeys = [lead.phone, lead.email].filter((v): v is string => Boolean(v));
+    const dupeInBatch = contactKeys.some((key) => claimedInBatch.has(key));
+    const existing = dupeInBatch
+      ? undefined
+      : await leadStore.findLeadByContact(tenantId, { phone: lead.phone, email: lead.email });
+
+    if (dupeInBatch || existing) {
+      duplicates++;
+    } else {
+      await leadStore.createLead(lead);
+      imported++;
+    }
+    for (const key of contactKeys) claimedInBatch.add(key);
+  }
+
+  return { imported, duplicates };
 }

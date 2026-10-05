@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createStores } from "../store/index.js";
-import { parseLeadsCsv } from "../leadImport.js";
+import { createLeadsDeduped, parseLeadsCsv } from "../leadImport.js";
 
 function parseArgs(argv: string[]): { tenantId?: string; file?: string } {
   const out: Record<string, string> = {};
@@ -38,13 +38,13 @@ async function main() {
 
   const raw = await readFile(file, "utf-8");
   const { leads, skippedCount } = parseLeadsCsv(raw, tenantId);
-
-  for (const lead of leads) {
-    await stores.leadStore.createLead(lead);
-  }
+  const { imported, duplicates } = await createLeadsDeduped(stores.leadStore, tenantId, leads);
 
   console.log(
-    `Imported ${leads.length} lead(s) for tenant ${tenantId}${skippedCount ? `, skipped ${skippedCount} row(s) with no phone/email` : ""}.`
+    `Imported ${imported} lead(s) for tenant ${tenantId}` +
+      (skippedCount ? `, skipped ${skippedCount} row(s) with no phone/email` : "") +
+      (duplicates ? `, skipped ${duplicates} duplicate(s) already on file` : "") +
+      "."
   );
 }
 

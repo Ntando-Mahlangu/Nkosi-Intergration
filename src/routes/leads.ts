@@ -6,7 +6,7 @@ import { createTenantLimiter } from "../middleware/rateLimit.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { parsePageParams, paginate } from "../pagination.js";
 import { leadsToCsv } from "../csv.js";
-import { parseLeadsCsv } from "../leadImport.js";
+import { createLeadsDeduped, parseLeadsCsv } from "../leadImport.js";
 import { buildFollowUpPlans, buildRecoveryPlans, buildWinBackPlans } from "../workflow.js";
 
 /** Everything under /leads/* — CRUD, CSV export/import, dry-run planning, and per-lead message history. */
@@ -53,8 +53,9 @@ export function createLeadRoutes({ tenantStore, leadStore, messageStore }: Store
   // body parser). Shares its column mapping/validation with
   // `npm run import-leads` via src/leadImport.ts, so a client uploading a
   // spreadsheet themselves gets identical behavior to you running the CLI
-  // on their behalf. Does not dedupe against existing leads by phone/email
-  // (neither does the CLI) — re-uploading the same file creates duplicates.
+  // on their behalf. Dedupes against existing leads by phone/email (and
+  // against earlier rows in this same file) via createLeadsDeduped — see
+  // its own doc comment for why this skips rather than merging.
   router.post(
     "/leads/import",
     ...auth,
@@ -70,10 +71,8 @@ export function createLeadRoutes({ tenantStore, leadStore, messageStore }: Store
       }
 
       const { leads, skippedCount } = parseLeadsCsv(csv, req.tenant!.id);
-      for (const lead of leads) {
-        await leadStore.createLead(lead);
-      }
-      res.status(201).json({ imported: leads.length, skipped: skippedCount });
+      const { imported, duplicates } = await createLeadsDeduped(leadStore, req.tenant!.id, leads);
+      res.status(201).json({ imported, skipped: skippedCount, duplicates });
     })
   );
 

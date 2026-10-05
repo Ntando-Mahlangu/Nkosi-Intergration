@@ -783,8 +783,10 @@ paths:
         requestedService, previousQuote, appointmentAt, notes — at least
         phone or email is required per row, and other rows are skipped
         (counted, not rejected). A row with a valid appointmentAt is
-        automatically marked appointmentStatus "booked". Does not dedupe
-        against existing leads.
+        automatically marked appointmentStatus "booked". Skips (rather than
+        merging) a row whose phone/email already matches an existing lead
+        for this tenant, or an earlier row in the same file — counted
+        separately as `duplicates`.
       security: [{ tenantAuth: [] }]
       requestBody:
         required: true
@@ -804,7 +806,8 @@ paths:
                 type: object
                 properties:
                   imported: { type: integer }
-                  skipped: { type: integer }
+                  skipped: { type: integer, description: "Rows with neither phone nor email." }
+                  duplicates: { type: integer, description: "Rows matching an existing lead, or an earlier row in this same file." }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Suspended" }

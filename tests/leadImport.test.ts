@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { parseCsv, parseLeadsCsv } from "../src/leadImport.js";
+import { parseCsv, parseLeadsCsv, createLeadsDeduped } from "../src/leadImport.js";
+import { InMemoryLeadStore } from "../src/store/memory.js";
+import type { Lead } from "../src/types.js";
 
 describe("parseCsv", () => {
   it("parses a simple comma-separated file", () => {
@@ -104,5 +106,66 @@ describe("parseLeadsCsv", () => {
 
   it("returns nothing for an empty file", () => {
     expect(parseLeadsCsv("", TENANT_ID)).toEqual({ leads: [], skippedCount: 0 });
+  });
+});
+
+describe("createLeadsDeduped", () => {
+  const TENANT_ID = "tenant-1";
+
+  function makeLead(overrides: Partial<Lead>): Lead {
+    return {
+      id: `lead-${Math.random()}`,
+      tenantId: TENANT_ID,
+      source: "spreadsheet",
+      createdAt: new Date().toISOString(),
+      status: "new",
+      ...overrides,
+    };
+  }
+
+  it("creates every lead when none overlap an existing one or each other", async () => {
+    const store = new InMemoryLeadStore([]);
+    const leads = [makeLead({ phone: "+27821111111" }), makeLead({ email: "b@example.com" })];
+    const result = await createLeadsDeduped(store, TENANT_ID, leads);
+    expect(result).toEqual({ imported: 2, duplicates: 0 });
+    expect(await store.getAllLeads(TENANT_ID)).toHaveLength(2);
+  });
+
+  it("skips a row whose phone already matches an existing lead, without touching the existing one", async () => {
+    const existing = makeLead({ id: "existing-1", phone: "+27821111111", name: "Original Name" });
+    const store = new InMemoryLeadStore([existing]);
+    const result = await createLeadsDeduped(store, TENANT_ID, [
+      makeLead({ phone: "+27821111111", name: "Re-imported Name" }),
+    ]);
+    expect(result).toEqual({ imported: 0, duplicates: 1 });
+    const all = await store.getAllLeads(TENANT_ID);
+    expect(all).toHaveLength(1);
+    expect(all[0].name).toBe("Original Name"); // untouched, not merged/overwritten
+  });
+
+  it("skips a row whose email already matches an existing lead", async () => {
+    const existing = makeLead({ id: "existing-1", email: "jordan@example.com" });
+    const store = new InMemoryLeadStore([existing]);
+    const result = await createLeadsDeduped(store, TENANT_ID, [makeLead({ email: "jordan@example.com" })]);
+    expect(result).toEqual({ imported: 0, duplicates: 1 });
+  });
+
+  it("dedupes within the same batch, not just against already-stored leads", async () => {
+    const store = new InMemoryLeadStore([]);
+    const result = await createLeadsDeduped(store, TENANT_ID, [
+      makeLead({ phone: "+27821111111", name: "First" }),
+      makeLead({ phone: "+27821111111", name: "Second" }),
+    ]);
+    expect(result).toEqual({ imported: 1, duplicates: 1 });
+    const all = await store.getAllLeads(TENANT_ID);
+    expect(all).toHaveLength(1);
+    expect(all[0].name).toBe("First"); // first occurrence wins
+  });
+
+  it("only dedupes within this tenant — the same contact info for a different tenant doesn't count", async () => {
+    const existing = makeLead({ id: "other-tenant-lead", tenantId: "tenant-2", phone: "+27821111111" });
+    const store = new InMemoryLeadStore([existing]);
+    const result = await createLeadsDeduped(store, TENANT_ID, [makeLead({ phone: "+27821111111" })]);
+    expect(result).toEqual({ imported: 1, duplicates: 0 });
   });
 });

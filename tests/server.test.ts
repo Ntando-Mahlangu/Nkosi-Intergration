@@ -384,7 +384,7 @@ describe("POST /leads/import", () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body).toEqual({ imported: 2, skipped: 1 });
+    expect(res.body).toEqual({ imported: 2, skipped: 1, duplicates: 0 });
 
     const after = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
     expect(after.body.length).toBe(before.body.length + 2);
@@ -398,6 +398,23 @@ describe("POST /leads/import", () => {
       .set("Authorization", `Bearer ${DEMO_API_KEY}`)
       .send({});
     expect(res.status).toBe(400);
+  });
+
+  it("dedupes against an already-imported lead on re-upload instead of creating a second row", async () => {
+    const app = createApp();
+    const csv = "name,phone\nDupe Test Lead,+27821119001\n";
+
+    const first = await request(app).post("/leads/import").set("Authorization", `Bearer ${DEMO_API_KEY}`).send({ csv });
+    expect(first.body).toEqual({ imported: 1, skipped: 0, duplicates: 0 });
+
+    const second = await request(app)
+      .post("/leads/import")
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ csv });
+    expect(second.body).toEqual({ imported: 0, skipped: 0, duplicates: 1 });
+
+    const after = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(after.body.filter((l: { name?: string }) => l.name === "Dupe Test Lead")).toHaveLength(1);
   });
 });
 

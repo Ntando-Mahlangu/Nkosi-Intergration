@@ -718,7 +718,11 @@
     try {
       const csv = await file.text();
       const result = await api(session, "/leads/import", { method: "POST", body: JSON.stringify({ csv }) });
-      status.textContent = `Imported ${result.imported}${result.skipped ? `, skipped ${result.skipped}` : ""}.`;
+      status.textContent =
+        `Imported ${result.imported}` +
+        (result.skipped ? `, skipped ${result.skipped}` : "") +
+        (result.duplicates ? `, ${result.duplicates} already on file` : "") +
+        ".";
       status.className = "import-status ok";
       fileInput.value = "";
       await loadDashboard(session);
