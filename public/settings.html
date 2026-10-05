@@ -437,6 +437,37 @@
     </section>
 
     <section>
+      <h2>Team</h2>
+      <div class="desc">
+        Let more than one person sign in and work your leads, each with their
+        own email/password — without sharing the account above. Only an
+        "owner" can invite/remove people or change these settings; a "member"
+        has full access to leads, messages, and running the workflow.
+        Inviting someone emails them a link to set their own password (if no
+        email is configured for sending, the link is logged server-side —
+        see DEPLOYMENT.md).
+      </div>
+
+      <div id="team-list" style="margin-top:14px;"></div>
+
+      <div class="field" style="margin-top:20px; display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+        <div style="flex:1; min-width:200px;">
+          <label for="team-invite-email">Invite by email</label>
+          <input type="email" id="team-invite-email" placeholder="colleague@business.com" />
+        </div>
+        <div>
+          <label for="team-invite-role">Role</label>
+          <select id="team-invite-role">
+            <option value="member">Member</option>
+            <option value="owner">Owner</option>
+          </select>
+        </div>
+        <button type="button" id="team-invite-btn">Invite</button>
+      </div>
+      <div class="save-status" id="team-status" role="status" aria-live="polite"></div>
+    </section>
+
+    <section>
       <h2>Capture leads from your website</h2>
       <div class="desc">
         Paste this on your own website (a contact/quote-request form) to
@@ -666,8 +697,108 @@ document.getElementById("leadrecovery-form").addEventListener("submit", function
   async function loadSettings(session) {
     const tenant = await api(session, "/tenants/me");
     fillForm(tenant);
+    await loadTeam(session);
     return tenant;
   }
+
+  async function loadTeam(session) {
+    try {
+      const members = await api(session, "/tenants/me/team");
+      renderTeam(members);
+    } catch (err) {
+      document.getElementById("team-list").innerHTML =
+        '<div class="hint">Could not load team: ' + escapeHtmlTeam(err.message) + "</div>";
+    }
+  }
+
+  function escapeHtmlTeam(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function renderTeam(members) {
+    const el = document.getElementById("team-list");
+    if (members.length === 0) {
+      el.innerHTML = '<div class="hint">No team members yet — invite one below.</div>';
+      return;
+    }
+    el.innerHTML = members
+      .map(
+        (m) => `
+      <div class="team-row" data-id="${escapeHtmlTeam(m.id)}" style="display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border, #333); flex-wrap:wrap;">
+        <span style="flex:1; min-width:160px;">${escapeHtmlTeam(m.email)}</span>
+        <select class="team-role-select" style="width:auto;">
+          <option value="member" ${m.role === "member" ? "selected" : ""}>Member</option>
+          <option value="owner" ${m.role === "owner" ? "selected" : ""}>Owner</option>
+        </select>
+        <button type="button" class="secondary team-remove-btn">Remove</button>
+      </div>`
+      )
+      .join("");
+  }
+
+  document.getElementById("team-invite-btn").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session) return;
+    const status = document.getElementById("team-status");
+    const email = document.getElementById("team-invite-email").value.trim();
+    const role = document.getElementById("team-invite-role").value;
+    if (!email) {
+      status.textContent = "Enter an email to invite.";
+      status.className = "save-status err";
+      return;
+    }
+    status.textContent = "Inviting…";
+    status.className = "save-status";
+    try {
+      await api(session, "/tenants/me/team", { method: "POST", body: JSON.stringify({ email, role }) });
+      document.getElementById("team-invite-email").value = "";
+      status.textContent = "Invited — they'll get an email to set their password.";
+      status.className = "save-status ok";
+      await loadTeam(session);
+    } catch (err) {
+      status.textContent = "Could not invite: " + err.message;
+      status.className = "save-status err";
+    }
+  });
+
+  document.getElementById("team-list").addEventListener("change", async (e) => {
+    if (!e.target.classList.contains("team-role-select")) return;
+    const session = getSession();
+    if (!session) return;
+    const row = e.target.closest(".team-row");
+    const status = document.getElementById("team-status");
+    status.textContent = "";
+    try {
+      await api(session, `/tenants/me/team/${encodeURIComponent(row.dataset.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ role: e.target.value }),
+      });
+      status.textContent = "Saved.";
+      status.className = "save-status ok";
+    } catch (err) {
+      status.textContent = "Could not change role: " + err.message;
+      status.className = "save-status err";
+      await loadTeam(session); // revert the select to its actual server-side value
+    }
+  });
+
+  document.getElementById("team-list").addEventListener("click", async (e) => {
+    if (!e.target.classList.contains("team-remove-btn")) return;
+    const session = getSession();
+    if (!session) return;
+    const row = e.target.closest(".team-row");
+    const status = document.getElementById("team-status");
+    status.textContent = "";
+    try {
+      await api(session, `/tenants/me/team/${encodeURIComponent(row.dataset.id)}`, { method: "DELETE" });
+      status.textContent = "Removed.";
+      status.className = "save-status ok";
+      await loadTeam(session);
+    } catch (err) {
+      status.textContent = "Could not remove: " + err.message;
+      status.className = "save-status err";
+    }
+  });
 
   async function connect(baseUrl, apiKey) {
     authError.textContent = "";

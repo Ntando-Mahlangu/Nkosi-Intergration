@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Stores } from "../store/index.js";
 import { toPublicTenant, type Lead, type Message, type ReplyClassification, type Tenant } from "../types.js";
-import { requireAdminAuth, requireTenantAuth } from "../middleware/auth.js";
+import { requireAdminAuth, requireOwnerRole, requireTenantAuth } from "../middleware/auth.js";
 import { createAdminLimiter, createTenantLimiter } from "../middleware/rateLimit.js";
 import { generateApiKey, generateId } from "../idgen.js";
 import { parsePageParams, paginate } from "../pagination.js";
@@ -448,13 +448,15 @@ async function checkLoginPhoneConflict(
  */
 export function createTenantRoutes({
   tenantStore,
+  tenantUserStore,
   leadStore,
   messageStore,
   notificationStore,
   auditLogStore,
 }: Stores): Router {
   const router = Router();
-  const tenantAuth = requireTenantAuth(tenantStore);
+  const tenantAuth = requireTenantAuth(tenantStore, tenantUserStore);
+  const ownerOnly = requireOwnerRole();
   const adminAuth = requireAdminAuth();
 
   router.get(
@@ -516,6 +518,7 @@ export function createTenantRoutes({
     "/tenants/me/change-password",
     createTenantLimiter(),
     tenantAuth,
+    ownerOnly,
     asyncHandler(async (req, res) => {
       const tenant = req.tenant!;
       const { currentPassword, newPassword } = (req.body ?? {}) as {
@@ -608,6 +611,7 @@ export function createTenantRoutes({
     "/tenants/me",
     createTenantLimiter(),
     tenantAuth,
+    ownerOnly,
     asyncHandler(async (req, res) => {
       const tenant = req.tenant!;
       const body = req.body as Partial<TenantConfigBody>;

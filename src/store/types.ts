@@ -1,4 +1,4 @@
-import type { Lead, LeadStatus, Message, Tenant } from "../types.js";
+import type { Lead, LeadStatus, Message, Tenant, TenantUser } from "../types.js";
 
 /**
  * A notification (an "interested" reply, or a chatbot escalation) that
@@ -59,7 +59,10 @@ export interface AuditLogEntry {
     | "tenant.delete"
     | "tenant.key_rotate"
     | "tenant.paddle_status_change"
-    | "tenant.connect_number";
+    | "tenant.connect_number"
+    | "tenant_user.invite"
+    | "tenant_user.role_change"
+    | "tenant_user.remove";
   actor: string;
   details?: Record<string, unknown>;
   createdAt: string;
@@ -118,6 +121,28 @@ export interface TenantStore {
   updateTenant(id: string, patch: Partial<Tenant>): Promise<Tenant | undefined>;
   /** Permanently removes a tenant. Postgres cascades to its leads/messages; returns false if no such tenant. */
   deleteTenant(id: string): Promise<boolean>;
+}
+
+/**
+ * Team accounts under a tenant (see Tenant User's own doc comment in
+ * types.ts). `email` and `loginKey` are each globally unique, mirroring how
+ * Tenant.email/apiKey are looked up without first knowing which tenant to
+ * search within — both src/routes/auth.ts (login) and
+ * src/middleware/auth.ts (requireTenantAuth) need exactly that.
+ */
+export interface TenantUserStore {
+  getTenantUserById(tenantId: string, id: string): Promise<TenantUser | undefined>;
+  /** Case-insensitive, global — for /auth/login and the invite flow's duplicate-email check. */
+  getTenantUserByEmail(email: string): Promise<TenantUser | undefined>;
+  /** For requireTenantAuth resolving a team member's own bearer credential. */
+  getTenantUserByLoginKey(loginKey: string): Promise<TenantUser | undefined>;
+  /** Lookup by the SHA-256 hash of a password-reset/set-password token — never by the raw token. */
+  getTenantUserByPasswordResetTokenHash(tokenHash: string): Promise<TenantUser | undefined>;
+  listTenantUsers(tenantId: string): Promise<TenantUser[]>;
+  createTenantUser(user: TenantUser): Promise<TenantUser>;
+  updateTenantUser(tenantId: string, id: string, patch: Partial<TenantUser>): Promise<TenantUser | undefined>;
+  /** Permanently removes a team member. Returns false if no such member (already removed, or not part of this tenant). */
+  deleteTenantUser(tenantId: string, id: string): Promise<boolean>;
 }
 
 export interface MessageStore {

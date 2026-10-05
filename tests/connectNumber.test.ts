@@ -19,6 +19,7 @@ const {
   InMemoryMessageStore,
   InMemoryNotificationStore,
   InMemoryTenantStore,
+  InMemoryTenantUserStore,
 } = await import("../src/store/memory.js");
 const { createTenantRoutes } = await import("../src/routes/tenants.js");
 type TenantType = import("../src/types.js").Tenant;
@@ -49,6 +50,7 @@ function buildStores(tenant: TenantType = TENANT): Stores {
     messageStore: new InMemoryMessageStore(),
     notificationStore: new InMemoryNotificationStore(),
     auditLogStore: new InMemoryAuditLogStore(),
+    tenantUserStore: new InMemoryTenantUserStore(),
   };
 }
 

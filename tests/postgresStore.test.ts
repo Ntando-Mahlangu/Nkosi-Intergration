@@ -10,9 +10,10 @@ import {
   PostgresMessageStore,
   PostgresNotificationStore,
   PostgresTenantStore,
+  PostgresTenantUserStore,
 } from "../src/store/postgres.js";
 import { generateEncryptionKey } from "../src/crypto.js";
-import type { Lead, Message, Tenant } from "../src/types.js";
+import type { Lead, Message, Tenant, TenantUser } from "../src/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.join(__dirname, "..", "src", "db", "migrations");
@@ -751,5 +752,64 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     await tenantStore.deleteTenant(TENANT.id);
 
     expect(await auditLogStore.count()).toBe(1);
+  });
+
+  it("round-trips a TenantUser, looks it up by email/loginKey/reset-token-hash, and lists per tenant", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    const tenantUserStore = new PostgresTenantUserStore(pool);
+    await tenantStore.createTenant(TENANT);
+
+    const user: TenantUser = {
+      id: "tu-1",
+      tenantId: TENANT.id,
+      email: "Member@Acme.test",
+      loginKey: "member-login-key-1",
+      role: "member",
+      createdAt: new Date("2026-02-01T00:00:00.000Z").toISOString(),
+    };
+    await tenantUserStore.createTenantUser(user);
+
+    const byId = await tenantUserStore.getTenantUserById(TENANT.id, "tu-1");
+    expect(byId?.email).toBe("Member@Acme.test");
+    expect(byId?.role).toBe("member");
+
+    // Case-insensitive, same precedent as TenantStore.getTenantByEmail.
+    expect((await tenantUserStore.getTenantUserByEmail("member@acme.test"))?.id).toBe("tu-1");
+    expect((await tenantUserStore.getTenantUserByLoginKey("member-login-key-1"))?.id).toBe("tu-1");
+
+    const updated = await tenantUserStore.updateTenantUser(TENANT.id, "tu-1", {
+      role: "owner",
+      passwordHash: "scrypt-hash",
+      passwordResetTokenHash: "reset-hash-1",
+      passwordResetExpiresAt: new Date("2026-02-02T00:00:00.000Z").toISOString(),
+    });
+    expect(updated?.role).toBe("owner");
+    expect(updated?.passwordResetExpiresAt).toBe("2026-02-02T00:00:00.000Z");
+    expect((await tenantUserStore.getTenantUserByPasswordResetTokenHash("reset-hash-1"))?.id).toBe("tu-1");
+
+    await tenantUserStore.createTenantUser({ ...user, id: "tu-2", email: "second@acme.test", loginKey: "key-2" });
+    const list = await tenantUserStore.listTenantUsers(TENANT.id);
+    expect(list.map((u) => u.id)).toEqual(["tu-1", "tu-2"]);
+
+    expect(await tenantUserStore.deleteTenantUser(TENANT.id, "tu-1")).toBe(true);
+    expect(await tenantUserStore.getTenantUserById(TENANT.id, "tu-1")).toBeUndefined();
+  });
+
+  it("cascades TenantUser rows when their tenant is deleted", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    const tenantUserStore = new PostgresTenantUserStore(pool);
+    await tenantStore.createTenant(TENANT);
+    await tenantUserStore.createTenantUser({
+      id: "tu-1",
+      tenantId: TENANT.id,
+      email: "member@acme.test",
+      loginKey: "member-login-key-1",
+      role: "member",
+      createdAt: new Date().toISOString(),
+    });
+
+    await tenantStore.deleteTenant(TENANT.id);
+
+    expect(await tenantUserStore.getTenantUserByLoginKey("member-login-key-1")).toBeUndefined();
   });
 });

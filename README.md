@@ -412,15 +412,15 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | GET | `/health` | Liveness check (checks nothing external) |
 | GET | `/ready` | Readiness check — verifies Postgres connectivity when `DATABASE_URL` is set |
 | GET | `/terms-version` | Public, no auth — the exact version string a client must send back to `POST /tenants/me/accept-terms` |
-| POST | `/auth/login` | SaaS-style sign-in: `{email, password}` → `{apiKey, tenant}`. Resolves to the tenant's real API key rather than a session of its own — see "Environment variables" for the platform email this needs to actually deliver a set-password link |
-| POST | `/auth/forgot-password` | `{email}` → always the same generic response; emails a password-reset link if that email matches a tenant |
-| POST | `/auth/reset-password` | `{token, newPassword}` → sets the password and returns `{apiKey}`. Same endpoint sets a tenant's *first* password (the link a new `email` gets at creation) and a later reset |
+| POST | `/auth/login` | SaaS-style sign-in: `{email, password}` → `{apiKey, tenant}`. Checks the tenant-owner login first, then team accounts (see "Team accounts") — resolves to the matched identity's own real bearer credential rather than a session of its own; see "Environment variables" for the platform email this needs to actually deliver a set-password link |
+| POST | `/auth/forgot-password` | `{email}` → always the same generic response; emails a password-reset link if that email matches a tenant or a team account |
+| POST | `/auth/reset-password` | `{token, newPassword}` → sets the password and returns `{apiKey}`. Same endpoint sets a tenant's (or a team member's) *first* password (the link they get at creation/invite) and a later reset |
 | POST | `/auth/request-code` | Phone-number sign-in, step 1 (the primary path): `{phone}` → always the same generic response; texts a one-time code if that phone matches a tenant's `loginPhone`. The code is never returned over the API — only ever by text (or logged server-side if `PLATFORM_SMS_FROM_NUMBER` isn't configured) |
 | POST | `/auth/verify-code` | Phone-number sign-in, step 2: `{phone, code}` → `{apiKey, tenant}`. Locks out after 5 wrong attempts until a fresh code is requested |
 | GET | `/tenants/me` | The authenticated tenant's public info |
-| PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled/botDisclosureEnabled/dataRetentionDays/email/winBackEnabled/winBackCooldownDays/attentionSlaHours |
+| PATCH | `/tenants/me` | Tenant self-service (owner-only — see "Team accounts"): update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled/botDisclosureEnabled/dataRetentionDays/email/winBackEnabled/winBackCooldownDays/attentionSlaHours |
 | POST | `/tenants/me/accept-terms` | Records the tenant's acceptance of the current Terms of Service/Privacy Policy version — required before `POST /workflow/run`, the worker, or any inbound webhook auto-reply will actually send anything |
-| POST | `/tenants/me/change-password` | `{currentPassword?, newPassword}` — self-service while already signed in; `currentPassword` is only required if one is already set |
+| POST | `/tenants/me/change-password` | `{currentPassword?, newPassword}` — self-service while already signed in, owner-only (see "Team accounts"); `currentPassword` is only required if one is already set |
 | POST | `/public/leads/:tenantId` | Public, no tenant-auth — a lead-capture form embedded on the tenant's own website posts here with `{formKey, name?, phone?, email?, requestedService?, notes?}` (`formKey` is `Tenant.publicFormKey`, safe to publish — it can only ever create a lead through this one endpoint) |
 | POST | `/public/chat/:tenantId/start` | Public — the chat widget's first call: `{formKey, name?, phone?, email?}` → `{leadId, chatToken}`. Creates a real lead (`source: "chat"`); `chatToken` is a second, per-conversation secret distinct from `formKey` — see "Website chat widget" above |
 | POST | `/public/chat/:tenantId/message` | Public — `{formKey, leadId, chatToken, body}` → `{classification, displayText}`. Same classify/auto-reply/escalate pipeline as an inbound SMS/WhatsApp/email reply, answered synchronously in the response instead of over a provider |
@@ -570,6 +570,47 @@ one-time operator alert (`OPERATOR_ALERT_WEBHOOK_URL` — see "Alerting" in
 net in case the dashboard itself goes unwatched. Checked once per worker
 tick (`src/worker.ts`'s `alertStaleAttentionItems`); off by default per
 tenant, and fires only once per unresolved item (`Lead.attentionAlertedAt`).
+
+## Team accounts
+
+More than one person can sign in and work a tenant's leads, each with their
+own email/password, without sharing the tenant's own login
+(`Tenant.email`/`passwordHash`) or raw `apiKey`. `public/settings.html`'s
+"Team" panel manages this; see `src/types.ts`'s `TenantUser`.
+
+The tenant's own login (its `email`/`passwordHash`, or its raw `apiKey`
+directly) is always an implicit, unremovable **owner** — a `TenantUser` row
+is an *additional* account, not a replacement for it. Each one gets:
+
+- **Its own bearer credential** (`TenantUser.loginKey`) — a second,
+  per-person equivalent of `Tenant.apiKey`. `requireTenantAuth`
+  (`src/middleware/auth.ts`) accepts either the tenant's own `apiKey` or any
+  of its team members' `loginKey`, resolving to the same tenant either way
+  — but every action is attributed to that specific person
+  (`req.actor`/`req.actorRole`) rather than an indistinguishable shared
+  identity, the same pattern the admin API's `ADMIN_API_KEYS` already uses
+  for the agency's own operators.
+- **A role**: `"owner"` can invite/remove team members, change anyone's
+  role, and change tenant-wide settings (`PATCH /tenants/me`,
+  `POST /tenants/me/change-password`); `"member"` has full day-to-day
+  access (leads, messages, running the recovery workflow) but not those two
+  things — see `requireOwnerRole`.
+
+A team member signs in the same way the tenant owner does — `POST
+/auth/login` with email+password, resolving to that member's own
+`loginKey` instead of the tenant's `apiKey` — and uses the same
+`/auth/forgot-password`/`/auth/reset-password` flow to set or recover their
+password. Inviting someone (`POST /tenants/me/team`, owner-only) emails
+them a "set your password" link the same way a brand-new tenant gets one
+at creation (`src/authEmail.ts` — logs the link server-side instead when no
+platform SendGrid key is configured, see "Running for real" above).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/tenants/me/team` | List this tenant's team members (any authenticated actor) |
+| POST | `/tenants/me/team` | Invite a new member — `{email, role?}` (owner-only) |
+| PATCH | `/tenants/me/team/:id` | Change a member's role — `{role}` (owner-only) |
+| DELETE | `/tenants/me/team/:id` | Remove a member (owner-only) |
 
 ## Localization
 

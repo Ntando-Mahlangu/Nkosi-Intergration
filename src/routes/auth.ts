@@ -1,7 +1,7 @@
 import { randomBytes, randomInt } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { Stores } from "../store/index.js";
-import type { TenantStore } from "../store/types.js";
+import type { TenantStore, TenantUserStore } from "../store/types.js";
 import { toPublicTenant } from "../types.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { createAuthLimiter } from "../middleware/rateLimit.js";
@@ -48,6 +48,20 @@ export async function issuePasswordResetToken(tenantStore: TenantStore, tenantId
   return token;
 }
 
+/** The TenantUser (team-account) equivalent of issuePasswordResetToken above — mechanically identical, just against a different store/entity. Used by the team-invite flow (src/routes/team.ts) to send a new member their first "set your password" link. */
+export async function issueTenantUserPasswordResetToken(
+  tenantUserStore: TenantUserStore,
+  tenantId: string,
+  tenantUserId: string
+): Promise<string> {
+  const token = randomBytes(32).toString("hex");
+  await tenantUserStore.updateTenantUser(tenantId, tenantUserId, {
+    passwordResetTokenHash: hashToken(token),
+    passwordResetExpiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString(),
+  });
+  return token;
+}
+
 /**
  * Builds the link a set-password/reset-password email points to. Needs
  * PUBLIC_BASE_URL to produce a working absolute URL in an email (unlike the
@@ -61,7 +75,7 @@ export function buildResetLink(token: string): string {
   return `${base}/reset-password.html?token=${token}`;
 }
 
-export function createAuthRoutes({ tenantStore }: Stores): Router {
+export function createAuthRoutes({ tenantStore, tenantUserStore }: Stores): Router {
   const router = Router();
 
   router.post(
@@ -73,26 +87,50 @@ export function createAuthRoutes({ tenantStore }: Stores): Router {
         res.status(400).json({ error: "email and password are required" });
         return;
       }
+      const trimmedEmail = email.trim();
 
-      const tenant = await tenantStore.getTenantByEmail(email.trim());
-      // Same generic error whether the email doesn't match a tenant, that
-      // tenant never set a password, or the password is wrong — a
-      // distinguishable response for "no such account" is exactly what lets
-      // an attacker enumerate which emails have one.
-      if (!tenant || !tenant.passwordHash || !(await verifyPassword(password, tenant.passwordHash))) {
+      const tenant = await tenantStore.getTenantByEmail(trimmedEmail);
+      if (tenant) {
+        // Same generic error whether the email doesn't match a tenant, that
+        // tenant never set a password, or the password is wrong — a
+        // distinguishable response for "no such account" is exactly what
+        // lets an attacker enumerate which emails have one.
+        if (!tenant.passwordHash || !(await verifyPassword(password, tenant.passwordHash))) {
+          res.status(401).json({ error: "invalid email or password" });
+          return;
+        }
+        if (tenant.status === "suspended") {
+          res.status(403).json({ error: "this tenant has been suspended" });
+          return;
+        }
+        // Resolves to the tenant's real API key rather than minting a
+        // session of its own — every dashboard already knows how to
+        // store/send an API key (see the magic-link flow this piggybacks
+        // on), and the rest of the API only ever has to check one kind of
+        // credential per identity (see requireTenantAuth).
+        res.json({ apiKey: tenant.apiKey, tenant: toPublicTenant(tenant) });
+        return;
+      }
+
+      // No tenant-owner account matched — try a team account (see
+      // src/types.ts's TenantUser, README "Team accounts"). Same generic
+      // 401 on any failure as above, for the same enumeration reason.
+      const tenantUser = await tenantUserStore.getTenantUserByEmail(trimmedEmail);
+      if (!tenantUser || !tenantUser.passwordHash || !(await verifyPassword(password, tenantUser.passwordHash))) {
         res.status(401).json({ error: "invalid email or password" });
         return;
       }
-      if (tenant.status === "suspended") {
+      const parentTenant = await tenantStore.getTenant(tenantUser.tenantId);
+      if (!parentTenant || parentTenant.status === "suspended") {
         res.status(403).json({ error: "this tenant has been suspended" });
         return;
       }
-
-      // Resolves to the tenant's real API key rather than minting a session
-      // of its own — every dashboard already knows how to store/send an API
-      // key (see the magic-link flow this piggybacks on), and the rest of
-      // the API only ever has to check one kind of credential.
-      res.json({ apiKey: tenant.apiKey, tenant: toPublicTenant(tenant) });
+      // Returns this member's own loginKey, not the tenant's apiKey — a
+      // distinct bearer credential per person is the whole point (see
+      // TenantUser.loginKey's own doc comment): requireTenantAuth resolves
+      // either one to the same tenant, but attributes actions to this
+      // specific person instead of an indistinguishable shared identity.
+      res.json({ apiKey: tenantUser.loginKey, tenant: toPublicTenant(parentTenant) });
     })
   );
 
@@ -105,8 +143,9 @@ export function createAuthRoutes({ tenantStore }: Stores): Router {
         res.status(400).json({ error: "email is required" });
         return;
       }
+      const trimmedEmail = email.trim();
 
-      const tenant = await tenantStore.getTenantByEmail(email.trim());
+      const tenant = await tenantStore.getTenantByEmail(trimmedEmail);
       if (tenant) {
         const token = await issuePasswordResetToken(tenantStore, tenant.id);
         await sendAccountEmail(
@@ -115,8 +154,19 @@ export function createAuthRoutes({ tenantStore }: Stores): Router {
           `Use this link to set a new password (expires in 24 hours):\n\n${buildResetLink(token)}\n\n` +
             "If you didn't request this, you can safely ignore this email."
         );
+      } else {
+        const tenantUser = await tenantUserStore.getTenantUserByEmail(trimmedEmail);
+        if (tenantUser) {
+          const token = await issueTenantUserPasswordResetToken(tenantUserStore, tenantUser.tenantId, tenantUser.id);
+          await sendAccountEmail(
+            tenantUser.email,
+            "Reset your LeadRecovery password",
+            `Use this link to set a new password (expires in 24 hours):\n\n${buildResetLink(token)}\n\n` +
+              "If you didn't request this, you can safely ignore this email."
+          );
+        }
       }
-      // Always the same response regardless of whether `tenant` was found —
+      // Always the same response regardless of whether a match was found —
       // see the login handler's own comment on the same principle.
       res.json({ ok: true, message: "If that email has an account, a reset link has been sent." });
     })
@@ -135,20 +185,40 @@ export function createAuthRoutes({ tenantStore }: Stores): Router {
         res.status(400).json({ error: `newPassword must be at least ${MIN_PASSWORD_LENGTH} characters` });
         return;
       }
+      const tokenHash = hashToken(token);
 
-      const tenant = await tenantStore.getTenantByPasswordResetTokenHash(hashToken(token));
-      if (!tenant || !tenant.passwordResetExpiresAt || Date.parse(tenant.passwordResetExpiresAt) < Date.now()) {
-        res.status(400).json({ error: "invalid or expired reset link" });
+      const tenant = await tenantStore.getTenantByPasswordResetTokenHash(tokenHash);
+      if (tenant) {
+        if (!tenant.passwordResetExpiresAt || Date.parse(tenant.passwordResetExpiresAt) < Date.now()) {
+          res.status(400).json({ error: "invalid or expired reset link" });
+          return;
+        }
+        const passwordHash = await hashPassword(newPassword);
+        await tenantStore.updateTenant(tenant.id, {
+          passwordHash,
+          passwordResetTokenHash: undefined,
+          passwordResetExpiresAt: undefined,
+        });
+        res.json({ ok: true, apiKey: tenant.apiKey });
         return;
       }
 
+      const tenantUser = await tenantUserStore.getTenantUserByPasswordResetTokenHash(tokenHash);
+      if (
+        !tenantUser ||
+        !tenantUser.passwordResetExpiresAt ||
+        Date.parse(tenantUser.passwordResetExpiresAt) < Date.now()
+      ) {
+        res.status(400).json({ error: "invalid or expired reset link" });
+        return;
+      }
       const passwordHash = await hashPassword(newPassword);
-      await tenantStore.updateTenant(tenant.id, {
+      await tenantUserStore.updateTenantUser(tenantUser.tenantId, tenantUser.id, {
         passwordHash,
         passwordResetTokenHash: undefined,
         passwordResetExpiresAt: undefined,
       });
-      res.json({ ok: true, apiKey: tenant.apiKey });
+      res.json({ ok: true, apiKey: tenantUser.loginKey });
     })
   );
 

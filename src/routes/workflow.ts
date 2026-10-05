@@ -7,7 +7,7 @@ import { runRecoveryWorkflow } from "../workflow.js";
 import { withTenantWorkflowLock } from "../workflowLock.js";
 
 /** POST /workflow/run — the same recovery workflow the worker's cron tick runs, triggerable on demand. */
-export function createWorkflowRoutes({ tenantStore, leadStore, messageStore }: Stores): Router {
+export function createWorkflowRoutes({ tenantStore, tenantUserStore, leadStore, messageStore }: Stores): Router {
   const router = Router();
 
   // Executes the full workflow: sends via channel adapters, updates lead status, logs messages.
@@ -17,7 +17,7 @@ export function createWorkflowRoutes({ tenantStore, leadStore, messageStore }: S
   router.post(
     "/workflow/run",
     createTenantLimiter(),
-    requireTenantAuth(tenantStore),
+    requireTenantAuth(tenantStore, tenantUserStore),
     asyncHandler(async (req: Request, res: Response) => {
       const tenant = req.tenant!;
       // Unlike a suspended tenant, requireTenantAuth lets a tenant that

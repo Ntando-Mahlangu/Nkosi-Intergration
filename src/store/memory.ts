@@ -1,4 +1,4 @@
-import type { Lead, Message, Tenant } from "../types.js";
+import type { Lead, Message, Tenant, TenantUser } from "../types.js";
 import { generateId } from "../idgen.js";
 import type {
   AuditLogEntry,
@@ -8,6 +8,7 @@ import type {
   MessageStore,
   NotificationStore,
   TenantStore,
+  TenantUserStore,
   UpdateLeadGuard,
 } from "./types.js";
 
@@ -120,6 +121,51 @@ export class InMemoryTenantStore implements TenantStore {
     // to leads/messages in the separate InMemoryLeadStore/InMemoryMessageStore
     // instances — acceptable here since nothing persists across process restarts anyway.
     return this.tenants.delete(id);
+  }
+}
+
+export class InMemoryTenantUserStore implements TenantUserStore {
+  private users: Map<string, TenantUser> = new Map();
+
+  async getTenantUserById(tenantId: string, id: string): Promise<TenantUser | undefined> {
+    const user = this.users.get(id);
+    return user && user.tenantId === tenantId ? user : undefined;
+  }
+
+  async getTenantUserByEmail(email: string): Promise<TenantUser | undefined> {
+    const lower = email.toLowerCase();
+    return Array.from(this.users.values()).find((u) => u.email.toLowerCase() === lower);
+  }
+
+  async getTenantUserByLoginKey(loginKey: string): Promise<TenantUser | undefined> {
+    return Array.from(this.users.values()).find((u) => u.loginKey === loginKey);
+  }
+
+  async getTenantUserByPasswordResetTokenHash(tokenHash: string): Promise<TenantUser | undefined> {
+    return Array.from(this.users.values()).find((u) => u.passwordResetTokenHash === tokenHash);
+  }
+
+  async listTenantUsers(tenantId: string): Promise<TenantUser[]> {
+    return Array.from(this.users.values()).filter((u) => u.tenantId === tenantId);
+  }
+
+  async createTenantUser(user: TenantUser): Promise<TenantUser> {
+    this.users.set(user.id, user);
+    return user;
+  }
+
+  async updateTenantUser(tenantId: string, id: string, patch: Partial<TenantUser>): Promise<TenantUser | undefined> {
+    const existing = this.users.get(id);
+    if (!existing || existing.tenantId !== tenantId) return undefined;
+    const updated = { ...existing, ...patch };
+    this.users.set(id, updated);
+    return updated;
+  }
+
+  async deleteTenantUser(tenantId: string, id: string): Promise<boolean> {
+    const existing = this.users.get(id);
+    if (!existing || existing.tenantId !== tenantId) return false;
+    return this.users.delete(id);
   }
 }
 

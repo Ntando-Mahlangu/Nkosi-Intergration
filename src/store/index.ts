@@ -9,6 +9,7 @@ import {
   InMemoryMessageStore,
   InMemoryNotificationStore,
   InMemoryTenantStore,
+  InMemoryTenantUserStore,
 } from "./memory.js";
 import {
   PostgresAuditLogStore,
@@ -16,9 +17,17 @@ import {
   PostgresMessageStore,
   PostgresNotificationStore,
   PostgresTenantStore,
+  PostgresTenantUserStore,
 } from "./postgres.js";
 import { getPool } from "../db/pool.js";
-import type { AuditLogStore, LeadStore, MessageStore, NotificationStore, TenantStore } from "./types.js";
+import type {
+  AuditLogStore,
+  LeadStore,
+  MessageStore,
+  NotificationStore,
+  TenantStore,
+  TenantUserStore,
+} from "./types.js";
 
 export * from "./types.js";
 export * from "./memory.js";
@@ -27,6 +36,7 @@ export * from "./postgres.js";
 export interface Stores {
   leadStore: LeadStore;
   tenantStore: TenantStore;
+  tenantUserStore: TenantUserStore;
   messageStore: MessageStore;
   notificationStore: NotificationStore;
   auditLogStore: AuditLogStore;
@@ -60,6 +70,7 @@ export function createStores(): Stores {
     return {
       leadStore: new PostgresLeadStore(pool),
       tenantStore: new PostgresTenantStore(pool, encryptionKey, process.env.LEADRECOVERY_ENCRYPTION_KEY_PREVIOUS),
+      tenantUserStore: new PostgresTenantUserStore(pool),
       messageStore: new PostgresMessageStore(pool),
       notificationStore: new PostgresNotificationStore(pool),
       auditLogStore: new PostgresAuditLogStore(pool),
@@ -69,6 +80,7 @@ export function createStores(): Stores {
   return {
     leadStore: new InMemoryLeadStore(loadSampleLeads()),
     tenantStore: new InMemoryTenantStore([DEMO_TENANT]),
+    tenantUserStore: new InMemoryTenantUserStore(),
     messageStore: new InMemoryMessageStore(),
     notificationStore: new InMemoryNotificationStore(),
     auditLogStore: new InMemoryAuditLogStore(),

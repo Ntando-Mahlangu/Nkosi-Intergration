@@ -659,7 +659,7 @@ export function createWebhookRoutes(stores: Stores): Router {
   router.post(
     "/webhooks/lead",
     express.json(),
-    requireTenantAuth(stores.tenantStore),
+    requireTenantAuth(stores.tenantStore, stores.tenantUserStore),
     asyncHandler(async (req, res) => {
       const tenant = req.tenant!;
       const body = req.body as Partial<Lead>;

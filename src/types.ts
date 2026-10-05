@@ -500,6 +500,50 @@ export function toPublicTenant(tenant: Tenant): PublicTenant {
   };
 }
 
+/**
+ * A team account under a tenant — lets more than one person sign in and
+ * work a tenant's leads without sharing the tenant's own
+ * email/password/apiKey (see README "Team accounts"). The tenant's own
+ * login (Tenant.email/passwordHash, or its raw apiKey) is always an
+ * implicit, unremovable "owner" — TenantUser rows are *additional*
+ * accounts, not a replacement for it.
+ *
+ * "owner" can manage team membership and tenant-wide settings; "member"
+ * has full day-to-day access (leads, messages, running the workflow) but
+ * not those two things — see requireOwnerRole in src/middleware/auth.ts.
+ */
+export interface TenantUser {
+  id: string;
+  tenantId: string;
+  /** Login identity — globally unique (case-insensitive), same precedent as Tenant.email, so /auth/login can resolve it without first knowing which tenant to look in. */
+  email: string;
+  passwordHash?: string;
+  /**
+   * This person's own bearer credential — a second, per-person equivalent
+   * of Tenant.apiKey (generated the same way, see src/idgen.ts), so every
+   * request can be attributed to a specific team member (src/audit.ts)
+   * instead of everyone resolving to the same tenant-level actor.
+   * requireTenantAuth (src/middleware/auth.ts) accepts either the tenant's
+   * own apiKey or any of its TenantUsers' loginKey, resolving to the same
+   * Tenant either way. Never exposed back over the API once issued.
+   */
+  loginKey: string;
+  role: "owner" | "member";
+  passwordResetTokenHash?: string;
+  passwordResetExpiresAt?: string;
+  createdAt: string;
+}
+
+/** TenantUser fields safe to expose over the API (no secrets). */
+export type PublicTenantUser = Omit<TenantUser, "passwordHash" | "loginKey" | "passwordResetTokenHash"> & {
+  hasPassword: boolean;
+};
+
+export function toPublicTenantUser(user: TenantUser): PublicTenantUser {
+  const { passwordHash, loginKey: _loginKey, passwordResetTokenHash: _resetHash, ...rest } = user;
+  return { ...rest, hasPassword: Boolean(passwordHash) };
+}
+
 export type MessageDirection = "outbound" | "inbound";
 
 export type ReplyClassification = "stop" | "interested" | "not_interested" | "question" | "unknown";

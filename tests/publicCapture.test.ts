@@ -7,6 +7,7 @@ import {
   InMemoryMessageStore,
   InMemoryNotificationStore,
   InMemoryTenantStore,
+  InMemoryTenantUserStore,
 } from "../src/store/memory.js";
 import { createPublicCaptureRoutes } from "../src/routes/publicCapture.js";
 import type { Tenant } from "../src/types.js";
@@ -29,6 +30,7 @@ function buildStores(tenants: Tenant[] = [TENANT]): Stores {
     messageStore: new InMemoryMessageStore(),
     notificationStore: new InMemoryNotificationStore(),
     auditLogStore: new InMemoryAuditLogStore(),
+    tenantUserStore: new InMemoryTenantUserStore(),
   };
 }
 

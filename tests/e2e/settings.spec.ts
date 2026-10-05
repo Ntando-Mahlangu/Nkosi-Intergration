@@ -216,4 +216,28 @@ test.describe("Settings (public/settings.html)", () => {
     await expect(page.locator("#app")).toBeVisible();
     await expect(page.locator("#attention-sla-hours")).toHaveValue("");
   });
+
+  test("Team: invites a member, changes their role, then removes them", async ({ page }) => {
+    await connect(page);
+    const email = `e2e-team-${Date.now()}@example.com`;
+
+    await page.fill("#team-invite-email", email);
+    await page.selectOption("#team-invite-role", "member");
+    await page.click("#team-invite-btn");
+    await expect(page.locator("#team-status")).toContainText("Invited");
+
+    const row = page.locator(".team-row", { hasText: email });
+    await expect(row).toBeVisible();
+    await expect(row.locator(".team-role-select")).toHaveValue("member");
+
+    await row.locator(".team-role-select").selectOption("owner");
+    await expect(page.locator("#team-status")).toHaveText("Saved.");
+    await page.reload();
+    await expect(page.locator("#app")).toBeVisible();
+    await expect(page.locator(".team-row", { hasText: email }).locator(".team-role-select")).toHaveValue("owner");
+
+    await page.locator(".team-row", { hasText: email }).locator(".team-remove-btn").click();
+    await expect(page.locator("#team-status")).toHaveText("Removed.");
+    await expect(page.locator(".team-row", { hasText: email })).toHaveCount(0);
+  });
 });

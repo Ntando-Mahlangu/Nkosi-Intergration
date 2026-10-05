@@ -5,6 +5,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { createStores } from "./store/index.js";
 import { getPool } from "./db/pool.js";
 import { createTenantRoutes } from "./routes/tenants.js";
+import { createTeamRoutes } from "./routes/team.js";
 import { createLeadRoutes } from "./routes/leads.js";
 import { createWorkflowRoutes } from "./routes/workflow.js";
 import { createAuthRoutes } from "./routes/auth.js";
@@ -133,6 +134,7 @@ export function createApp() {
   app.use(createPublicCaptureRoutes(stores));
   app.use(createPublicChatRoutes(stores));
   app.use(createTenantRoutes(stores));
+  app.use(createTeamRoutes(stores));
   app.use(createLeadRoutes(stores));
   app.use(createWorkflowRoutes(stores));
 

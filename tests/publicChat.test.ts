@@ -7,6 +7,7 @@ import {
   InMemoryMessageStore,
   InMemoryNotificationStore,
   InMemoryTenantStore,
+  InMemoryTenantUserStore,
 } from "../src/store/memory.js";
 import { createPublicChatRoutes } from "../src/routes/publicChat.js";
 import { CURRENT_TERMS_VERSION } from "../src/terms.js";
@@ -46,6 +47,7 @@ function buildStores(tenant: Tenant = TENANT): Stores {
     messageStore: new InMemoryMessageStore(),
     notificationStore: new InMemoryNotificationStore(),
     auditLogStore: new InMemoryAuditLogStore(),
+    tenantUserStore: new InMemoryTenantUserStore(),
   };
 }
 

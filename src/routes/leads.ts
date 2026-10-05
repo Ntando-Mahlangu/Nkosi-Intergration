@@ -19,9 +19,9 @@ const CLEAR_ATTENTION: Pick<Lead, "needsAttentionAt" | "needsAttentionReason" | 
 };
 
 /** Everything under /leads/* — CRUD, CSV export/import, dry-run planning, and per-lead message history. */
-export function createLeadRoutes({ tenantStore, leadStore, messageStore }: Stores): Router {
+export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, messageStore }: Stores): Router {
   const router = Router();
-  const auth = [createTenantLimiter(), requireTenantAuth(tenantStore)];
+  const auth = [createTenantLimiter(), requireTenantAuth(tenantStore, tenantUserStore)];
 
   // Optional ?limit=&offset= pagination; omitted (the default) returns everything, unchanged from before —
   // existing dashboards that don't pass these params see no behavior change. X-Total-Count always reports the full count.

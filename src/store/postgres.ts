@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import type { ChannelCredentials, Lead, Message, Tenant } from "../types.js";
+import type { ChannelCredentials, Lead, Message, Tenant, TenantUser } from "../types.js";
 import type {
   AuditLogEntry,
   AuditLogStore,
@@ -8,6 +8,7 @@ import type {
   MessageStore,
   NotificationStore,
   TenantStore,
+  TenantUserStore,
   UpdateLeadGuard,
 } from "./types.js";
 import { decryptSecret, encryptSecret } from "../crypto.js";
@@ -699,5 +700,114 @@ export class PostgresAuditLogStore implements AuditLogStore {
   async count(): Promise<number> {
     const { rows } = await this.pool.query(`SELECT COUNT(*)::int AS count FROM audit_log`);
     return rows[0].count as number;
+  }
+}
+
+function tenantUserFromRow(row: Record<string, unknown>): TenantUser {
+  return {
+    id: row.id as string,
+    tenantId: row.tenant_id as string,
+    email: row.email as string,
+    passwordHash: (row.password_hash as string | null) ?? undefined,
+    loginKey: row.login_key as string,
+    role: row.role as TenantUser["role"],
+    passwordResetTokenHash: (row.password_reset_token_hash as string | null) ?? undefined,
+    passwordResetExpiresAt: (row.password_reset_expires_at as string | null)
+      ? new Date(row.password_reset_expires_at as string).toISOString()
+      : undefined,
+    createdAt: new Date(row.created_at as string).toISOString(),
+  };
+}
+
+const TENANT_USER_COLUMNS = `id, tenant_id, email, password_hash, login_key, role, password_reset_token_hash, password_reset_expires_at, created_at`;
+
+export class PostgresTenantUserStore implements TenantUserStore {
+  constructor(private pool: Pool) {}
+
+  async getTenantUserById(tenantId: string, id: string): Promise<TenantUser | undefined> {
+    const { rows } = await this.pool.query(
+      `SELECT ${TENANT_USER_COLUMNS} FROM tenant_users WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, id]
+    );
+    return rows[0] ? tenantUserFromRow(rows[0]) : undefined;
+  }
+
+  async getTenantUserByEmail(email: string): Promise<TenantUser | undefined> {
+    const { rows } = await this.pool.query(
+      `SELECT ${TENANT_USER_COLUMNS} FROM tenant_users WHERE LOWER(email) = LOWER($1)`,
+      [email]
+    );
+    return rows[0] ? tenantUserFromRow(rows[0]) : undefined;
+  }
+
+  async getTenantUserByLoginKey(loginKey: string): Promise<TenantUser | undefined> {
+    const { rows } = await this.pool.query(`SELECT ${TENANT_USER_COLUMNS} FROM tenant_users WHERE login_key = $1`, [
+      loginKey,
+    ]);
+    return rows[0] ? tenantUserFromRow(rows[0]) : undefined;
+  }
+
+  async getTenantUserByPasswordResetTokenHash(tokenHash: string): Promise<TenantUser | undefined> {
+    const { rows } = await this.pool.query(
+      `SELECT ${TENANT_USER_COLUMNS} FROM tenant_users WHERE password_reset_token_hash = $1`,
+      [tokenHash]
+    );
+    return rows[0] ? tenantUserFromRow(rows[0]) : undefined;
+  }
+
+  async listTenantUsers(tenantId: string): Promise<TenantUser[]> {
+    const { rows } = await this.pool.query(
+      `SELECT ${TENANT_USER_COLUMNS} FROM tenant_users WHERE tenant_id = $1 ORDER BY created_at ASC, id ASC`,
+      [tenantId]
+    );
+    return rows.map(tenantUserFromRow);
+  }
+
+  async createTenantUser(user: TenantUser): Promise<TenantUser> {
+    await this.pool.query(
+      `INSERT INTO tenant_users (id, tenant_id, email, password_hash, login_key, role, password_reset_token_hash, password_reset_expires_at, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        user.id,
+        user.tenantId,
+        user.email,
+        user.passwordHash ?? null,
+        user.loginKey,
+        user.role,
+        user.passwordResetTokenHash ?? null,
+        user.passwordResetExpiresAt ?? null,
+        user.createdAt,
+      ]
+    );
+    return user;
+  }
+
+  async updateTenantUser(tenantId: string, id: string, patch: Partial<TenantUser>): Promise<TenantUser | undefined> {
+    const values: unknown[] = [tenantId, id];
+    const setClauses: string[] = [];
+    const push = (column: string, value: unknown) => {
+      values.push(value);
+      setClauses.push(`${column} = $${values.length}`);
+    };
+
+    if ("email" in patch) push("email", patch.email);
+    if ("passwordHash" in patch) push("password_hash", patch.passwordHash ?? null);
+    if ("loginKey" in patch) push("login_key", patch.loginKey);
+    if ("role" in patch) push("role", patch.role);
+    if ("passwordResetTokenHash" in patch) push("password_reset_token_hash", patch.passwordResetTokenHash ?? null);
+    if ("passwordResetExpiresAt" in patch) push("password_reset_expires_at", patch.passwordResetExpiresAt ?? null);
+
+    if (setClauses.length === 0) return this.getTenantUserById(tenantId, id);
+
+    const { rows } = await this.pool.query(
+      `UPDATE tenant_users SET ${setClauses.join(", ")} WHERE tenant_id = $1 AND id = $2 RETURNING ${TENANT_USER_COLUMNS}`,
+      values
+    );
+    return rows[0] ? tenantUserFromRow(rows[0]) : undefined;
+  }
+
+  async deleteTenantUser(tenantId: string, id: string): Promise<boolean> {
+    const result = await this.pool.query(`DELETE FROM tenant_users WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
+    return (result.rowCount ?? 0) > 0;
   }
 }

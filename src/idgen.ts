@@ -20,3 +20,12 @@ export function generateApiKey(): string {
 export function generateFormKey(): string {
   return `lrf_${randomBytes(16).toString("hex")}`;
 }
+
+/**
+ * A team member's own bearer credential (TenantUser.loginKey) — full
+ * tenant-scoped access, same strength as generateApiKey(), just a
+ * distinguishable prefix so one is recognizable from the other in logs.
+ */
+export function generateTenantUserKey(): string {
+  return `lru_${randomBytes(24).toString("hex")}`;
+}

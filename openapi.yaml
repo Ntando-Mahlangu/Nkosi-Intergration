@@ -16,6 +16,7 @@ tags:
   - name: health
   - name: auth
   - name: tenant-self-service
+  - name: team
   - name: admin
   - name: leads
   - name: chat
@@ -277,6 +278,8 @@ paths:
         Updates timezone/quietHours/devMode/channels/notifyWebhookUrl/
         templates/knowledgeBase/autoReplyEnabled. `status` cannot be changed
         here — a tenant can't un-suspend itself; use the admin API.
+        Owner-only (see "Team accounts") — a "member"-role team account
+        gets 403.
       security: [{ tenantAuth: [] }]
       requestBody:
         content:
@@ -290,7 +293,11 @@ paths:
               schema: { $ref: "#/components/schemas/PublicTenant" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Suspended" }
+        "403":
+          description: The tenant is suspended, or authenticated as a "member"-role team account (owner-only — see "Team accounts")
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /tenants/me/accept-terms:
     post:
@@ -358,6 +365,100 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "403": { $ref: "#/components/responses/OwnerRoleRequired" }
+
+  /tenants/me/team:
+    get:
+      tags: [team]
+      summary: List this tenant's team members
+      description: Open to any authenticated actor (owner or member) — see "Team accounts".
+      security: [{ tenantAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PublicTenantUser" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+    post:
+      tags: [team]
+      summary: Invite a new team member
+      description: >
+        Owner-only. Emails the invited address a "set your password" link
+        (src/authEmail.ts — logged server-side instead when no platform
+        SendGrid key is configured). `email` must not already be in use by
+        this tenant's own login or by another team member (globally,
+        across every tenant).
+      security: [{ tenantAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                role: { type: string, enum: [owner, member], default: member }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicTenantUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/OwnerRoleRequired" }
+        "409": { description: "email already in use" }
+
+  /tenants/me/team/{id}:
+    patch:
+      tags: [team]
+      summary: Change a team member's role
+      description: Owner-only.
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [owner, member] }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicTenantUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/OwnerRoleRequired" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [team]
+      summary: Remove a team member
+      description: Owner-only.
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/OwnerRoleRequired" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /tenants/me/report:
     get:
@@ -1298,6 +1399,11 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    OwnerRoleRequired:
+      description: Authenticated as a team member with role "member" — only the tenant's own login or an "owner"-role team member can do this (see "Team accounts")
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     NotFound:
       description: No such resource
       content:
@@ -1495,6 +1601,20 @@ components:
         winBackEnabled: { type: boolean, description: "Opt-in: periodic win-back check-ins for converted, opted-in leads. Off by default." }
         winBackCooldownDays: { type: integer, description: "Days between win-back check-ins for one lead. Defaults to 180 when unset." }
         attentionSlaHours: { type: integer, description: "Opt-in: hours before a stale needs-attention item fires a one-time operator alert. Unset disables it." }
+        createdAt: { type: string, format: date-time }
+
+    PublicTenantUser:
+      type: object
+      description: >
+        A team member under a tenant (see "Team accounts") with all secrets
+        stripped (no passwordHash, no loginKey, no reset-token hash).
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        email: { type: string }
+        role: { type: string, enum: [owner, member] }
+        hasPassword: { type: boolean, description: "Whether this member has ever set a password yet (false right after being invited, before they use the emailed link)." }
+        passwordResetExpiresAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
 
     NumberHostingOrder:

@@ -7,6 +7,7 @@ import {
   InMemoryMessageStore,
   InMemoryNotificationStore,
   InMemoryTenantStore,
+  InMemoryTenantUserStore,
 } from "../src/store/memory.js";
 import { createAuthRoutes } from "../src/routes/auth.js";
 import { createTenantRoutes } from "../src/routes/tenants.js";
@@ -21,6 +22,7 @@ function buildStores(tenants: Tenant[] = []): Stores {
     messageStore: new InMemoryMessageStore(),
     notificationStore: new InMemoryNotificationStore(),
     auditLogStore: new InMemoryAuditLogStore(),
+    tenantUserStore: new InMemoryTenantUserStore(),
   };
 }
 
