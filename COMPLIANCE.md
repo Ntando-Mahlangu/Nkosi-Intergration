@@ -50,6 +50,18 @@ and their own leads.
   valid basis depending on jurisdiction and how long ago that was — this is
   a business/legal decision, not a technical one, and nothing in the code
   can verify it for you.
+- **South Africa (POPIA)**: unlike the US's opt-out-based TCPA model, POPIA
+  section 69 requires **opt-in** consent before direct marketing by
+  electronic communication (SMS/WhatsApp/email), with a narrow exception
+  for marketing your own similar products/services to an existing
+  customer who was given a clear opt-out at the time their details were
+  collected. "This lead enquired about a quote" is a more defensible basis
+  for transactional/recovery messaging than for ongoing marketing — confirm
+  with the client which bucket their outreach actually falls into, and
+  don't assume the TCPA-style "no opt-in needed unless they've opted out"
+  framing applies. A South African client should also have (or appoint) an
+  Information Officer registered with the Information Regulator, per
+  POPIA's registration requirement.
 - The admin UI's "Add new client" form requires checking a "Client has a
   documented lawful basis to contact its leads" box before it will create
   the tenant — a recorded attestation (`Tenant.consentBasisConfirmedAt`),
@@ -67,17 +79,32 @@ and their own leads.
   from a US long-code number, or messages get filtered/blocked by carriers.
   Register the client's brand and campaign in the Twilio console — this has
   a review lead time (days), start it early.
+- **South Africa**: there's no 10DLC-equivalent brand/campaign registration
+  — SMS/WhatsApp sending is governed by ICASA's telecoms rules and Twilio's
+  own South African long-code/sender-ID requirements instead. Confirm with
+  Twilio support what number type (local long code vs. a registered
+  alphanumeric sender ID) and documentation the client's use case needs
+  before their first real send — the requirements and lead time differ
+  from the US 10DLC process above, but a lead time still applies.
 - **WhatsApp Business API approval**: the client's WhatsApp sender number
   must go through Meta's business verification and template-message
   approval process via Twilio before `src/channels/whatsapp.ts` can send
   anything beyond a 24-hour customer-service window. Outbound *re-engagement*
   messages (which is most of what LeadRecovery sends) require an
-  approved message template — plan for this in the pilot timeline.
+  approved message template — plan for this in the pilot timeline. WhatsApp
+  is especially widely used for business messaging in South Africa, so this
+  approval step is worth starting early for SA clients; LeadRecovery only
+  integrates with WhatsApp through Twilio (no direct Meta Cloud API path),
+  which is sufficient for SA numbers but worth knowing if a client already
+  has a WhatsApp Business API setup elsewhere.
 - **Sending windows**: many jurisdictions restrict SMS marketing hours
   (e.g. commonly 8am-9pm local). The default quiet-hours window
   (`src/quietHours.ts`, 8pm-8am) is a reasonable starting point but confirm
   the client's specific jurisdiction's rules and adjust per tenant
-  (`quietHours` on the admin/self-service tenant config).
+  (`quietHours` on the admin/self-service tenant config). For South African
+  clients, the Consumer Protection Act similarly restricts direct-marketing
+  contact hours/days — confirm current guidance with the client's counsel
+  rather than assuming the default window already satisfies it.
   **One deliberate exception**: an appointment reminder within
   `APPOINTMENT_REMINDER_LAST_CHANCE_HOURS` (2h, `src/appointmentReminder.ts`)
   of the appointment sends even during quiet hours rather than being
@@ -181,7 +208,8 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
   info except on an inbound reply, so purging a suppressed lead would let
   a later re-import of the same contact (e.g. a refreshed CRM export) come
   back in as a brand-new, un-suppressed lead and get messaged again — a
-  real re-contact risk (TCPA/CAN-SPAM), not just a data-hygiene tradeoff.
+  real re-contact risk (TCPA/CAN-SPAM, or POPIA for a South African
+  client), not just a data-hygiene tradeoff.
   If you need to actually remove a specific person's data on request (a
   right-to-erasure request), use `DELETE /leads/:id` — distinct from the
   automatic purge above, this is an explicit, immediate removal of one

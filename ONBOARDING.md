@@ -33,6 +33,14 @@ tenant — an actual attestation with a timestamp
 (`consentBasisConfirmedAt`), not a formality. Don't check it until you've
 actually confirmed this with the client.
 
+For a South African client, this is where the TCPA-style "contact unless
+they've opted out" assumption breaks down: POPIA requires **opt-in**
+consent for direct marketing by SMS/WhatsApp/email (narrow exceptions
+apply for existing-customer relationships — see `COMPLIANCE.md`'s
+"Consent basis" section). Confirm with the client which of their imported
+leads actually have that opt-in before importing, rather than assuming
+every enquiry qualifies.
+
 ## 3. Provision the tenant
 
 ```bash
