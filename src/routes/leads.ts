@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import type { Stores } from "../store/index.js";
-import type { Lead } from "../types.js";
+import type { Channel, Lead } from "../types.js";
 import { requireTenantAuth } from "../middleware/auth.js";
 import { createTenantLimiter } from "../middleware/rateLimit.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
@@ -8,6 +8,15 @@ import { parsePageParams, paginate } from "../pagination.js";
 import { leadsToCsv } from "../csv.js";
 import { createLeadsDeduped, parseLeadsCsv } from "../leadImport.js";
 import { buildFollowUpPlans, buildRecoveryPlans, buildWinBackPlans } from "../workflow.js";
+import { hasCarrierApproval, safeSend, selectChannel } from "../channels/index.js";
+import { generateId } from "../idgen.js";
+
+/** Clears the three needs-attention fields in one patch — shared by both /leads/:id/reply and /leads/:id/mark-handled below. */
+const CLEAR_ATTENTION: Pick<Lead, "needsAttentionAt" | "needsAttentionReason" | "attentionAlertedAt"> = {
+  needsAttentionAt: undefined,
+  needsAttentionReason: undefined,
+  attentionAlertedAt: undefined,
+};
 
 /** Everything under /leads/* — CRUD, CSV export/import, dry-run planning, and per-lead message history. */
 export function createLeadRoutes({ tenantStore, leadStore, messageStore }: Stores): Router {
@@ -20,7 +29,14 @@ export function createLeadRoutes({ tenantStore, leadStore, messageStore }: Store
     "/leads",
     ...auth,
     asyncHandler(async (req: Request, res: Response) => {
-      const leads = await leadStore.getAllLeads(req.tenant!.id);
+      let leads = await leadStore.getAllLeads(req.tenant!.id);
+      // Backs the dashboard's "Needs attention" inbox section — every lead
+      // notifyHumanAttention has fired for (an "interested" reply, or the
+      // chatbot escalating) that hasn't yet been replied to or marked
+      // handled (see POST /leads/:id/reply and /leads/:id/mark-handled).
+      if (req.query.needsAttention === "true") {
+        leads = leads.filter((lead) => Boolean(lead.needsAttentionAt));
+      }
       res.set("X-Total-Count", String(leads.length));
       res.json(paginate(leads, parsePageParams(req)));
     })
@@ -218,6 +234,107 @@ export function createLeadRoutes({ tenantStore, leadStore, messageStore }: Store
         // doc comment on why this needs its own explicit opt-in.
         marketingOptIn: body?.marketingOptIn === true ? true : undefined,
       });
+      res.json(updated);
+    })
+  );
+
+  // Sends a real reply on the operator's behalf — the "reply from the
+  // dashboard" half of the needs-attention inbox (the other half is
+  // /leads/:id/mark-handled below, for when the operator resolved it some
+  // other way, e.g. a phone call). Defaults to whatever channel
+  // selectChannel would pick for an automated send, so a human reply
+  // behaves exactly like the bot's own would have, but an explicit
+  // `channel` in the body can override that (e.g. replying by email even
+  // though SMS is usable). Clears needsAttention* on success so the lead
+  // drops out of the inbox.
+  router.post(
+    "/leads/:id/reply",
+    ...auth,
+    asyncHandler(async (req: Request, res: Response) => {
+      const tenant = req.tenant!;
+      const existing = await leadStore.getLeadById(tenant.id, req.params.id);
+      if (!existing) {
+        res.status(404).json({ error: "no such lead" });
+        return;
+      }
+
+      const body = req.body as { message?: unknown; channel?: unknown } | undefined;
+      const message = typeof body?.message === "string" ? body.message.trim() : "";
+      if (!message) {
+        res.status(400).json({ error: "message is required" });
+        return;
+      }
+
+      const validChannels = new Set(["sms", "whatsapp", "email", "chat"]);
+      if (body?.channel !== undefined && !validChannels.has(body.channel as string)) {
+        res.status(400).json({ error: "channel must be one of sms/whatsapp/email/chat" });
+        return;
+      }
+      const channel = (body?.channel as Channel | "chat" | undefined) ?? selectChannel(tenant, existing);
+      if (!channel) {
+        res.status(422).json({ error: "no usable channel for this lead — configure one in tenant settings" });
+        return;
+      }
+
+      const messageId = generateId("msg");
+      if (channel === "chat") {
+        // There's no live push into an already-open browser tab (no
+        // WebSocket/SSE infra behind the chat widget) — this records the
+        // reply so it shows up next time the visitor's widget polls, but
+        // can't deliver it in real time. An honest, scoped limitation
+        // rather than a fake real-time feature.
+        await messageStore.logMessage({
+          id: messageId,
+          tenantId: tenant.id,
+          leadId: existing.id,
+          channel: "chat",
+          direction: "outbound",
+          body: message,
+          at: new Date().toISOString(),
+          kind: "manual_reply",
+        });
+      } else {
+        if (!hasCarrierApproval(tenant, channel)) {
+          res.status(422).json({ error: `carrier approval required before sending via ${channel}` });
+          return;
+        }
+        const result = await safeSend(channel, tenant, existing, { channel, body: message }, messageId);
+        if (!result.ok) {
+          res.status(502).json({ error: `send failed: ${result.detail ?? "unknown error"}` });
+          return;
+        }
+        await messageStore.logMessage({
+          id: messageId,
+          tenantId: tenant.id,
+          leadId: existing.id,
+          channel,
+          direction: "outbound",
+          body: message,
+          at: new Date().toISOString(),
+          providerMessageId: result.providerMessageId,
+          kind: "manual_reply",
+        });
+      }
+
+      const updated = await leadStore.updateLead(tenant.id, existing.id, CLEAR_ATTENTION);
+      res.json(updated);
+    })
+  );
+
+  // Resolves a needs-attention item without sending a reply through
+  // LeadRecovery — e.g. the operator called the lead directly, or decided
+  // no further action is needed. Just clears the flag.
+  router.post(
+    "/leads/:id/mark-handled",
+    ...auth,
+    asyncHandler(async (req: Request, res: Response) => {
+      const tenant = req.tenant!;
+      const existing = await leadStore.getLeadById(tenant.id, req.params.id);
+      if (!existing) {
+        res.status(404).json({ error: "no such lead" });
+        return;
+      }
+      const updated = await leadStore.updateLead(tenant.id, existing.id, CLEAR_ATTENTION);
       res.json(updated);
     })
   );

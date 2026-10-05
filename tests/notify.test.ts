@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import { InMemoryNotificationStore } from "../src/store/memory.js";
+import { InMemoryLeadStore, InMemoryNotificationStore } from "../src/store/memory.js";
 import type { Lead, Tenant } from "../src/types.js";
 
 // deliverNotification (src/notify.ts) goes through src/ssrf.ts's
@@ -56,7 +56,8 @@ vi.mock("node:https", () => ({
   default: { request: (...args: [FakeRequestOptions, (res: unknown) => void]) => httpsRequestMock(...args) },
 }));
 
-const { deliverNotification, notifyHumanAttention, NOTIFICATION_MAX_ATTEMPTS } = await import("../src/notify.js");
+const { deliverNotification, notifyHumanAttention, flagNeedsAttention, NOTIFICATION_MAX_ATTEMPTS } =
+  await import("../src/notify.js");
 
 // Reset before every test (not just once at module load).
 beforeEach(() => {
@@ -205,6 +206,48 @@ describe("notifyHumanAttention", () => {
     await vi.runAllTimersAsync();
     await expect(done).resolves.toBeUndefined();
     expect(failingStore.recordFailure).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("flagNeedsAttention", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("sets needsAttentionAt/needsAttentionReason on the lead and still notifies", async () => {
+    const leadStore = new InMemoryLeadStore([LEAD]);
+    const stores = { leadStore, notificationStore: undefined };
+
+    const done = flagNeedsAttention(stores, TENANT, LEAD, "sms", "yes please", "interested");
+    await vi.runAllTimersAsync();
+    await done;
+
+    const updated = await leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(updated?.needsAttentionAt).toBeDefined();
+    expect(updated?.needsAttentionReason).toBe("interested");
+    expect(httpsRequestMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not overwrite an already-set needsAttentionAt, but does update the reason", async () => {
+    const firstFlaggedAt = "2024-01-01T00:00:00.000Z";
+    const leadWithAttention: Lead = {
+      ...LEAD,
+      needsAttentionAt: firstFlaggedAt,
+      needsAttentionReason: "needs_human_reply",
+    };
+    const leadStore = new InMemoryLeadStore([leadWithAttention]);
+    const stores = { leadStore, notificationStore: undefined };
+
+    const done = flagNeedsAttention(stores, TENANT, leadWithAttention, "sms", "still waiting", "interested");
+    await vi.runAllTimersAsync();
+    await done;
+
+    const updated = await leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(updated?.needsAttentionAt).toBe(firstFlaggedAt);
+    expect(updated?.needsAttentionReason).toBe("interested");
   });
 });
 

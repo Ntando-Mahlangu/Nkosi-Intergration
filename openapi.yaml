@@ -636,6 +636,10 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
+        - name: needsAttention
+          in: query
+          description: When "true", restricts the list to leads currently flagged in the needs-attention inbox (see POST /leads/{id}/reply and /leads/{id}/mark-handled).
+          schema: { type: string, enum: ["true"] }
       responses:
         "200":
           description: OK
@@ -769,6 +773,64 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Lead" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /leads/{id}/reply:
+    post:
+      tags: [leads]
+      summary: Send a real reply on an operator's behalf, resolving a needs-attention item
+      description: >
+        Sends through the lead's usual channel (selectChannel's own choice)
+        unless `channel` overrides it. Logged as kind "manual_reply". Clears
+        needsAttentionAt/needsAttentionReason/attentionAlertedAt on success.
+        A "chat" reply is recorded but cannot be pushed live into an
+        already-open chat-widget tab (no WebSocket/SSE infra) — it surfaces
+        next time that visitor's widget polls.
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeadReplyBody" }
+      responses:
+        "200":
+          description: The updated lead
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lead" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Suspended" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: "No usable channel for this lead, or carrier approval is still required" }
+        "502": { description: "The provider send itself failed" }
+
+  /leads/{id}/mark-handled:
+    post:
+      tags: [leads]
+      summary: Clear a needs-attention flag without sending anything
+      description: >
+        For when an operator resolved the lead some other way (a phone call,
+        etc.) — just clears needsAttentionAt/needsAttentionReason/attentionAlertedAt.
+      security: [{ tenantAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The updated lead
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lead" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Suspended" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1500,6 +1562,18 @@ components:
         chatTokenHash:
           type: string
           description: Hash only (never the raw token) of this lead's chat-widget session token, if it was created that way. See POST /public/chat/{tenantId}/start.
+        needsAttentionAt:
+          type: string
+          format: date-time
+          description: Set when this lead needs a human's attention (an "interested" reply, or the auto-reply chatbot escalating) — drives the dashboard's needs-attention inbox. Never overwritten by a later inbound message while already set, so it reflects true wait time. Cleared by POST /leads/{id}/reply or /leads/{id}/mark-handled.
+        needsAttentionReason:
+          type: string
+          enum: [interested, needs_human_reply]
+          description: Why needsAttentionAt is set.
+        attentionAlertedAt:
+          type: string
+          format: date-time
+          description: Set once an SLA operator-alert has fired for this specific unresolved needsAttentionAt, so it only fires once. Cleared along with needsAttentionAt.
 
     LeadPatchBody:
       type: object
@@ -1532,6 +1606,17 @@ components:
           type: boolean
           description: Whether this lead personally agreed to occasional win-back messages after becoming a customer. Omitted/false means not opted in.
 
+    LeadReplyBody:
+      type: object
+      description: Body for POST /leads/{id}/reply.
+      required: [message]
+      properties:
+        message: { type: string, description: The reply text to send. }
+        channel:
+          type: string
+          enum: [sms, whatsapp, email, chat]
+          description: Overrides the automatically-selected channel (selectChannel's own choice, same as an automated send).
+
     Message:
       type: object
       properties:
@@ -1544,7 +1629,7 @@ components:
         at: { type: string, format: date-time }
         classification: { type: string, enum: [stop, interested, not_interested, question, unknown] }
         deliveryStatus: { type: string }
-        kind: { type: string, enum: [initial, followup, closer, auto_reply] }
+        kind: { type: string, enum: [campaign, auto_reply, closer, appointment_reminder, win_back, manual_reply] }
 
     RecoveryPlan:
       type: object

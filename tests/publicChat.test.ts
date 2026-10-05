@@ -199,6 +199,10 @@ describe("POST /public/chat/:tenantId/message", () => {
     expect(res.body.classification).toBe("interested");
     expect(res.body.displayText).toMatch(/follow up/i);
     expect(anthropicCreateMock).not.toHaveBeenCalled();
+
+    const lead = await stores.leadStore.getLeadById(TENANT.id, session.leadId);
+    expect(lead?.needsAttentionAt).toBeTruthy();
+    expect(lead?.needsAttentionReason).toBe("interested");
   });
 
   it("refuses to run for a tenant that hasn't accepted the Terms of Service yet", async () => {

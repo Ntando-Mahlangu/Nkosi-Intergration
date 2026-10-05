@@ -11,7 +11,7 @@ import { generateId } from "../idgen.js";
 import { publicBaseUrl } from "../publicUrl.js";
 import { safeCompare } from "../security.js";
 import { substituteTemplate } from "../templateSubstitute.js";
-import { notifyHumanAttention } from "../notify.js";
+import { flagNeedsAttention } from "../notify.js";
 import { sendOperatorAlert } from "../operatorAlert.js";
 import { verifySendGridEventSignature } from "../sendgridVerify.js";
 import { verifyPaddleSignature, compareIsoTimestamps } from "../paddleVerify.js";
@@ -194,7 +194,7 @@ async function recordInboundAndClassify(
   await stores.leadStore.updateLead(tenant.id, lead.id, { status: "responded" });
 
   if (classification === "interested") {
-    void notifyHumanAttention(stores.notificationStore, tenant, lead, channel, body, "interested");
+    await flagNeedsAttention(stores, tenant, lead, channel, body, "interested");
     return { classification };
   }
 
@@ -203,7 +203,7 @@ async function recordInboundAndClassify(
   if (auto.action === "reply" && auto.replyBody) {
     await sendAndLog(stores, tenant, lead, { channel, body: auto.replyBody }, "auto_reply");
   } else {
-    void notifyHumanAttention(stores.notificationStore, tenant, lead, channel, body, "needs_human_reply");
+    await flagNeedsAttention(stores, tenant, lead, channel, body, "needs_human_reply");
   }
 
   return { classification };

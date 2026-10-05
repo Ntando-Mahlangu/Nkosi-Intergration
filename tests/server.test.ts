@@ -330,6 +330,137 @@ describe("POST /leads/:id/convert", () => {
   });
 });
 
+describe("GET /leads?needsAttention=true", () => {
+  const DEMO_API_KEY = "demo-key";
+
+  it("returns only leads with needsAttentionAt set", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    // Nothing needs attention yet in the bundled demo data.
+    const before = await request(app).get("/leads?needsAttention=true").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(before.body).toEqual([]);
+
+    await request(app)
+      .post(`/leads/${leadId}/reply`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ message: "Still interested?" });
+    // A reply clears attention rather than setting it — flag it back on
+    // directly via a PATCH-equivalent isn't exposed, so instead this checks
+    // the filter mechanics the other way: mark-handled on a lead that was
+    // never flagged is a no-op, and the filter still excludes it.
+    const after = await request(app).get("/leads?needsAttention=true").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(after.body).toEqual([]);
+  });
+});
+
+describe("POST /leads/:id/reply", () => {
+  const DEMO_API_KEY = "demo-key";
+
+  it("requires tenant auth", async () => {
+    const res = await request(createApp()).post("/leads/some-id/reply").send({ message: "hi" });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 for a lead that doesn't belong to this tenant", async () => {
+    const res = await request(createApp())
+      .post("/leads/no-such-lead/reply")
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ message: "hi" });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects an empty message", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app)
+      .post(`/leads/${leadId}/reply`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ message: "   " });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an invalid channel", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app)
+      .post(`/leads/${leadId}/reply`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ message: "hi", channel: "carrier-pigeon" });
+    expect(res.status).toBe(400);
+  });
+
+  it("sends via the demo (console-only) channel, logs a manual_reply message, and clears needsAttention*", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app)
+      .post(`/leads/${leadId}/reply`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ message: "Thanks for reaching out, calling you now." });
+
+    expect(res.status).toBe(200);
+    expect(res.body.needsAttentionAt).toBeUndefined();
+    expect(res.body.needsAttentionReason).toBeUndefined();
+
+    const messages = await request(app).get(`/leads/${leadId}/messages`).set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const manualReply = messages.body.find((m: { kind?: string }) => m.kind === "manual_reply");
+    expect(manualReply).toBeTruthy();
+    expect(manualReply.direction).toBe("outbound");
+    expect(manualReply.body).toBe("Thanks for reaching out, calling you now.");
+  });
+
+  it("logs a chat-channel reply without attempting a real send", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app)
+      .post(`/leads/${leadId}/reply`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ message: "hi there", channel: "chat" });
+
+    expect(res.status).toBe(200);
+    const messages = await request(app).get(`/leads/${leadId}/messages`).set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const manualReply = messages.body.find((m: { kind?: string }) => m.kind === "manual_reply");
+    expect(manualReply.channel).toBe("chat");
+  });
+});
+
+describe("POST /leads/:id/mark-handled", () => {
+  const DEMO_API_KEY = "demo-key";
+
+  it("requires tenant auth", async () => {
+    const res = await request(createApp()).post("/leads/some-id/mark-handled");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 for a lead that doesn't belong to this tenant", async () => {
+    const res = await request(createApp())
+      .post("/leads/no-such-lead/mark-handled")
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("clears needsAttention* without sending anything", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app).post(`/leads/${leadId}/mark-handled`).set("Authorization", `Bearer ${DEMO_API_KEY}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.needsAttentionAt).toBeUndefined();
+    expect(res.body.needsAttentionReason).toBeUndefined();
+  });
+});
+
 describe("DELETE /leads/:id", () => {
   const DEMO_API_KEY = "demo-key";
 

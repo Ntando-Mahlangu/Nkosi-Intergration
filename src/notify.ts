@@ -1,5 +1,5 @@
 import type { Channel, Lead, Tenant } from "./types.js";
-import type { NotificationStore } from "./store/types.js";
+import type { LeadStore, NotificationStore } from "./store/types.js";
 import { logger } from "./logger.js";
 import { postToUntrustedUrl } from "./ssrf.js";
 
@@ -135,4 +135,34 @@ export async function notifyHumanAttention(
       error: (err as Error).message,
     });
   }
+}
+
+/**
+ * The single place that puts a lead in the dashboard's "needs attention"
+ * inbox (see GET /leads?needsAttention=true) and fires the existing
+ * webhook notification (notifyHumanAttention above) — called from both
+ * webhooks/index.ts's recordInboundAndClassify (real SMS/WhatsApp/email)
+ * and chatWidget.ts's answerChatMessage (website chat), the only two
+ * places a reply gets classified "interested" or escalates past the
+ * auto-reply bot.
+ *
+ * Deliberately does NOT overwrite an already-set needsAttentionAt: a
+ * second inbound message while the lead is still unresolved must not
+ * reset the clock an operator (and the SLA alert in operatorAlert.ts)
+ * measures wait time against. `needsAttentionReason` is still updated to
+ * the latest reason, since that's just descriptive, not a timer.
+ */
+export async function flagNeedsAttention(
+  stores: { leadStore: LeadStore; notificationStore?: NotificationStore },
+  tenant: Tenant,
+  lead: Lead,
+  channel: NotifyChannel,
+  body: string,
+  reason: NotifyReason
+): Promise<void> {
+  await stores.leadStore.updateLead(tenant.id, lead.id, {
+    needsAttentionAt: lead.needsAttentionAt ?? new Date().toISOString(),
+    needsAttentionReason: reason,
+  });
+  void notifyHumanAttention(stores.notificationStore, tenant, lead, channel, body, reason);
 }

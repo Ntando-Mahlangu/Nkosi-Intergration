@@ -169,6 +169,18 @@
     border: 1px solid rgba(217,154,78,0.4);
     margin-left: 8px;
   }
+  .lead-row .attention-tag {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: rgba(181,85,90,0.12);
+    color: var(--high);
+    border: 1px solid rgba(181,85,90,0.4);
+    margin-left: 8px;
+  }
 
   .import-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .import-status { font-size: 12px; color: var(--muted); }
@@ -283,6 +295,11 @@
     </div>
 
     <section>
+      <h3>Needs attention</h3>
+      <div id="attention-list"></div>
+    </section>
+
+    <section>
       <h3>Recovery plan (dry run — nothing sent yet)</h3>
       <div id="plans"></div>
     </section>
@@ -318,6 +335,28 @@
     <button type="button" class="secondary close-btn" id="detail-close-btn">Close</button>
     <h3 id="detail-name">—</h3>
     <div class="detail-meta" id="detail-meta"></div>
+
+    <div id="detail-attention-row" style="display:none; margin:16px 0; padding:12px; border:1px solid var(--high); border-radius:8px; background:rgba(181,85,90,0.06);">
+      <div id="detail-attention-label" style="font-size:11px; color:var(--high); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px;"></div>
+      <label for="detail-reply-text" style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Reply</label>
+      <textarea id="detail-reply-text" rows="3" style="width:100%; resize:vertical;" placeholder="Type a reply to send…"></textarea>
+      <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap;">
+        <select id="detail-reply-channel" aria-label="Channel">
+          <option value="">Auto (best available channel)</option>
+          <option value="sms">SMS</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="email">Email</option>
+          <option value="chat">Chat widget</option>
+        </select>
+        <button type="button" id="detail-reply-send">Send reply</button>
+        <button type="button" class="secondary" id="detail-mark-handled">Mark handled</button>
+      </div>
+      <div class="hint" style="margin-top:4px;">
+        A chat-widget reply is recorded but can't be pushed live into an already-open browser tab —
+        it appears next time that visitor's widget polls.
+      </div>
+      <span class="import-status" id="detail-reply-status-msg" role="status" aria-live="polite"></span>
+    </div>
 
     <h3 style="font-size:13px; text-transform:uppercase; color:var(--muted); margin:18px 0 6px;">Appointment</h3>
     <div class="appt-form">
@@ -501,10 +540,36 @@
           l.appointmentStatus === "booked" && l.appointmentAt
             ? `<span class="appt-tag">appt ${escapeHtml(new Date(l.appointmentAt).toLocaleString())}</span>`
             : "";
+        const attentionTag = l.needsAttentionAt ? '<span class="attention-tag">needs attention</span>' : "";
         return `
       <div class="lead-row" data-index="${i}" tabindex="0" role="button" aria-haspopup="dialog">
         <span class="name">${escapeHtml(l.name || l.id)}</span>
-        <span class="lead-meta">${escapeHtml(humanize(l.status))}${apptTag}</span>
+        <span class="lead-meta">${escapeHtml(humanize(l.status))}${apptTag}${attentionTag}</span>
+      </div>`;
+      })
+      .join("");
+  }
+
+  // Oldest-waiting first — the item that's been sitting unresolved longest
+  // is the one most worth an operator's attention.
+  function renderAttention(leads) {
+    const el = document.getElementById("attention-list");
+    const items = leads.filter((l) => l.needsAttentionAt);
+    if (items.length === 0) {
+      el.innerHTML = '<div class="empty">Nothing needs attention right now.</div>';
+      return;
+    }
+    items.sort((a, b) => new Date(a.needsAttentionAt) - new Date(b.needsAttentionAt));
+    el.innerHTML = items
+      .map((l) => {
+        const idx = allLeadsCache.findIndex((x) => x.id === l.id);
+        const waitMs = Date.now() - new Date(l.needsAttentionAt).getTime();
+        const waitMins = Math.max(0, Math.round(waitMs / 60000));
+        const wait = waitMins < 60 ? `${waitMins}m` : `${Math.round(waitMins / 60)}h`;
+        return `
+      <div class="lead-row" data-index="${idx}" tabindex="0" role="button" aria-haspopup="dialog">
+        <span class="name">${escapeHtml(l.name || l.id)}</span>
+        <span class="lead-meta">${escapeHtml(humanize(l.needsAttentionReason || ""))} &middot; waiting ${wait}</span>
       </div>`;
       })
       .join("");
@@ -563,6 +628,21 @@
     document.getElementById("detail-convert-status-msg").textContent = "";
   }
 
+  function renderDetailAttention(lead) {
+    const row = document.getElementById("detail-attention-row");
+    if (!lead.needsAttentionAt) {
+      row.style.display = "none";
+      return;
+    }
+    row.style.display = "block";
+    document.getElementById("detail-attention-label").textContent =
+      "Needs attention — " +
+      humanize(lead.needsAttentionReason || "") +
+      " · since " +
+      new Date(lead.needsAttentionAt).toLocaleString();
+    document.getElementById("detail-reply-status-msg").textContent = "";
+  }
+
   async function openLeadDetail(session, lead) {
     detailLeadId = lead.id;
     detailLead = lead;
@@ -575,6 +655,9 @@
     document.getElementById("detail-appt-at").value = toDatetimeLocalValue(lead.appointmentAt);
     document.getElementById("detail-appt-status-msg").textContent = "";
     renderConvertedState(lead);
+    document.getElementById("detail-reply-text").value = "";
+    document.getElementById("detail-reply-channel").value = "";
+    renderDetailAttention(lead);
     document.getElementById("detail-thread").innerHTML = '<div class="empty">Loading…</div>';
 
     overlay.classList.add("open");
@@ -617,6 +700,21 @@
     openLeadDetail(session, allLeadsCache[Number(row.dataset.index)]);
   });
   document.getElementById("all-leads").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const row = e.target.closest(".lead-row");
+    if (!row) return;
+    e.preventDefault();
+    row.click();
+  });
+
+  document.getElementById("attention-list").addEventListener("click", (e) => {
+    const row = e.target.closest(".lead-row");
+    if (!row) return;
+    const session = getSession();
+    if (!session) return;
+    openLeadDetail(session, allLeadsCache[Number(row.dataset.index)]);
+  });
+  document.getElementById("attention-list").addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
     const row = e.target.closest(".lead-row");
     if (!row) return;
@@ -702,6 +800,65 @@
     }
   });
 
+  document.getElementById("detail-reply-send").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session || !detailLeadId) return;
+    const msg = document.getElementById("detail-reply-status-msg");
+    const text = document.getElementById("detail-reply-text").value.trim();
+    const channel = document.getElementById("detail-reply-channel").value;
+    if (!text) {
+      msg.textContent = "Type a reply first.";
+      msg.className = "import-status err";
+      return;
+    }
+    msg.textContent = "Sending…";
+    msg.className = "import-status";
+    try {
+      const updated = await api(session, `/leads/${encodeURIComponent(detailLeadId)}/reply`, {
+        method: "POST",
+        body: JSON.stringify(channel ? { message: text, channel } : { message: text }),
+      });
+      detailLead = updated;
+      document.getElementById("detail-reply-text").value = "";
+      renderDetailAttention(updated);
+      msg.textContent = "Sent.";
+      msg.className = "import-status ok";
+      const idx = allLeadsCache.findIndex((l) => l.id === updated.id);
+      if (idx >= 0) allLeadsCache[idx] = updated;
+      renderAllLeads(allLeadsCache);
+      renderAttention(allLeadsCache);
+      const messages = await api(session, `/leads/${encodeURIComponent(detailLeadId)}/messages`);
+      renderThread(messages);
+    } catch (err) {
+      msg.textContent = "Could not send: " + err.message;
+      msg.className = "import-status err";
+    }
+  });
+
+  document.getElementById("detail-mark-handled").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session || !detailLeadId) return;
+    const msg = document.getElementById("detail-reply-status-msg");
+    msg.textContent = "";
+    msg.className = "import-status";
+    try {
+      const updated = await api(session, `/leads/${encodeURIComponent(detailLeadId)}/mark-handled`, {
+        method: "POST",
+      });
+      detailLead = updated;
+      renderDetailAttention(updated);
+      msg.textContent = "Marked handled.";
+      msg.className = "import-status ok";
+      const idx = allLeadsCache.findIndex((l) => l.id === updated.id);
+      if (idx >= 0) allLeadsCache[idx] = updated;
+      renderAllLeads(allLeadsCache);
+      renderAttention(allLeadsCache);
+    } catch (err) {
+      msg.textContent = "Could not save: " + err.message;
+      msg.className = "import-status err";
+    }
+  });
+
   document.getElementById("import-btn").addEventListener("click", async () => {
     const session = getSession();
     if (!session) return;
@@ -741,11 +898,13 @@
     const plan = await api(session, "/leads/plan");
     renderPlans(plan.plans);
     renderSkipped(plan.skipped);
-    document.getElementById("summary").textContent =
-      plan.plans.length + " queued, " + plan.skipped.length + " skipped";
 
     allLeadsCache = await api(session, "/leads");
     renderAllLeads(allLeadsCache);
+    renderAttention(allLeadsCache);
+    const attentionCount = allLeadsCache.filter((l) => l.needsAttentionAt).length;
+    document.getElementById("summary").textContent =
+      plan.plans.length + " queued, " + plan.skipped.length + " skipped, " + attentionCount + " needing attention";
     return tenant;
   }
 

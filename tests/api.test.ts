@@ -2033,6 +2033,10 @@ describe("notify on interested reply", () => {
     const body = JSON.parse(lastNotifyRequestBody);
     expect(body.event).toBe("lead_interested");
     expect(body.lead.id).toBe(LEAD.id);
+
+    const lead = await stores.leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(lead?.needsAttentionAt).toBeTruthy();
+    expect(lead?.needsAttentionReason).toBe("interested");
   });
 
   it("never fails the webhook if the notification target is unreachable", async () => {
@@ -2739,6 +2743,10 @@ describe("chatbot auto-reply on inbound messages", () => {
     expect(lastNotifyRequestOptions?.method).toBe("POST");
     const body = JSON.parse(lastNotifyRequestBody);
     expect(body.event).toBe("needs_human_reply");
+
+    const lead = await stores.leadStore.getLeadById(tenant.id, LEAD.id);
+    expect(lead?.needsAttentionAt).toBeTruthy();
+    expect(lead?.needsAttentionReason).toBe("needs_human_reply");
   });
 
   it("never calls the LLM for a not_interested reply — sends a fixed closer instead", async () => {

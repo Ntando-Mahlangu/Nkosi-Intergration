@@ -221,6 +221,12 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
   loop — it's a direct HTTP request/response on the client's own website),
   but STOP/opt-out handling and the compliance boundary above both still
   apply identically.
+- **A manual reply an operator sends from the dashboard's needs-attention
+  inbox** (`POST /leads/:id/reply`, see README "Needs-attention inbox") is a
+  human-authored message, not the chatbot — none of the bot-disclosure
+  rules above apply to it. It still goes out through the same
+  SMS/WhatsApp/Email/chat channels, so STOP/opt-out handling and the other
+  per-channel requirements above still apply.
 
 ## Data handling
 

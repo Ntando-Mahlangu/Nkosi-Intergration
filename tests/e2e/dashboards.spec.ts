@@ -538,6 +538,55 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
     await expect(rowsAfter).toHaveCount(rowsBefore + 1);
     await expect(page.locator("#all-leads")).toContainText("Imported Test Lead");
   });
+
+  test("the needs-attention inbox shows a flagged lead, lets an operator reply, and clears once resolved", async ({
+    page,
+  }) => {
+    // Flags lead-002 (Bongani Dube, a sample lead with an email on file) via
+    // a real inbound "interested" reply through the SendGrid webhook path —
+    // the exact mechanism recordInboundAndClassify/flagNeedsAttention uses in
+    // production (src/webhooks/index.ts). Uses this specific lead (rather
+    // than "the first row", like the convert test above) so it doesn't
+    // collide with other tests in this fullyParallel suite that mutate the
+    // shared in-memory demo tenant.
+    const form = new FormData();
+    form.set("from", "Bongani Dube <bongani.dube@example.com>");
+    form.set("text", "yes I'm interested, let's do it");
+    const flagRes = await fetch(`${BASE_URL}/webhooks/demo/sendgrid/email?token=demo-key`, {
+      method: "POST",
+      body: form,
+    });
+    expect(flagRes.status).toBe(204);
+
+    await page.goto("/dashboard.html");
+    await page.click("#advanced-toggle");
+    await page.fill("#api-key", "demo-key");
+    await page.click("#connect-btn");
+    await expect(page.locator("#app")).toBeVisible();
+
+    const attentionRow = page.locator("#attention-list .lead-row", { hasText: "Bongani Dube" });
+    await expect(attentionRow).toBeVisible();
+    await expect(attentionRow).toContainText("Interested");
+
+    const allLeadsRow = page.locator("#all-leads .lead-row", { hasText: "Bongani Dube" });
+    await expect(allLeadsRow).toContainText("needs attention");
+
+    await attentionRow.click();
+    await expect(page.locator("#overlay")).toHaveClass(/open/);
+    await expect(page.locator("#detail-attention-row")).toBeVisible();
+    await expect(page.locator("#detail-attention-label")).toContainText("Interested");
+
+    await page.fill("#detail-reply-text", "Thanks for your interest! Calling you now.");
+    await page.click("#detail-reply-send");
+
+    await expect(page.locator("#detail-reply-status-msg")).toHaveText("Sent.");
+    await expect(page.locator("#detail-attention-row")).toBeHidden();
+    await expect(page.locator("#detail-thread")).toContainText("Thanks for your interest! Calling you now.");
+
+    await page.click("#detail-close-btn");
+    await expect(page.locator("#attention-list")).not.toContainText("Bongani Dube");
+    await expect(allLeadsRow).not.toContainText("needs attention");
+  });
 });
 
 test.describe("Reports (public/reports.html, ROI/activity view)", () => {

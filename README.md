@@ -434,11 +434,13 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | DELETE | `/admin/tenants/:id` | Permanently delete a tenant (admin) — cascades to its leads/messages in Postgres; no undo |
 | GET | `/admin/notifications/failed` | Notifications ("interested"/escalation) that failed to reach `notifyWebhookUrl` even after retries — `pending` ones are still being retried by the worker, `dead` ones gave up and need attention |
 | GET | `/admin/audit-log` | Admin action history (tenant create/update/delete/key-rotation), newest first. Optional `?limit=&offset=` |
-| GET | `/leads` | List the tenant's leads. Optional `?limit=&offset=`; always sets `X-Total-Count` |
+| GET | `/leads` | List the tenant's leads. Optional `?limit=&offset=`; always sets `X-Total-Count`. Optional `?needsAttention=true` restricts to leads currently in the needs-attention inbox (see below) |
 | GET | `/leads/plan` | Dry run: scored + composed initial/follow-up/win-back plans, nothing sent. Same optional pagination |
 | GET | `/leads/:id/messages` | Conversation history for one lead (includes delivery status) |
 | PATCH | `/leads/:id` | Update one lead's `name`/`requestedService`/`previousQuote`/`notes`/`preferredChannel`/`appointmentStatus`/`appointmentAt`/`marketingOptIn`. Never accepts `status` — that's compliance-sensitive and only ever set by the classify/workflow logic (except the one explicit transition below) |
 | POST | `/leads/:id/convert` | Marks a lead `status: "converted"` (+ `convertedAt`); optional `{marketingOptIn}` records this specific lead's own opt-in to later win-back messaging — see `COMPLIANCE.md` "Win-back messaging for past customers" |
+| POST | `/leads/:id/reply` | Sends a real reply on an operator's behalf — `{message, channel?}`. Defaults to the same channel `selectChannel` would pick automatically; `channel` can override it (`sms`/`whatsapp`/`email`/`chat`). Logs the send as `kind: "manual_reply"` and clears the lead's needs-attention flag. A `"chat"` reply is recorded but can't be pushed live into an already-open widget tab (no WebSocket/SSE infra) — it surfaces next time that visitor's widget polls |
+| POST | `/leads/:id/mark-handled` | Clears a lead's needs-attention flag without sending anything — for when an operator resolved it some other way (a phone call, etc.) |
 | DELETE | `/leads/:id` | Permanently delete one lead (and its messages, cascaded in Postgres) — a right-to-erasure request for a specific person, distinct from the automatic retention purge (which never touches `do_not_contact`/`opted_out` leads; see `COMPLIANCE.md`) |
 | POST | `/leads/import` | Bulk-create leads from a CSV body (`{"csv": "..."}`), same columns/validation as `npm run import-leads`; returns `{imported, skipped, duplicates}`. Skips (not merges) a row whose phone/email already matches an existing lead for this tenant, or an earlier row in the same file — same dedupe as the CLI script (`src/leadImport.ts#createLeadsDeduped`) |
 | GET | `/leads/export` | Full-fidelity export of every lead field, as CSV (default) or `?format=json` — for a client's own records or a data right-of-access request |
@@ -534,6 +536,32 @@ is the three public endpoints it's wired into (`POST .../start`,
 visitor to the same site — `formKey` alone only scopes a caller to *a*
 tenant's widget, not to one specific thread. See COMPLIANCE.md "Bot
 disclosure" for what applies to this channel.
+
+## Needs-attention inbox
+
+Every time a lead's reply gets classified `"interested"`, or the auto-reply
+chatbot escalates instead of answering, the lead is flagged in-app — not
+just via `notifyWebhookUrl` (Slack/custom webhook), which is best-effort and
+easy to miss. `src/notify.ts#flagNeedsAttention` is the single place this
+happens, called from both `recordInboundAndClassify`
+(`src/webhooks/index.ts`, real SMS/WhatsApp/email) and `answerChatMessage`
+(`src/chatWidget.ts`, the website chat widget).
+
+A flagged lead gets `needsAttentionAt` (when it was first flagged —
+deliberately never overwritten by a second inbound message while still
+unresolved, so the wait-time shown in the dashboard reflects how long it's
+actually been waiting) and `needsAttentionReason`
+(`"interested"` | `"needs_human_reply"`). The dashboard's "Needs attention"
+section (`public/dashboard.html`) lists every flagged lead, oldest-waiting
+first; opening one shows a reply box right in the lead detail panel.
+
+An operator resolves a flagged lead one of two ways:
+
+- `POST /leads/:id/reply` — sends a real message through the lead's usual
+  channel (or an explicit override) and clears the flag. Logged as
+  `kind: "manual_reply"`, same message history as every other send.
+- `POST /leads/:id/mark-handled` — clears the flag without sending anything,
+  for when the operator resolved it some other way (a phone call, etc.).
 
 ## Localization
 

@@ -122,6 +122,24 @@ export interface Lead {
    * hashed at rest the same way otpCodeHash/passwordResetTokenHash are.
    */
   chatTokenHash?: string;
+  /**
+   * Set the moment this lead first needs a human to look at it — an
+   * "interested" reply, or a question/unknown reply the auto-reply chatbot
+   * escalated instead of answering (see src/notify.ts's notifyHumanAttention
+   * call sites in src/webhooks/index.ts and src/chatWidget.ts). Drives the
+   * dashboard's "Needs attention" inbox (`GET /leads?needsAttention=true`)
+   * and the worker's stale-escalation SLA alert (src/dataRetention.ts-
+   * adjacent worker tick). Deliberately never overwritten by a second
+   * inbound message while already set — resetting it would understate how
+   * long this has actually been waiting. Cleared by `POST /leads/:id/reply`
+   * (a real reply was sent) or `POST /leads/:id/mark-handled` (resolved some
+   * other way, e.g. a phone call).
+   */
+  needsAttentionAt?: string;
+  /** Why `needsAttentionAt` is set — see its own doc comment. */
+  needsAttentionReason?: "interested" | "needs_human_reply";
+  /** Set once an operator-alert has already fired for this specific unresolved needsAttentionAt, so the worker never re-alerts on every tick for the same stale item. Cleared along with needsAttentionAt. */
+  attentionAlertedAt?: string;
 }
 
 export interface ScoredLead {
@@ -504,8 +522,10 @@ export interface Message {
    * = the knowledge-base-grounded chatbot, "closer" = the fixed
    * not-interested acknowledgment, "appointment_reminder" = the 24-hours-
    * before nudge (see src/appointmentReminder.ts), "win_back" = a periodic
-   * check-in to an opted-in past customer (see src/winback.ts). Inbound
+   * check-in to an opted-in past customer (see src/winback.ts),
+   * "manual_reply" = a human operator typed this directly from the
+   * dashboard's "Needs attention" inbox (`POST /leads/:id/reply`). Inbound
    * messages leave this unset.
    */
-  kind?: "campaign" | "auto_reply" | "closer" | "appointment_reminder" | "win_back";
+  kind?: "campaign" | "auto_reply" | "closer" | "appointment_reminder" | "win_back" | "manual_reply";
 }

@@ -335,6 +335,40 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(updated?.chatTokenHash).toBe("newhash456");
   });
 
+  it("round-trips a lead's needsAttentionAt/needsAttentionReason/attentionAlertedAt, and clears them together", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant(TENANT);
+    const leadStore = new PostgresLeadStore(pool);
+    await leadStore.createLead(LEAD);
+
+    const flagged = await leadStore.updateLead(TENANT.id, LEAD.id, {
+      needsAttentionAt: new Date("2026-02-01T00:00:00.000Z").toISOString(),
+      needsAttentionReason: "interested",
+    });
+    expect(flagged?.needsAttentionAt).toBe("2026-02-01T00:00:00.000Z");
+    expect(flagged?.needsAttentionReason).toBe("interested");
+    expect(flagged?.attentionAlertedAt).toBeUndefined();
+
+    const alerted = await leadStore.updateLead(TENANT.id, LEAD.id, {
+      attentionAlertedAt: new Date("2026-02-01T01:00:00.000Z").toISOString(),
+    });
+    expect(alerted?.attentionAlertedAt).toBe("2026-02-01T01:00:00.000Z");
+
+    const reread = await leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(reread?.needsAttentionAt).toBe("2026-02-01T00:00:00.000Z");
+    expect(reread?.needsAttentionReason).toBe("interested");
+    expect(reread?.attentionAlertedAt).toBe("2026-02-01T01:00:00.000Z");
+
+    const cleared = await leadStore.updateLead(TENANT.id, LEAD.id, {
+      needsAttentionAt: undefined,
+      needsAttentionReason: undefined,
+      attentionAlertedAt: undefined,
+    });
+    expect(cleared?.needsAttentionAt).toBeUndefined();
+    expect(cleared?.needsAttentionReason).toBeUndefined();
+    expect(cleared?.attentionAlertedAt).toBeUndefined();
+  });
+
   it("round-trips a tenant's reference-only contactPhone/contactEmail/website", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant({

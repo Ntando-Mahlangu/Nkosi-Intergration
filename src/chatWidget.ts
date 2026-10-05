@@ -3,7 +3,7 @@ import type { Lead, Message, ReplyClassification, Tenant } from "./types.js";
 import { classifyReply } from "./reply/classify.js";
 import { generateAutoReply } from "./chatbot.js";
 import { composeCloserBody } from "./webhooks/index.js";
-import { notifyHumanAttention } from "./notify.js";
+import { flagNeedsAttention } from "./notify.js";
 import { generateId } from "./idgen.js";
 
 export interface ChatWidgetReply {
@@ -82,7 +82,7 @@ export async function answerChatMessage(
   await stores.leadStore.updateLead(tenant.id, lead.id, { status: "responded" });
 
   if (classification === "interested") {
-    void notifyHumanAttention(stores.notificationStore, tenant, lead, "chat", body, "interested");
+    await flagNeedsAttention(stores, tenant, lead, "chat", body, "interested");
     return { classification, displayText: ESCALATION_NOTICE };
   }
 
@@ -92,6 +92,6 @@ export async function answerChatMessage(
     await logOutbound(auto.replyBody, "auto_reply");
     return { classification, displayText: auto.replyBody };
   }
-  void notifyHumanAttention(stores.notificationStore, tenant, lead, "chat", body, "needs_human_reply");
+  await flagNeedsAttention(stores, tenant, lead, "chat", body, "needs_human_reply");
   return { classification, displayText: ESCALATION_NOTICE };
 }
