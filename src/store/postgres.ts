@@ -225,7 +225,7 @@ const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_ho
   contact_phone, contact_email, website, terms_accepted_at, terms_version,
   consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days,
   email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, number_hosting_order,
-  login_phone, otp_code_hash, otp_expires_at, otp_attempts, win_back_enabled, win_back_cooldown_days`;
+  login_phone, otp_code_hash, otp_expires_at, otp_attempts, win_back_enabled, win_back_cooldown_days, attention_sla_hours`;
 
 /**
  * Tenant provider credentials (Twilio auth tokens, SendGrid API keys) are
@@ -331,6 +331,7 @@ export class PostgresTenantStore implements TenantStore {
       otpAttempts: row.otp_code_hash ? ((row.otp_attempts as number | null) ?? 0) : undefined,
       winBackEnabled: Boolean(row.win_back_enabled),
       winBackCooldownDays: (row.win_back_cooldown_days as number | null) ?? undefined,
+      attentionSlaHours: (row.attention_sla_hours as number | null) ?? undefined,
       createdAt: new Date(row.created_at as string).toISOString(),
     };
   }
@@ -384,8 +385,8 @@ export class PostgresTenantStore implements TenantStore {
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days, email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, login_phone, win_back_enabled, win_back_cooldown_days)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days, email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, login_phone, win_back_enabled, win_back_cooldown_days, attention_sla_hours)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)`,
       [
         tenant.id,
         tenant.name,
@@ -422,6 +423,7 @@ export class PostgresTenantStore implements TenantStore {
         tenant.loginPhone ?? null,
         tenant.winBackEnabled ?? false,
         tenant.winBackCooldownDays ?? null,
+        tenant.attentionSlaHours ?? null,
       ]
     );
     return tenant;
@@ -489,6 +491,7 @@ export class PostgresTenantStore implements TenantStore {
     if ("otpAttempts" in patch) push("otp_attempts", patch.otpAttempts ?? 0);
     if ("winBackEnabled" in patch) push("win_back_enabled", patch.winBackEnabled ?? false);
     if ("winBackCooldownDays" in patch) push("win_back_cooldown_days", patch.winBackCooldownDays ?? null);
+    if ("attentionSlaHours" in patch) push("attention_sla_hours", patch.attentionSlaHours ?? null);
     if ("createdAt" in patch) push("created_at", patch.createdAt);
 
     if (setClauses.length === 0) return this.getTenant(id);

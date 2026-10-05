@@ -437,6 +437,14 @@ and this app pings it on:
   (Paddle)" above) — this is the agency's own alert, distinct from a
   tenant's `notifyWebhookUrl`, since it's the agency (not the client) that
   needs to know one of its clients just lost billing coverage.
+- A lead still sitting unresolved in a tenant's needs-attention inbox (see
+  README "Needs-attention inbox") past that tenant's own configured
+  `attentionSlaHours` (off by default — set per tenant via `PATCH /tenants/me`
+  or `public/settings.html`'s "Needs-attention alerting" panel). Fires once
+  per unresolved item (`src/worker.ts`'s `alertStaleAttentionItems`, checked
+  every worker tick), not repeatedly — also distinct from `notifyWebhookUrl`,
+  since it's a safety net for the agency in case the client's own team
+  doesn't notice the inbox itself.
 
 This is entirely optional — unset (the default), none of it fires and
 you'd only notice via logs. It's a lightweight, dependency-free floor, not

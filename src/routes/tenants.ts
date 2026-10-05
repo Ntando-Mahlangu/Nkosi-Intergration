@@ -60,6 +60,8 @@ interface TenantConfigBody {
   winBackEnabled?: boolean;
   /** Days between win-back check-ins. See Tenant.winBackCooldownDays. */
   winBackCooldownDays?: number;
+  /** Opt-in: hours before a stale needs-attention item fires an operator alert. See Tenant.attentionSlaHours. `null` clears it (disables SLA alerting). */
+  attentionSlaHours?: number | null;
 }
 
 const MAX_CONTACT_FIELD_LENGTH = 320;
@@ -199,6 +201,20 @@ function isValidWinBackCooldownDays(value: unknown): boolean {
   );
 }
 
+const MIN_ATTENTION_SLA_HOURS = 1;
+const MAX_ATTENTION_SLA_HOURS = 720; // 30 days
+
+/** Unlike winBackCooldownDays, null is also valid — the explicit way to disable SLA alerting once it was set. */
+function isValidAttentionSlaHours(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= MIN_ATTENTION_SLA_HOURS &&
+    value <= MAX_ATTENTION_SLA_HOURS
+  );
+}
+
 /**
  * Validates a tenant config patch/create body against the current (pre-merge)
  * tenant state, if any — so e.g. enabling autoReplyEnabled without touching
@@ -255,6 +271,9 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   if (!isValidWinBackCooldownDays(body.winBackCooldownDays)) {
     return `winBackCooldownDays must be a whole number from ${MIN_WIN_BACK_COOLDOWN_DAYS} to ${MAX_WIN_BACK_COOLDOWN_DAYS}`;
   }
+  if (!isValidAttentionSlaHours(body.attentionSlaHours)) {
+    return `attentionSlaHours must be a whole number from ${MIN_ATTENTION_SLA_HOURS} to ${MAX_ATTENTION_SLA_HOURS}, or null to disable it`;
+  }
   // null is allowed through (same precedent as templates above) so the
   // admin API has a way to explicitly clear a tenant's subscription link.
   if (
@@ -298,6 +317,7 @@ function buildTenantPatch(
   if (body.loginPhone !== undefined) patch.loginPhone = body.loginPhone ? body.loginPhone.trim() : undefined;
   if (body.winBackEnabled !== undefined) patch.winBackEnabled = body.winBackEnabled;
   if (body.winBackCooldownDays !== undefined) patch.winBackCooldownDays = body.winBackCooldownDays;
+  if (body.attentionSlaHours !== undefined) patch.attentionSlaHours = body.attentionSlaHours ?? undefined;
   // Admin-only (gated the same as status/paddleSubscriptionId below) — the
   // agency operator sets this after independently verifying 10DLC/WhatsApp
   // approval with the client, not something a tenant self-attests via
@@ -723,6 +743,7 @@ export function createTenantRoutes({
         loginPhone: typeof body.loginPhone === "string" ? body.loginPhone.trim() : undefined,
         winBackEnabled: body.winBackEnabled ?? false,
         winBackCooldownDays: body.winBackCooldownDays,
+        attentionSlaHours: body.attentionSlaHours ?? undefined,
         // Every tenant gets one at creation — see Tenant.publicFormKey.
         publicFormKey: generateFormKey(),
         createdAt: new Date().toISOString(),

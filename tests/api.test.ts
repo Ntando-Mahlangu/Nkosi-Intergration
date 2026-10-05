@@ -2350,6 +2350,46 @@ describe("tenant self-service settings", () => {
     expect(notAnInteger.status).toBe(400);
   });
 
+  it("lets a tenant set, and then clear with null, an attentionSlaHours threshold", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const set = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ attentionSlaHours: 12 });
+    expect(set.status).toBe(200);
+    expect(set.body.attentionSlaHours).toBe(12);
+
+    const cleared = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ attentionSlaHours: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.attentionSlaHours).toBeUndefined();
+  });
+
+  it("rejects an attentionSlaHours outside the allowed range", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const tooLarge = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ attentionSlaHours: 1000 });
+    expect(tooLarge.status).toBe(400);
+
+    const notAnInteger = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ attentionSlaHours: 2.5 });
+    expect(notAnInteger.status).toBe(400);
+  });
+
   it("rejects an oversized knowledge base", async () => {
     const stores = buildStores();
     const app = express();

@@ -190,4 +190,30 @@ test.describe("Settings (public/settings.html)", () => {
     await page.click("#save-btn");
     await expect(page.locator("#save-status")).toHaveText("Saved.");
   });
+
+  test("attention-SLA hours round-trips, validates its range, and clears on a blank save", async ({ page }) => {
+    await connect(page);
+    await expect(page.locator("#attention-sla-hours")).toHaveValue("");
+
+    await page.fill("#attention-sla-hours", "12");
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toHaveText("Saved.");
+
+    await page.reload();
+    await expect(page.locator("#app")).toBeVisible();
+    await expect(page.locator("#attention-sla-hours")).toHaveValue("12");
+
+    await page.fill("#attention-sla-hours", "1000"); // above the 720-hour ceiling
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toContainText("1 to 720");
+
+    // Clearing the field (rather than a syntactically invalid value) is how
+    // this gets disabled — confirm a blank save round-trips back to blank.
+    await page.fill("#attention-sla-hours", "");
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toHaveText("Saved.");
+    await page.reload();
+    await expect(page.locator("#app")).toBeVisible();
+    await expect(page.locator("#attention-sla-hours")).toHaveValue("");
+  });
 });

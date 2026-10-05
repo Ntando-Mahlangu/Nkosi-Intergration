@@ -378,6 +378,23 @@
     </section>
 
     <section>
+      <h2>Needs-attention alerting</h2>
+      <div class="desc">
+        Every "interested" reply, and every chatbot escalation, already shows
+        up in the dashboard's "Needs attention" inbox. Set an hours threshold
+        here to also get a one-time alert (sent to LeadRecovery's own
+        operator, not this business's team) if one sits unresolved past it —
+        a safety net in case the dashboard itself goes unwatched for a
+        while. Leave blank to disable this alerting.
+      </div>
+
+      <div class="field" style="margin-top:14px;">
+        <label for="attention-sla-hours">Alert after (hours)</label>
+        <input type="number" id="attention-sla-hours" min="1" max="720" placeholder="Disabled" />
+      </div>
+    </section>
+
+    <section>
       <h2>Data retention</h2>
       <div class="desc">
         How long after a lead is fully closed out (unqualified, fraudulent, or
@@ -551,6 +568,7 @@
     document.getElementById("data-retention-days").value = tenant.dataRetentionDays || "";
     document.getElementById("win-back-enabled").checked = Boolean(tenant.winBackEnabled);
     document.getElementById("win-back-cooldown-days").value = tenant.winBackCooldownDays || "";
+    document.getElementById("attention-sla-hours").value = tenant.attentionSlaHours || "";
     updateKbCounter();
     updateAutoReplyAvailability();
   }
@@ -859,6 +877,21 @@ document.getElementById("leadrecovery-form").addEventListener("submit", function
         return;
       }
       patchBody.winBackCooldownDays = winBackCooldownDays;
+    }
+    const attentionSlaRaw = val("attention-sla-hours");
+    if (attentionSlaRaw) {
+      const attentionSlaHours = Number(attentionSlaRaw);
+      if (!Number.isInteger(attentionSlaHours) || attentionSlaHours < 1 || attentionSlaHours > 720) {
+        saveStatus.textContent = "Alert-after hours must be a whole number from 1 to 720.";
+        saveStatus.className = "save-status err";
+        return;
+      }
+      patchBody.attentionSlaHours = attentionSlaHours;
+    } else {
+      // Leaving the field blank is how this gets disabled once it was set —
+      // unlike the other optional number fields above, this one sends an
+      // explicit null rather than omitting the key entirely.
+      patchBody.attentionSlaHours = null;
     }
 
     btn.disabled = true;

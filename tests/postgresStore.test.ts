@@ -321,6 +321,17 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(reread?.lastWinBackAt).toBe("2026-07-01T00:00:00.000Z");
   });
 
+  it("round-trips a tenant's attentionSlaHours, and clears it with null", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant({ ...TENANT, attentionSlaHours: 24 });
+
+    const reread = await tenantStore.getTenant(TENANT.id);
+    expect(reread?.attentionSlaHours).toBe(24);
+
+    const cleared = await tenantStore.updateTenant(TENANT.id, { attentionSlaHours: undefined });
+    expect(cleared?.attentionSlaHours).toBeUndefined();
+  });
+
   it("round-trips a lead's chatTokenHash (chat widget session)", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant(TENANT);

@@ -418,7 +418,7 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | POST | `/auth/request-code` | Phone-number sign-in, step 1 (the primary path): `{phone}` → always the same generic response; texts a one-time code if that phone matches a tenant's `loginPhone`. The code is never returned over the API — only ever by text (or logged server-side if `PLATFORM_SMS_FROM_NUMBER` isn't configured) |
 | POST | `/auth/verify-code` | Phone-number sign-in, step 2: `{phone, code}` → `{apiKey, tenant}`. Locks out after 5 wrong attempts until a fresh code is requested |
 | GET | `/tenants/me` | The authenticated tenant's public info |
-| PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled/botDisclosureEnabled/dataRetentionDays/email/winBackEnabled/winBackCooldownDays |
+| PATCH | `/tenants/me` | Tenant self-service: update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled/botDisclosureEnabled/dataRetentionDays/email/winBackEnabled/winBackCooldownDays/attentionSlaHours |
 | POST | `/tenants/me/accept-terms` | Records the tenant's acceptance of the current Terms of Service/Privacy Policy version — required before `POST /workflow/run`, the worker, or any inbound webhook auto-reply will actually send anything |
 | POST | `/tenants/me/change-password` | `{currentPassword?, newPassword}` — self-service while already signed in; `currentPassword` is only required if one is already set |
 | POST | `/public/leads/:tenantId` | Public, no tenant-auth — a lead-capture form embedded on the tenant's own website posts here with `{formKey, name?, phone?, email?, requestedService?, notes?}` (`formKey` is `Tenant.publicFormKey`, safe to publish — it can only ever create a lead through this one endpoint) |
@@ -562,6 +562,14 @@ An operator resolves a flagged lead one of two ways:
   `kind: "manual_reply"`, same message history as every other send.
 - `POST /leads/:id/mark-handled` — clears the flag without sending anything,
   for when the operator resolved it some other way (a phone call, etc.).
+
+Optionally, set `Tenant.attentionSlaHours` (via `PATCH /tenants/me` or
+`public/settings.html`'s "Needs-attention alerting" panel) to also get a
+one-time operator alert (`OPERATOR_ALERT_WEBHOOK_URL` — see "Alerting" in
+`DEPLOYMENT.md`) if an item sits unresolved past that many hours — a safety
+net in case the dashboard itself goes unwatched. Checked once per worker
+tick (`src/worker.ts`'s `alertStaleAttentionItems`); off by default per
+tenant, and fires only once per unresolved item (`Lead.attentionAlertedAt`).
 
 ## Localization
 

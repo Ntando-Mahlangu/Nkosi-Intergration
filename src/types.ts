@@ -457,6 +457,17 @@ export interface Tenant {
   winBackEnabled?: boolean;
   /** Days between win-back check-ins for one lead. Unset uses DEFAULT_WIN_BACK_COOLDOWN_DAYS (src/winback.ts). */
   winBackCooldownDays?: number;
+  /**
+   * Opt-in: when set, a lead still unresolved in the needs-attention inbox
+   * (see Lead.needsAttentionAt) this many hours after being flagged fires a
+   * one-time operator alert (src/operatorAlert.ts, checked by the worker —
+   * see src/worker.ts's alertStaleAttentionItems) so the agency can nudge
+   * the client before a hot lead goes cold. Unset disables SLA alerting for
+   * this tenant entirely — this is agency-facing (sendOperatorAlert, not
+   * notifyWebhookUrl), so a reasonable default would alert for every
+   * tenant regardless of whether they want it monitored this way.
+   */
+  attentionSlaHours?: number;
   createdAt: string;
 }
 
