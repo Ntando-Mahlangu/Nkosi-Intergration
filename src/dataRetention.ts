@@ -37,13 +37,25 @@ export function retentionDaysFor(tenant: Pick<Tenant, "dataRetentionDays">): num
  * True if `lead` is both closed-out and purge-eligible (PURGE_ELIGIBLE_STATUSES)
  * and has been inactive for at least `retentionDays` — the two conditions
  * the worker's purge (see worker.ts) requires before permanently deleting a
- * lead and its message history. Ages off `lastContactedAt` when set,
- * otherwise `createdAt` (a lead that was imported already-closed and never
- * actually contacted).
+ * lead and its message history. Ages off whichever of `lastContactedAt`/
+ * `lastWinBackAt` is more recent (falling back to `createdAt` if neither is
+ * set — a lead imported already-closed and never actually contacted).
+ *
+ * lastWinBackAt matters here because sendWinBackPlans (workflow.ts)
+ * deliberately never touches lastContactedAt when it sends a win-back
+ * check-in — correctly, so a win-back send doesn't look like a fresh
+ * contacted_no_response cycle. But that means a converted lead with
+ * marketingOptIn getting periodic win-backs for years would otherwise
+ * still age off its frozen original lastContactedAt and get purged —
+ * destroying the exact marketingOptIn/consent record this function's own
+ * opted_out/do_not_contact exemption above exists to protect, for the
+ * identical reason: a later re-import of the same contact would come back
+ * in as a brand-new lead with no memory of what they'd opted into.
  */
 export function isPastRetention(lead: Lead, retentionDays: number, now: Date = new Date()): boolean {
   if (!PURGE_ELIGIBLE_STATUSES.has(lead.status)) return false;
-  const reference = lead.lastContactedAt ?? lead.createdAt;
+  const candidates = [lead.lastContactedAt, lead.lastWinBackAt, lead.createdAt].filter((t): t is string => Boolean(t));
+  const reference = candidates.reduce((latest, t) => (new Date(t) > new Date(latest) ? t : latest));
   const ageMs = now.getTime() - new Date(reference).getTime();
   return ageMs >= retentionDays * 24 * 60 * 60 * 1000;
 }

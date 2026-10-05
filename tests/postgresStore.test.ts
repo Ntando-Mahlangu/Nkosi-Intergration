@@ -333,6 +333,40 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(cleared?.attentionSlaHours).toBeUndefined();
   });
 
+  it("round-trips numberHostingOrder/otp fields when set at createTenant() time, not just via updateTenant()", async () => {
+    // Regression test: createTenant()'s INSERT previously omitted these four
+    // columns entirely (silently relying on DB defaults/NULL) even though
+    // the SELECT/fromRow/updateTenant all support them — dormant only
+    // because every real caller happens to set these later via
+    // updateTenant, never at creation time.
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant({
+      ...TENANT,
+      numberHostingOrder: {
+        orderSid: "PNxxxx",
+        phoneNumber: "+15551234567",
+        status: "pending",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      otpCodeHash: "otp-hash-1",
+      otpExpiresAt: "2026-01-01T00:10:00.000Z",
+      otpAttempts: 2,
+    });
+
+    const reread = await tenantStore.getTenant(TENANT.id);
+    expect(reread?.numberHostingOrder).toEqual({
+      orderSid: "PNxxxx",
+      phoneNumber: "+15551234567",
+      status: "pending",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(reread?.otpCodeHash).toBe("otp-hash-1");
+    expect(reread?.otpExpiresAt).toBe("2026-01-01T00:10:00.000Z");
+    expect(reread?.otpAttempts).toBe(2);
+  });
+
   it("round-trips a lead's chatTokenHash (chat widget session)", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant(TENANT);

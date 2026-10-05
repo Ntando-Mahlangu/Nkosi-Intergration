@@ -101,6 +101,7 @@
     <table>
       <tr><th>Category</th><th>Examples</th></tr>
       <tr><td>Your account info</td><td>Business name, timezone, contact phone/email/website you provide, API key</td></tr>
+      <tr><td>Team member accounts</td><td>If you add additional people to your account ("team accounts"), each one's email address and role — no payment or billing data is attached to a team member</td></tr>
       <tr><td>Your lead data</td><td>Names, phone numbers, email addresses, source, notes, appointment details you upload or connect via webhook/CSV</td></tr>
       <tr><td>Message content</td><td>Outbound messages sent on your behalf and inbound replies received, plus delivery status</td></tr>
       <tr><td>Configuration</td><td>Message template wording, and any knowledge-base text you provide for the automated reply assistant</td></tr>
@@ -157,8 +158,13 @@
       We retain your account and lead data for as long as your account is
       active, and for a reasonable period afterward for legal/accounting
       purposes unless you request deletion sooner. Deleting a tenant
-      account permanently removes its leads and message history from our
-      systems (this cascades immediately and cannot be undone).
+      account permanently removes its leads, message history, and any
+      team member accounts from our systems (this cascades immediately
+      and cannot be undone). An internal record that an account existed
+      and what administrative actions were taken on it (our own audit
+      log) is kept independently of that deletion, for our own
+      accountability — it records only an account identifier and the
+      action taken, not your leads' data.
     </p>
   </section>
 

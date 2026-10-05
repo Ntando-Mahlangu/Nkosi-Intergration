@@ -74,4 +74,31 @@ describe("isPastRetention", () => {
     expect(isPastRetention(lead, 30, now)).toBe(true);
     expect(isPastRetention(lead, 31, now)).toBe(false);
   });
+
+  it(
+    "regression: a converted lead still getting win-back check-ins doesn't age off its frozen " +
+      "lastContactedAt — sendWinBackPlans (workflow.ts) never touches lastContactedAt, so without " +
+      "considering lastWinBackAt here, an actively-managed customer relationship (with marketingOptIn " +
+      "consent on file) would get purged, destroying that consent record",
+    () => {
+      const lead = makeLead({
+        status: "converted",
+        createdAt: new Date("2020-01-01").toISOString(),
+        lastContactedAt: new Date("2020-06-01").toISOString(), // frozen at original conversion
+        lastWinBackAt: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString(), // a win-back sent 10 days ago
+      });
+      // Past 365 days since lastContactedAt alone, but win-back activity is recent.
+      expect(isPastRetention(lead, 365, now)).toBe(false);
+    }
+  );
+
+  it("still purges a converted lead whose win-back activity has also gone cold", () => {
+    const lead = makeLead({
+      status: "converted",
+      createdAt: new Date("2000-01-01").toISOString(),
+      lastContactedAt: new Date("2000-01-01").toISOString(),
+      lastWinBackAt: new Date("2000-06-01").toISOString(), // also long past the retention window
+    });
+    expect(isPastRetention(lead, 365, now)).toBe(true);
+  });
 });
