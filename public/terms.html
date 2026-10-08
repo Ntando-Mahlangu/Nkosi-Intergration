@@ -6,64 +6,135 @@
 <title>Terms of Service</title>
 <style>
   :root {
-    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --bg: #14171f;
-    --panel: #1b1e27;
-    --border: rgba(201, 168, 117, 0.22);
-    --text: #eee7d8;
-    --muted: #8b8677;
-    --accent: #c9a875;
-    --warn: #d99a4e;
+    --ink: #0b1220;
+    --body: #4b5768;
+    --muted: #8591a1;
+    --bg-bottom: #e4f3fc;
+    --panel: #ffffff;
+    --border: #e6ebf1;
+    --accent: #1479e0;
+    --accent2: #35c6f4;
+    --accent-soft: #eaf4fd;
+    --warn-bg: #fff7ed;
+    --warn-border: #fed7aa;
+    --warn-text: #9a5a16;
+    --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
     font-family: var(--sans);
-    background: var(--bg);
-    color: #e9e2d0;
-    line-height: 1.6;
+    color: var(--body);
+    line-height: 1.65;
+    background: linear-gradient(180deg, #ffffff 0%, #ffffff 60%, var(--bg-bottom) 100%);
   }
-  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.3; pointer-events: none; }
-  #vignette {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 45%, rgba(12,14,19,0.75) 100%);
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .nav-wrap { position: sticky; top: 16px; z-index: 20; padding: 0 20px; }
+  nav {
+    max-width: 1080px;
+    margin: 0 auto;
+    background: rgba(255,255,255,0.9);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: var(--shadow);
+    padding: 10px 10px 10px 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
   }
-  main { position: relative; z-index: 5; max-width: 760px; margin: 0 auto; padding: 40px 24px 100px; }
+  .logo { font-weight: 800; font-size: 19px; letter-spacing: -0.01em; color: var(--ink); white-space: nowrap; }
+  .logo .dot { color: var(--accent); }
+  .nav-links { display: flex; align-items: center; gap: 26px; }
+  .nav-links a { font-size: 14px; font-weight: 500; color: var(--body); text-decoration: none; }
+  .nav-links a:hover { color: var(--ink); text-decoration: none; }
+  .nav-links a[aria-current="page"] { color: var(--ink); }
+  .nav-right { display: flex; align-items: center; gap: 14px; }
+  .nav-right .login { font-size: 13.5px; font-weight: 500; color: var(--body); white-space: nowrap; text-decoration: none; }
+  .pill-btn {
+    display: inline-flex;
+    align-items: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff;
+    font-weight: 600;
+    font-size: 13.5px;
+    padding: 11px 20px;
+    border-radius: 999px;
+    box-shadow: 0 8px 20px rgba(20,121,224,0.3);
+    white-space: nowrap;
+    text-decoration: none;
+  }
+  @media (max-width: 760px) {
+    .nav-links { display: none; }
+  }
+
+  main { position: relative; max-width: 760px; margin: 0 auto; padding: 48px 24px 100px; }
+  .back-link { display: inline-block; margin-bottom: 20px; font-size: 12.5px; font-weight: 600; letter-spacing: 0.03em; }
+
   header { margin-bottom: 32px; }
-  header h1 { font-family: var(--serif); font-size: 28px; letter-spacing: 0.005em; color: var(--text); margin: 0 0 8px; font-weight: 400; }
-  header .meta { color: var(--muted); font-size: 12px; letter-spacing: 0.05em; }
-  a { color: var(--accent); }
-  a.back { display: inline-block; margin-bottom: 20px; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; }
+  header h1 { font-size: 32px; letter-spacing: -0.01em; color: var(--ink); margin: 0 0 8px; font-weight: 800; }
+  header .meta { color: var(--muted); font-size: 12.5px; letter-spacing: 0.03em; }
+
   .draft-notice {
-    background: rgba(217,154,78,0.08);
-    border: 1px solid rgba(217,154,78,0.4);
-    color: var(--warn);
-    border-radius: 8px;
-    padding: 14px 16px;
-    font-size: 12.5px;
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    color: var(--warn-text);
+    border-radius: 12px;
+    padding: 16px 18px;
+    font-size: 13px;
     line-height: 1.6;
     margin-bottom: 32px;
   }
-  section { margin-bottom: 28px; }
-  h2 { font-family: var(--serif); font-size: 17px; letter-spacing: 0.005em; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 14px; font-weight: 400; }
-  p, li { font-size: 13.5px; color: #e9e2d0; }
+  section {
+    margin-bottom: 20px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 24px;
+    box-shadow: var(--shadow);
+  }
+  h2 { font-size: 16px; letter-spacing: -0.005em; color: var(--ink); border-bottom: 1px solid var(--border); padding-bottom: 10px; margin: 0 0 14px; font-weight: 700; }
+  p, li { font-size: 13.8px; color: var(--body); }
   ul { padding-left: 20px; }
   li { margin-bottom: 6px; }
-  strong { color: var(--text); }
-  .placeholder { color: var(--warn); }
+  strong { color: var(--ink); }
+  .placeholder { color: #c2410c; font-weight: 600; }
+
+  footer {
+    padding: 28px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+  }
+  footer a { margin: 0 8px; color: var(--body); }
 </style>
 </head>
 <body>
 
-<div id="stars"></div>
-<div id="vignette"></div>
+<div class="nav-wrap">
+  <nav>
+    <div class="logo">Nkosi<span class="dot">.</span></div>
+    <div class="nav-links">
+      <a href="get-started.html">Home</a>
+      <a href="get-started.html#inquiry-form">Get a demo</a>
+      <a href="terms.html" aria-current="page">Terms</a>
+      <a href="privacy.html">Privacy</a>
+    </div>
+    <div class="nav-right">
+      <a class="login" href="index.html">Already a client? Log in</a>
+      <a class="pill-btn" href="get-started.html#inquiry-form">Request a Demo</a>
+    </div>
+  </nav>
+</div>
 
 <main>
-  <a class="back" href="index.html">&larr; Back to Command Center</a>
+  <a class="back-link" href="get-started.html">&larr; Back to Get Started</a>
 
   <div class="draft-notice">
     <strong>Draft — not legal advice.</strong> This is a starting-point template
@@ -250,21 +321,10 @@
   </section>
 </main>
 
-<script>
-(function () {
-  const el = document.getElementById("stars");
-  let svg = "<svg width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>";
-  for (let i = 0; i < 100; i++) {
-    const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 1.1 + 0.2;
-    const op = Math.random() * 0.5 + 0.1;
-    const dur = (Math.random() * 4 + 3).toFixed(2);
-    svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#d9cbb0" opacity="${op}">
-      <animate attributeName="opacity" values="${op};${op * 0.15};${op}" dur="${dur}s" repeatCount="indefinite" />
-    </circle>`;
-  }
-  svg += "</svg>";
-  el.innerHTML = svg;
-})();
-</script>
+<footer>
+  &copy; 2026 Nkosi Integrations &middot;
+  <a href="terms.html">Terms of Service</a> &middot;
+  <a href="privacy.html">Privacy Policy</a>
+</footer>
 </body>
 </html>
