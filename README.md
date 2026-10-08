@@ -1,6 +1,6 @@
 # LeadRecovery
 
-AI-powered, multi-tenant lead recovery and reactivation system by Nkosi Integrations.
+AI-powered, multi-tenant lead recovery and reactivation system by NDO Integrations.
 
 LeadRecovery finds leads a business already generated but never converted
 (missed calls, unanswered form submissions, abandoned bookings, cold quote

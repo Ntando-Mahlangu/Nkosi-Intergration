@@ -8,7 +8,7 @@ import type { Tenant } from "./types.js";
  */
 export const DEMO_TENANT: Tenant = {
   id: "demo",
-  name: "Nkosi Integrations (Demo)",
+  name: "NDO Integrations (Demo)",
   apiKey: "demo-key",
   timezone: "Africa/Johannesburg",
   devMode: true,

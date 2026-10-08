@@ -1,7 +1,7 @@
 {
   "name": "leadrecovery",
   "version": "0.2.0",
-  "description": "LeadRecovery — AI-powered lead recovery and reactivation system by Nkosi Integrations",
+  "description": "LeadRecovery — AI-powered lead recovery and reactivation system by NDO Integrations",
   "private": true,
   "type": "module",
   "main": "dist/index.js",

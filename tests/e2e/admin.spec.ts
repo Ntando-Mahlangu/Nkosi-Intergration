@@ -30,7 +30,7 @@ test.describe("Admin UI (public/admin.html)", () => {
     await page.goto("/admin.html");
     await expect(page.locator("#auth")).toBeVisible();
     await connect(page);
-    await expect(page.locator("#tenants")).toContainText("Nkosi Integrations (Demo)");
+    await expect(page.locator("#tenants")).toContainText("NDO Integrations (Demo)");
   });
 
   test("shows an error and stays on the gate for a bad admin key", async ({ page }) => {

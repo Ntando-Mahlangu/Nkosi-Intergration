@@ -59,7 +59,7 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
     await page.click("#connect-btn");
 
     await expect(page.locator("#gate")).toBeHidden();
-    await expect(page.locator("#tenant-label")).toHaveText("NKOSI INTEGRATIONS (DEMO)");
+    await expect(page.locator("#tenant-label")).toHaveText("NDO INTEGRATIONS (DEMO)");
 
     // The scene renders one <g class="node"> per category, each with a
     // live count derived from the real /leads response.
@@ -82,7 +82,7 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
     await page.click("#demo-btn");
 
     await expect(page.locator("#gate")).toBeHidden();
-    await expect(page.locator("#tenant-label")).toHaveText("NKOSI INTEGRATIONS (DEMO)");
+    await expect(page.locator("#tenant-label")).toHaveText("NDO INTEGRATIONS (DEMO)");
   });
 
   test("a magic link (?key=...) auto-connects without typing anything, and the key disappears from the address bar", async ({
@@ -94,7 +94,7 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
     await page.goto("/index.html?key=demo-key");
 
     await expect(page.locator("#gate")).toBeHidden();
-    await expect(page.locator("#tenant-label")).toHaveText("NKOSI INTEGRATIONS (DEMO)");
+    await expect(page.locator("#tenant-label")).toHaveText("NDO INTEGRATIONS (DEMO)");
 
     // The key must not linger in the visible URL/history once it's been used.
     await expect(page).toHaveURL(/\/index\.html$/);
@@ -246,7 +246,7 @@ test.describe("Command Center (public/index.html, the default landing page)", ()
 
     await page.reload();
     await expect(page.locator("#gate")).toBeHidden();
-    await expect(page.locator("#tenant-label")).toHaveText("NKOSI INTEGRATIONS (DEMO)");
+    await expect(page.locator("#tenant-label")).toHaveText("NDO INTEGRATIONS (DEMO)");
   });
 
   test("never flashes the login gate while reconnecting with a persisted session", async ({ page }) => {
@@ -335,7 +335,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
 
     await expect(page.locator("#auth")).toBeHidden();
     await expect(page.locator("#app")).toBeVisible();
-    await expect(page.locator("#tenant-name")).toHaveText("Nkosi Integrations (Demo)");
+    await expect(page.locator("#tenant-name")).toHaveText("NDO Integrations (Demo)");
     await expect(page.locator("#summary")).toContainText("queued");
     await expect(page.locator("#summary")).toContainText("skipped");
   });
@@ -600,7 +600,7 @@ test.describe("Reports (public/reports.html, ROI/activity view)", () => {
 
     await expect(page.locator("#auth")).toBeHidden();
     await expect(page.locator("#app")).toBeVisible();
-    await expect(page.locator("#tenant-name")).toHaveText("Nkosi Integrations (Demo)");
+    await expect(page.locator("#tenant-name")).toHaveText("NDO Integrations (Demo)");
 
     // The demo tenant's data file is shared across this whole test run (other
     // tests in this file import/mutate leads), so assert shape, not an exact
