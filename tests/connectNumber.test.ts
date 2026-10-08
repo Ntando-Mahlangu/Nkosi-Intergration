@@ -15,6 +15,7 @@ vi.mock("twilio", () => ({ default: twilioFactoryMock }));
 
 const {
   InMemoryAuditLogStore,
+  InMemorySalesInquiryStore,
   InMemoryLeadStore,
   InMemoryMessageStore,
   InMemoryNotificationStore,
@@ -50,6 +51,7 @@ function buildStores(tenant: TenantType = TENANT): Stores {
     messageStore: new InMemoryMessageStore(),
     notificationStore: new InMemoryNotificationStore(),
     auditLogStore: new InMemoryAuditLogStore(),
+    salesInquiryStore: new InMemorySalesInquiryStore(),
     tenantUserStore: new InMemoryTenantUserStore(),
   };
 }

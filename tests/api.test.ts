@@ -6,6 +6,7 @@ import express from "express";
 import twilio from "twilio";
 import {
   InMemoryAuditLogStore,
+  InMemorySalesInquiryStore,
   InMemoryLeadStore,
   InMemoryMessageStore,
   InMemoryNotificationStore,
@@ -117,6 +118,7 @@ function buildStores(): Stores {
     messageStore: new InMemoryMessageStore(),
     notificationStore: new InMemoryNotificationStore(),
     auditLogStore: new InMemoryAuditLogStore(),
+    salesInquiryStore: new InMemorySalesInquiryStore(),
     tenantUserStore: new InMemoryTenantUserStore(),
   };
 }
@@ -951,6 +953,7 @@ describe("admin tenant listing pagination", () => {
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -1147,6 +1150,7 @@ describe("webhook: SendGrid delivery events", () => {
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     await stores.messageStore.logMessage({
@@ -1613,6 +1617,7 @@ describe("Twilio SMS/WhatsApp inbound webhook", () => {
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -1646,6 +1651,7 @@ describe("Twilio SMS/WhatsApp inbound webhook", () => {
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -1679,6 +1685,7 @@ describe("Twilio SMS/WhatsApp inbound webhook", () => {
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -1718,6 +1725,7 @@ describe("Twilio SMS/WhatsApp inbound webhook", () => {
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -1748,6 +1756,7 @@ describe("Twilio SMS/WhatsApp inbound webhook", () => {
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -1787,6 +1796,7 @@ describe("webhook: a suspended tenant is fully paused, not just blocked from the
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -1812,6 +1822,7 @@ describe("webhook: a suspended tenant is fully paused, not just blocked from the
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -1835,6 +1846,7 @@ describe("webhook: a suspended tenant is fully paused, not just blocked from the
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     await stores.messageStore.logMessage({
@@ -1867,6 +1879,7 @@ describe("webhook: a suspended tenant is fully paused, not just blocked from the
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -1891,6 +1904,7 @@ describe("webhook: a suspended tenant is fully paused, not just blocked from the
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     await stores.messageStore.logMessage({
@@ -1939,6 +1953,7 @@ describe("webhook: a tenant that hasn't accepted the Terms of Service is fully p
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -1963,6 +1978,7 @@ describe("webhook: a tenant that hasn't accepted the Terms of Service is fully p
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -2002,6 +2018,7 @@ describe("webhook: sms/whatsapp replies are blocked until carrier approval is co
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -2029,6 +2046,7 @@ describe("notify on interested reply", () => {
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -2065,6 +2083,7 @@ describe("notify on interested reply", () => {
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();
@@ -2697,6 +2716,7 @@ describe("chatbot auto-reply on inbound messages", () => {
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
   }
@@ -2860,6 +2880,7 @@ describe("chatbot auto-reply on inbound messages", () => {
       messageStore: new InMemoryMessageStore(),
       notificationStore: new InMemoryNotificationStore(),
       auditLogStore: new InMemoryAuditLogStore(),
+      salesInquiryStore: new InMemorySalesInquiryStore(),
       tenantUserStore: new InMemoryTenantUserStore(),
     };
     const app = express();

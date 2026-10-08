@@ -199,6 +199,14 @@ deployment serves many clients with fully isolated data.
   through **`public/settings.html`**, a self-service form for a client to
   edit their own outbound templates and the chatbot's knowledge base
   without needing to know the API exists.
+- **`public/get-started.html`** — the public marketing/landing page for a
+  prospective business, not a tenant login: pitches the product and ends in
+  a "request a demo" form (`POST /inquiries`, no auth). Linked from
+  `index.html`'s own sign-in gate ("New business? Request a demo"); reviewed
+  by hand via `admin.html`'s "Sales inquiries" panel, same `GET`/`PATCH
+  /admin/inquiries` endpoints. Onboarding an inquiry that converts still
+  goes through the existing `POST /admin/tenants` flow — this page only
+  captures interest, it doesn't self-provision a tenant.
 - **`public/index.html`** — the default landing page: a "Command Center"
   view (connect with a tenant API key to see live per-category lead counts
   as an animated node graph, click a node for the real leads behind it).
@@ -231,13 +239,16 @@ deployment serves many clients with fully isolated data.
 - **`public/admin.html`** — cross-tenant platform ops: connects with
   `ADMIN_API_KEY` (not a tenant key) to list/create/suspend/reactivate/
   delete tenants and rotate a tenant's API key, plus visibility into the
-  failed-notifications dead-letter queue and the admin audit log. Not
-  linked from the tenant-facing dashboards — it's a separate credential
-  for the platform operator, not something a tenant should see. The tenant
-  list and audit log are paginated (20 per page, Prev/Next, backed by the
-  same `?limit=&offset=`/`X-Total-Count` the API already exposes) so a
-  platform with hundreds of tenants or a long-running audit trail doesn't
-  render everything in one unbounded page.
+  failed-notifications dead-letter queue, the admin audit log, and the
+  "Sales inquiries" submitted through `get-started.html`'s marketing-page
+  form (a status dropdown per row — `new`/`contacted`/`closed` — patches
+  `PATCH /admin/inquiries/:id` directly). Not linked from the tenant-facing
+  dashboards — it's a separate credential for the platform operator, not
+  something a tenant should see. The tenant list, audit log, and sales
+  inquiries are all paginated (20 per page, Prev/Next, backed by the same
+  `?limit=&offset=`/`X-Total-Count` the API already exposes) so a platform
+  with hundreds of tenants or a long-running history doesn't render
+  everything in one unbounded page.
   - Its "Add new client" form leads with the fields that are just plain
     text entry (business name, timezone, and optional contact
     phone/email/website — stored as reference info on the tenant, see
@@ -401,11 +412,12 @@ any OpenAPI viewer (Swagger UI, Redoc, Postman's import) for interactive
 docs.
 
 All routes except `/health`, `/terms-version`, `/auth/*`, `/public/leads/:tenantId`,
-and the webhooks require `Authorization: Bearer <tenant api key>`. Admin
+`/inquiries`, and the webhooks require `Authorization: Bearer <tenant api key>`. Admin
 routes require `Authorization: Bearer <ADMIN_API_KEY>` instead. All routes
 are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 `/tenants/me` at 60/min, admin routes at 30/15min, webhooks at 120/min,
-`/auth/*` at 10/15min, `/public/leads/:tenantId` at 20/min, all per IP.
+`/auth/*` at 10/15min, `/public/leads/:tenantId` at 20/min, `/inquiries` at
+10/min, all per IP.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -434,6 +446,9 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | DELETE | `/admin/tenants/:id` | Permanently delete a tenant (admin) — cascades to its leads/messages in Postgres; no undo |
 | GET | `/admin/notifications/failed` | Notifications ("interested"/escalation) that failed to reach `notifyWebhookUrl` even after retries — `pending` ones are still being retried by the worker, `dead` ones gave up and need attention |
 | GET | `/admin/audit-log` | Admin action history (tenant create/update/delete/key-rotation), newest first. Optional `?limit=&offset=` |
+| POST | `/inquiries` | Public, no auth — the "request a demo" form on the marketing page (`public/get-started.html`): `{businessName, contactName?, email?, phone?, website?, message?}` (phone or email required). A prospective business inquiring about *becoming* a client, distinct from `/public/leads/:tenantId` (which creates a lead for an existing tenant) |
+| GET | `/admin/inquiries` | List sales inquiries from the marketing page, newest first (admin). Optional `?limit=&offset=` |
+| PATCH | `/admin/inquiries/:id` | Update a sales inquiry's status (admin): `{status}` (`"new"` \| `"contacted"` \| `"closed"`) |
 | GET | `/leads` | List the tenant's leads. Optional `?limit=&offset=`; always sets `X-Total-Count`. Optional `?needsAttention=true` restricts to leads currently in the needs-attention inbox (see below) |
 | GET | `/leads/plan` | Dry run: scored + composed initial/follow-up/win-back plans, nothing sent. Same optional pagination |
 | GET | `/leads/:id/messages` | Conversation history for one lead (includes delivery status) |

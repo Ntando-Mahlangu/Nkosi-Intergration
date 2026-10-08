@@ -7,6 +7,8 @@ import type {
   LeadStore,
   MessageStore,
   NotificationStore,
+  SalesInquiry,
+  SalesInquiryStore,
   TenantStore,
   TenantUserStore,
   UpdateLeadGuard,
@@ -272,5 +274,36 @@ export class InMemoryAuditLogStore implements AuditLogStore {
 
   async count(): Promise<number> {
     return this.entries.length;
+  }
+}
+
+export class InMemorySalesInquiryStore implements SalesInquiryStore {
+  private inquiries: SalesInquiry[] = [];
+
+  async create(input: Omit<SalesInquiry, "id" | "createdAt" | "status">): Promise<SalesInquiry> {
+    const inquiry: SalesInquiry = {
+      ...input,
+      id: generateId("inquiry"),
+      status: "new",
+      createdAt: new Date().toISOString(),
+    };
+    this.inquiries.push(inquiry);
+    return inquiry;
+  }
+
+  async list({ limit, offset }: { limit?: number; offset: number }): Promise<SalesInquiry[]> {
+    const sorted = [...this.inquiries].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return sorted.slice(offset, limit === undefined ? undefined : offset + limit);
+  }
+
+  async count(): Promise<number> {
+    return this.inquiries.length;
+  }
+
+  async updateStatus(id: string, status: SalesInquiry["status"]): Promise<SalesInquiry | undefined> {
+    const inquiry = this.inquiries.find((i) => i.id === id);
+    if (!inquiry) return undefined;
+    inquiry.status = status;
+    return inquiry;
   }
 }

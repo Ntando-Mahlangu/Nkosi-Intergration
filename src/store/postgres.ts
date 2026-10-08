@@ -7,6 +7,8 @@ import type {
   LeadStore,
   MessageStore,
   NotificationStore,
+  SalesInquiry,
+  SalesInquiryStore,
   TenantStore,
   TenantUserStore,
   UpdateLeadGuard,
@@ -704,6 +706,65 @@ export class PostgresAuditLogStore implements AuditLogStore {
   async count(): Promise<number> {
     const { rows } = await this.pool.query(`SELECT COUNT(*)::int AS count FROM audit_log`);
     return rows[0].count as number;
+  }
+}
+
+function salesInquiryFromRow(row: Record<string, unknown>): SalesInquiry {
+  return {
+    id: row.id as string,
+    businessName: row.business_name as string,
+    contactName: (row.contact_name as string | null) ?? undefined,
+    email: (row.email as string | null) ?? undefined,
+    phone: (row.phone as string | null) ?? undefined,
+    website: (row.website as string | null) ?? undefined,
+    message: (row.message as string | null) ?? undefined,
+    status: row.status as SalesInquiry["status"],
+    createdAt: new Date(row.created_at as string).toISOString(),
+  };
+}
+
+const SALES_INQUIRY_COLUMNS = `id, business_name, contact_name, email, phone, website, message, status, created_at`;
+
+export class PostgresSalesInquiryStore implements SalesInquiryStore {
+  constructor(private pool: Pool) {}
+
+  async create(input: Omit<SalesInquiry, "id" | "createdAt" | "status">): Promise<SalesInquiry> {
+    const { rows } = await this.pool.query(
+      `INSERT INTO sales_inquiries (id, business_name, contact_name, email, phone, website, message, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'new')
+       RETURNING ${SALES_INQUIRY_COLUMNS}`,
+      [
+        generateId("inquiry"),
+        input.businessName,
+        input.contactName ?? null,
+        input.email ?? null,
+        input.phone ?? null,
+        input.website ?? null,
+        input.message ?? null,
+      ]
+    );
+    return salesInquiryFromRow(rows[0]);
+  }
+
+  async list({ limit, offset }: { limit?: number; offset: number }): Promise<SalesInquiry[]> {
+    const { rows } = await this.pool.query(
+      `SELECT ${SALES_INQUIRY_COLUMNS} FROM sales_inquiries ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2`,
+      [limit ?? null, offset]
+    );
+    return rows.map(salesInquiryFromRow);
+  }
+
+  async count(): Promise<number> {
+    const { rows } = await this.pool.query(`SELECT COUNT(*)::int AS count FROM sales_inquiries`);
+    return rows[0].count as number;
+  }
+
+  async updateStatus(id: string, status: SalesInquiry["status"]): Promise<SalesInquiry | undefined> {
+    const { rows } = await this.pool.query(
+      `UPDATE sales_inquiries SET status = $2 WHERE id = $1 RETURNING ${SALES_INQUIRY_COLUMNS}`,
+      [id, status]
+    );
+    return rows[0] ? salesInquiryFromRow(rows[0]) : undefined;
   }
 }
 

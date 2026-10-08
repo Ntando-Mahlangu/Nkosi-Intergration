@@ -9,6 +9,7 @@ import {
   PostgresLeadStore,
   PostgresMessageStore,
   PostgresNotificationStore,
+  PostgresSalesInquiryStore,
   PostgresTenantStore,
   PostgresTenantUserStore,
 } from "../src/store/postgres.js";
@@ -786,6 +787,38 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     await tenantStore.deleteTenant(TENANT.id);
 
     expect(await auditLogStore.count()).toBe(1);
+  });
+
+  it("round-trips a sales inquiry, lists newest first with pagination, and updates its status", async () => {
+    const salesInquiryStore = new PostgresSalesInquiryStore(pool);
+    const created = await salesInquiryStore.create({
+      businessName: "Acme Plumbing",
+      contactName: "Jane Smith",
+      email: "jane@acmeplumbing.com",
+      website: "https://acmeplumbing.com",
+      message: "We miss a lot of calls after hours.",
+    });
+    expect(created.status).toBe("new");
+
+    await salesInquiryStore.create({ businessName: "Bongani Electrical", phone: "+27821234567" });
+
+    expect(await salesInquiryStore.count()).toBe(2);
+    const all = await salesInquiryStore.list({ offset: 0 });
+    expect(all.map((i) => i.businessName)).toEqual(["Bongani Electrical", "Acme Plumbing"]);
+    // Optional fields round-trip; unset ones come back undefined, not null.
+    expect(all[1]).toMatchObject({
+      businessName: "Acme Plumbing",
+      contactName: "Jane Smith",
+      email: "jane@acmeplumbing.com",
+      website: "https://acmeplumbing.com",
+      message: "We miss a lot of calls after hours.",
+    });
+    expect(all[0].contactName).toBeUndefined();
+
+    const updated = await salesInquiryStore.updateStatus(created.id, "contacted");
+    expect(updated?.status).toBe("contacted");
+
+    expect(await salesInquiryStore.updateStatus("no-such-id", "closed")).toBeUndefined();
   });
 
   it("round-trips a TenantUser, looks it up by email/loginKey/reset-token-hash, and lists per tenant", async () => {

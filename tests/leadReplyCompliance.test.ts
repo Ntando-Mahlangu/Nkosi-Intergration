@@ -3,6 +3,7 @@ import request from "supertest";
 import express from "express";
 import {
   InMemoryAuditLogStore,
+  InMemorySalesInquiryStore,
   InMemoryLeadStore,
   InMemoryMessageStore,
   InMemoryNotificationStore,
@@ -28,6 +29,11 @@ const TENANT: Tenant = {
   timezone: "UTC",
   devMode: true,
   channels: {},
+  // Zero-width window explicitly disables quiet hours (see quietHours.ts) —
+  // without this, a tenant with no quietHours set falls back to
+  // DEFAULT_QUIET_HOURS (8pm-8am), making every test below that doesn't
+  // itself test quiet hours flaky depending on what time it happens to run.
+  quietHours: { startHour: 0, endHour: 0 },
   termsAcceptedAt: new Date().toISOString(),
   termsVersion: "grandfathered",
   createdAt: new Date().toISOString(),
@@ -52,6 +58,7 @@ function buildStores(tenant: Tenant, leads: Lead[] = [LEAD]): Stores {
     messageStore: new InMemoryMessageStore(),
     notificationStore: new InMemoryNotificationStore(),
     auditLogStore: new InMemoryAuditLogStore(),
+    salesInquiryStore: new InMemorySalesInquiryStore(),
   };
 }
 

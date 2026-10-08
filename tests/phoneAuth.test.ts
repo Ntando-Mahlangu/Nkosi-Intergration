@@ -3,6 +3,7 @@ import request from "supertest";
 import express from "express";
 import {
   InMemoryAuditLogStore,
+  InMemorySalesInquiryStore,
   InMemoryLeadStore,
   InMemoryMessageStore,
   InMemoryNotificationStore,
@@ -26,6 +27,7 @@ function buildStores(tenants: Tenant[] = []): Stores {
     messageStore: new InMemoryMessageStore(),
     notificationStore: new InMemoryNotificationStore(),
     auditLogStore: new InMemoryAuditLogStore(),
+    salesInquiryStore: new InMemorySalesInquiryStore(),
     tenantUserStore: new InMemoryTenantUserStore(),
   };
 }

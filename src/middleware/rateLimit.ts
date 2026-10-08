@@ -131,3 +131,21 @@ export function createPublicChatLimiter() {
     passOnStoreError: true,
   });
 }
+
+/**
+ * Guards the public "request a demo" marketing-page form (POST /inquiries)
+ * — unauthenticated by design, same reasoning as createPublicFormLimiter.
+ * Tighter than that limiter's 20/min: a one-shot sales inquiry from a human
+ * reading the marketing page is rarer than a tenant's own embedded
+ * lead-capture form firing from real website traffic.
+ */
+export function createPublicInquiryLimiter() {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    limit: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: distributedStoreIfConfigured("public-inquiry"),
+    passOnStoreError: true,
+  });
+}

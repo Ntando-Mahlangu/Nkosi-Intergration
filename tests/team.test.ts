@@ -3,6 +3,7 @@ import request from "supertest";
 import express from "express";
 import {
   InMemoryAuditLogStore,
+  InMemorySalesInquiryStore,
   InMemoryLeadStore,
   InMemoryMessageStore,
   InMemoryNotificationStore,
@@ -25,6 +26,7 @@ function buildStores(tenants: Tenant[] = [], tenantUsers: TenantUser[] = []): St
     messageStore: new InMemoryMessageStore(),
     notificationStore: new InMemoryNotificationStore(),
     auditLogStore: new InMemoryAuditLogStore(),
+    salesInquiryStore: new InMemorySalesInquiryStore(),
     tenantUserStore,
   };
   for (const user of tenantUsers) {

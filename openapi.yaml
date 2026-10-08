@@ -20,6 +20,7 @@ tags:
   - name: admin
   - name: leads
   - name: chat
+  - name: inquiries
   - name: webhooks
 
 security: []
@@ -729,6 +730,59 @@ paths:
                 items: { $ref: "#/components/schemas/AuditLogEntry" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /admin/inquiries:
+    get:
+      tags: [inquiries]
+      summary: List sales inquiries from the public marketing page, newest first
+      security: [{ adminAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Total-Count: { schema: { type: integer } }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalesInquiry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /admin/inquiries/{id}:
+    patch:
+      tags: [inquiries]
+      summary: Update a sales inquiry's status (new/contacted/closed)
+      security: [{ adminAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [new, contacted, closed] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesInquiry" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No such inquiry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /leads:
     get:
       tags: [leads]
@@ -1019,6 +1073,44 @@ paths:
                   deferred: { type: array, items: { type: object } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Suspended" }
+
+  /inquiries:
+    post:
+      tags: [inquiries]
+      summary: Public "request a demo" form (public/get-started.html's marketing page)
+      description: >
+        Unauthenticated by design — submitted directly from the marketing
+        page served by this same app. Distinct from
+        /public/leads/{tenantId}: that endpoint creates a lead for an
+        existing tenant; this one has no tenant at all — it's a
+        prospective business inquiring about becoming a LeadRecovery
+        client in the first place. Reviewed via GET/PATCH
+        /admin/inquiries.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [businessName]
+              properties:
+                businessName: { type: string }
+                contactName: { type: string }
+                email: { type: string, description: "phone or email is required." }
+                phone: { type: string }
+                website: { type: string }
+                message: { type: string }
+      responses:
+        "201":
+          description: Inquiry recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /public/leads/{tenantId}:
     post:
@@ -1816,4 +1908,17 @@ components:
           enum: [tenant.create, tenant.admin_update, tenant.delete, tenant.key_rotate]
         actor: { type: string, example: admin }
         details: { type: object }
+        createdAt: { type: string, format: date-time }
+
+    SalesInquiry:
+      type: object
+      properties:
+        id: { type: string }
+        businessName: { type: string }
+        contactName: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        website: { type: string }
+        message: { type: string }
+        status: { type: string, enum: [new, contacted, closed] }
         createdAt: { type: string, format: date-time }

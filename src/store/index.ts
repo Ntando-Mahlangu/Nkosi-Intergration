@@ -8,6 +8,7 @@ import {
   InMemoryLeadStore,
   InMemoryMessageStore,
   InMemoryNotificationStore,
+  InMemorySalesInquiryStore,
   InMemoryTenantStore,
   InMemoryTenantUserStore,
 } from "./memory.js";
@@ -16,6 +17,7 @@ import {
   PostgresLeadStore,
   PostgresMessageStore,
   PostgresNotificationStore,
+  PostgresSalesInquiryStore,
   PostgresTenantStore,
   PostgresTenantUserStore,
 } from "./postgres.js";
@@ -25,6 +27,7 @@ import type {
   LeadStore,
   MessageStore,
   NotificationStore,
+  SalesInquiryStore,
   TenantStore,
   TenantUserStore,
 } from "./types.js";
@@ -40,6 +43,7 @@ export interface Stores {
   messageStore: MessageStore;
   notificationStore: NotificationStore;
   auditLogStore: AuditLogStore;
+  salesInquiryStore: SalesInquiryStore;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -74,6 +78,7 @@ export function createStores(): Stores {
       messageStore: new PostgresMessageStore(pool),
       notificationStore: new PostgresNotificationStore(pool),
       auditLogStore: new PostgresAuditLogStore(pool),
+      salesInquiryStore: new PostgresSalesInquiryStore(pool),
     };
   }
 
@@ -84,5 +89,6 @@ export function createStores(): Stores {
     messageStore: new InMemoryMessageStore(),
     notificationStore: new InMemoryNotificationStore(),
     auditLogStore: new InMemoryAuditLogStore(),
+    salesInquiryStore: new InMemorySalesInquiryStore(),
   };
 }

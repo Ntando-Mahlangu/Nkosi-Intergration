@@ -11,6 +11,7 @@ import { createWorkflowRoutes } from "./routes/workflow.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createPublicCaptureRoutes } from "./routes/publicCapture.js";
 import { createPublicChatRoutes } from "./routes/publicChat.js";
+import { createInquiryRoutes } from "./routes/inquiries.js";
 import { createWebhookRoutes } from "./webhooks/index.js";
 import { createCorsMiddleware } from "./middleware/cors.js";
 import { asyncHandler } from "./middleware/asyncHandler.js";
@@ -133,6 +134,7 @@ export function createApp() {
   app.use(createAuthRoutes(stores));
   app.use(createPublicCaptureRoutes(stores));
   app.use(createPublicChatRoutes(stores));
+  app.use(createInquiryRoutes(stores));
   app.use(createTenantRoutes(stores));
   app.use(createTeamRoutes(stores));
   app.use(createLeadRoutes(stores));

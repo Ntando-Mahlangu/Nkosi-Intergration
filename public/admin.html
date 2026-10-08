@@ -352,6 +352,17 @@
       </div>
       <div id="audit-log"></div>
     </section>
+
+    <section>
+      <h3>Sales inquiries</h3>
+      <p class="meta">Submissions from the public marketing page (get-started.html) — prospective businesses asking about LeadRecovery.</p>
+      <div class="toolbar">
+        <span class="stat" id="inquiries-summary" role="status" aria-live="polite"></span>
+        <button class="secondary" id="inquiries-prev-btn">Prev</button>
+        <button class="secondary" id="inquiries-next-btn">Next</button>
+      </div>
+      <div id="inquiries"></div>
+    </section>
   </main>
 </div>
 
@@ -380,6 +391,7 @@
   const PAGE_SIZE = 20;
   const tenantsPage = { offset: 0, total: 0 };
   const auditPage = { offset: 0, total: 0 };
+  const inquiriesPage = { offset: 0, total: 0 };
   // Monotonic guard against loadAll() calls resolving out of order (a fast
   // double-click on a pager button, or a click while a slow response is
   // still in flight): only the most recently *started* call is allowed to
@@ -714,22 +726,64 @@
       </table>`;
   }
 
+  function renderInquiries(inquiries) {
+    const el = document.getElementById("inquiries");
+    renderPager(
+      inquiriesPage,
+      document.getElementById("inquiries-summary"),
+      document.getElementById("inquiries-prev-btn"),
+      document.getElementById("inquiries-next-btn"),
+      "inquiries"
+    );
+    if (inquiries.length === 0) {
+      el.innerHTML = '<div class="empty">No inquiries yet.</div>';
+      return;
+    }
+    el.innerHTML = `
+      <table>
+        <thead><tr><th scope="col">When</th><th scope="col">Business</th><th scope="col">Contact</th><th scope="col">Message</th><th scope="col">Status</th></tr></thead>
+        <tbody>
+          ${inquiries
+            .map(
+              (i) => `
+            <tr data-id="${escapeHtml(i.id)}">
+              <td>${escapeHtml(new Date(i.createdAt).toLocaleString())}</td>
+              <td>${escapeHtml(i.businessName)}${i.website ? `<br /><span class="meta">${escapeHtml(i.website)}</span>` : ""}</td>
+              <td>${escapeHtml(i.contactName || "")}${i.email ? `<br />${escapeHtml(i.email)}` : ""}${i.phone ? `<br />${escapeHtml(i.phone)}` : ""}</td>
+              <td>${escapeHtml(i.message || "")}</td>
+              <td>
+                <select class="inquiry-status-select" data-previous-value="${i.status}" aria-label="Status for ${escapeHtml(i.businessName)}">
+                  ${["new", "contacted", "closed"]
+                    .map((s) => `<option value="${s}" ${s === i.status ? "selected" : ""}>${escapeHtml(humanize(s))}</option>`)
+                    .join("")}
+                </select>
+              </td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>`;
+  }
+
   async function loadAll(session) {
     const mySeq = ++loadSeq;
-    const [tenants, notifications, auditLog] = await Promise.all([
+    const [tenants, notifications, auditLog, inquiries] = await Promise.all([
       apiPaged(session, "/admin/tenants", tenantsPage, mySeq),
       api(session, "/admin/notifications/failed"),
       apiPaged(session, "/admin/audit-log", auditPage, mySeq),
+      apiPaged(session, "/admin/inquiries", inquiriesPage, mySeq),
     ]);
     // Either check catches a stale call: apiPaged() returning STALE means
     // *its own* fetch resolved after being superseded (and, critically,
-    // never touched the shared tenantsPage/auditPage state at all); the
-    // loadSeq check catches the (now redundant, but cheap to keep) case
-    // where every fetch here happened to land before a newer call started.
-    if (mySeq !== loadSeq || tenants === STALE || auditLog === STALE) return;
+    // never touched the shared tenantsPage/auditPage/inquiriesPage state at
+    // all); the loadSeq check catches the (now redundant, but cheap to
+    // keep) case where every fetch here happened to land before a newer
+    // call started.
+    if (mySeq !== loadSeq || tenants === STALE || auditLog === STALE || inquiries === STALE) return;
     renderTenants(tenants);
     renderNotifications(notifications);
     renderAuditLog(auditLog);
+    renderInquiries(inquiries);
   }
 
   document.getElementById("connect-btn").addEventListener("click", async () => {
@@ -791,6 +845,41 @@
     if (!session) return;
     auditPage.offset += PAGE_SIZE;
     loadAll(session).catch((err) => alert(err.message));
+  });
+
+  document.getElementById("inquiries-prev-btn").addEventListener("click", () => {
+    const session = getSession();
+    if (!session) return;
+    inquiriesPage.offset = Math.max(0, inquiriesPage.offset - PAGE_SIZE);
+    loadAll(session).catch((err) => alert(err.message));
+  });
+
+  document.getElementById("inquiries-next-btn").addEventListener("click", () => {
+    const session = getSession();
+    if (!session) return;
+    inquiriesPage.offset += PAGE_SIZE;
+    loadAll(session).catch((err) => alert(err.message));
+  });
+
+  document.getElementById("inquiries").addEventListener("change", async (e) => {
+    const select = e.target.closest("select.inquiry-status-select");
+    if (!select) return;
+    const row = select.closest("tr");
+    const id = row.dataset.id;
+    const session = getSession();
+    if (!session) return;
+    const previousValue = select.dataset.previousValue;
+    try {
+      await api(session, `/admin/inquiries/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: select.value }),
+      });
+      select.dataset.previousValue = select.value;
+    } catch (err) {
+      select.value = previousValue;
+      alert(err.message);
+    }
   });
 
   // Both required before a tenant can be created at all — see

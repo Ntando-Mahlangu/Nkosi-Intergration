@@ -75,6 +75,33 @@ export interface AuditLogStore {
 }
 
 /**
+ * A prospective client's "tell us about your business" submission from the
+ * public marketing page (public/get-started.html) — distinct from a
+ * Lead/Tenant: this is a business inquiring about *becoming* a LeadRecovery
+ * client, not a lead belonging to one. Reviewed and actioned by hand via the
+ * admin UI (public/admin.html's "Sales inquiries" panel); onboarding them
+ * still goes through the existing POST /admin/tenants flow.
+ */
+export interface SalesInquiry {
+  id: string;
+  businessName: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  message?: string;
+  status: "new" | "contacted" | "closed";
+  createdAt: string;
+}
+
+export interface SalesInquiryStore {
+  create(input: Omit<SalesInquiry, "id" | "createdAt" | "status">): Promise<SalesInquiry>;
+  list(params: { limit?: number; offset: number }): Promise<SalesInquiry[]>;
+  count(): Promise<number>;
+  updateStatus(id: string, status: SalesInquiry["status"]): Promise<SalesInquiry | undefined>;
+}
+
+/**
  * Guards an updateLead call against clobbering a status change that
  * happened concurrently (e.g. a lead replying STOP mid-send). When given,
  * the patch is applied only if the lead's current status is still one of
