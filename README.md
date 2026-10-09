@@ -11,12 +11,12 @@ over SMS/WhatsApp/Email, follows up on silence, and listens for replies
 any lead marked do-not-contact, unqualified, fraudulent, already
 booked/converted, or opted out.
 
-It can also act as a live chatbot for a tenant's customers: an opt-in,
-knowledge-base-grounded auto-reply answers straightforward questions
-(hours, pricing, policies — whatever the business writes into its
-knowledge base) and hands anything else — price negotiation, complaints,
-complex requests, or an explicit ask for a person — to a human instead of
-guessing. See "Auto-reply chatbot" below.
+It also offers an embeddable website chat widget for a tenant's customers:
+every message is classified the same way a reply over SMS/WhatsApp/Email
+is, and anything that isn't a clear `interested`/`not_interested` —
+a question, price negotiation, complaint, complex request, or an explicit
+ask for a person — is always escalated to a human instead of guessing. See
+"Website chat widget" below.
 
 The full behavioral spec lives in [`SYSTEM_PROMPT.md`](./SYSTEM_PROMPT.md).
 For the process of bringing on a real client, see
@@ -89,24 +89,17 @@ deployment serves many clients with fully isolated data.
   What happens next depends on the classification (`src/webhooks/index.ts`):
   `interested` notifies the tenant's team; `not_interested` gets a fixed,
   no-LLM close-out reply and marks the lead `do_not_contact` (suppressed,
-  same as an explicit STOP — see COMPLIANCE.md); `question`/`unknown` goes
-  to the chatbot below.
-- **`src/chatbot.ts`** — the auto-reply chatbot. Opt-in per tenant
-  (`autoReplyEnabled` + `knowledgeBase` both required). Answers *only* from
-  the tenant's own `knowledgeBase` text and is instructed to reply with a
-  literal `ESCALATE` for anything it isn't confident is covered there
-  (price negotiation, complaints, complex requests, an explicit ask for a
-  human) — any API error, missing config, or non-clean response also fails
-  safe to escalate rather than risk a fabricated answer reaching a customer.
+  same as an explicit STOP — see COMPLIANCE.md); `question`/`unknown` always
+  escalates to a human — see `src/notify.ts` below.
 - **`src/chatWidget.ts`** / **`src/routes/publicChat.ts`** / `public/chat-widget.js` —
   the embeddable website chat widget. Reuses the exact same classify →
-  escalate-or-reply pipeline as an SMS/WhatsApp/email reply, but answers
+  escalate pipeline as an SMS/WhatsApp/email reply, but answers
   synchronously in the HTTP response instead of pushing a send through a
   channel adapter. See "Website chat widget" below.
 - **`src/notify.ts`** — POSTs to the tenant's `notifyWebhookUrl` (e.g. a
-  Slack incoming webhook) when a reply is `interested` or the chatbot
-  escalates — the two moments a human should act promptly. Retries once
-  inline; if that still fails, persists the notification (never silently
+  Slack incoming webhook) when a reply is `interested` or a `question`/
+  `unknown` reply escalates — the two moments a human should act promptly.
+  Retries once inline; if that still fails, persists the notification (never silently
   dropping it) so the worker can keep retrying it on every tick until it
   succeeds or `GET /admin/notifications/failed` shows it as `dead`.
 - **`src/workflow.ts`** — orchestrates the whole pipeline per tenant, and
@@ -151,16 +144,14 @@ deployment serves many clients with fully isolated data.
   `POST /workflow/run` — so there's no way around it by calling the API
   directly. Pre-existing tenants are grandfathered (migration 0013) rather
   than retroactively blocked.
-- **`src/dataRetention.ts`**, **`src/channels/index.ts`**'s carrier-approval
-  gate, and **`src/chatbot.ts`**'s bot disclosure — three more compliance
+- **`src/dataRetention.ts`** and **`src/channels/index.ts`**'s carrier-approval
+  gate — two more compliance
   controls beyond terms acceptance (see `COMPLIANCE.md`): a closed-out
   lead's data is auto-purged past the tenant's `dataRetentionDays` (default
   365, worker-driven); the sms/whatsapp channels are unusable until an
   admin confirms `carrierApprovalConfirmed` (10DLC/WhatsApp approval),
   falling back to email or skipping the lead rather than sending
-  unapproved; and the chatbot's first auto-reply in a conversation
-  proactively discloses it's automated unless `botDisclosureEnabled` is
-  explicitly set to `false`.
+  unapproved.
 - **`src/channelDefaults.ts`** — an agency running multiple clients
   typically owns one shared Twilio account and one shared SendGrid
   account, not one per client. Setting `DEFAULT_TWILIO_ACCOUNT_SID`/
@@ -184,7 +175,7 @@ deployment serves many clients with fully isolated data.
   comparison and AES-256-GCM encryption for tenant provider credentials at
   rest (required in Postgres mode — see Environment variables below).
 - **`src/logger.ts`** — structured JSON logging for the server/worker
-  (request log, worker ticks, send/notification/chatbot failures) so
+  (request log, worker ticks, send/notification failures) so
   output drops straight into any log aggregator. The interactive CLI
   scripts print plain human-facing text instead, on purpose.
 - Every admin tenant mutation (create, config/status change, key rotation,
@@ -197,8 +188,7 @@ deployment serves many clients with fully isolated data.
   `{reason}`/`{service}` placeholders) so a client can customize wording
   without a code change — set via `PATCH /tenants/me` or the admin API, or
   through **`public/settings.html`**, a self-service form for a client to
-  edit their own outbound templates and the chatbot's knowledge base
-  without needing to know the API exists.
+  edit their own outbound templates without needing to know the API exists.
 - **`public/get-started.html`** — the public marketing/landing page for a
   prospective business, not a tenant login: pitches the product and ends in
   a "request a demo" form (`POST /inquiries`, no auth). Linked from
@@ -227,15 +217,12 @@ deployment serves many clients with fully isolated data.
   billing-period report would otherwise require hand-computing from
   `/leads` and message history.
 - **`public/settings.html`** — self-service editor for a tenant's own
-  outbound message templates and the chatbot's knowledge base/auto-reply
-  toggle (the same fields `PATCH /tenants/me` accepts, as a form instead of
-  a curl command). Refuses to save a partially-filled follow-up sequence
-  (the underlying array indexing reuses the last filled entry for any
-  missing slot, rather than falling back to the built-in default for it —
-  the form enforces "all three or none" so that's never a silent surprise),
-  and mirrors the server's autoReplyEnabled-requires-a-knowledge-base rule
-  client-side so the checkbox is simply unavailable instead of erroring
-  after a round trip.
+  outbound message templates (the same fields `PATCH /tenants/me` accepts,
+  as a form instead of a curl command). Refuses to save a partially-filled
+  follow-up sequence (the underlying array indexing reuses the last filled
+  entry for any missing slot, rather than falling back to the built-in
+  default for it — the form enforces "all three or none" so that's never
+  a silent surprise).
 - **`public/admin.html`** — cross-tenant platform ops: connects with
   `ADMIN_API_KEY` (not a tenant key) to list/create/suspend/reactivate/
   delete tenants and rotate a tenant's API key, plus visibility into the
@@ -430,12 +417,12 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | POST | `/auth/request-code` | Phone-number sign-in, step 1 (the primary path): `{phone}` → always the same generic response; texts a one-time code if that phone matches a tenant's `loginPhone`. The code is never returned over the API — only ever by text (or logged server-side if `PLATFORM_SMS_FROM_NUMBER` isn't configured) |
 | POST | `/auth/verify-code` | Phone-number sign-in, step 2: `{phone, code}` → `{apiKey, tenant}`. Locks out after 5 wrong attempts until a fresh code is requested |
 | GET | `/tenants/me` | The authenticated tenant's public info |
-| PATCH | `/tenants/me` | Tenant self-service (owner-only — see "Team accounts"): update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/knowledgeBase/autoReplyEnabled/botDisclosureEnabled/dataRetentionDays/email/winBackEnabled/winBackCooldownDays/attentionSlaHours |
-| POST | `/tenants/me/accept-terms` | Records the tenant's acceptance of the current Terms of Service/Privacy Policy version — required before `POST /workflow/run`, the worker, or any inbound webhook auto-reply will actually send anything |
+| PATCH | `/tenants/me` | Tenant self-service (owner-only — see "Team accounts"): update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/dataRetentionDays/email/winBackEnabled/winBackCooldownDays/attentionSlaHours |
+| POST | `/tenants/me/accept-terms` | Records the tenant's acceptance of the current Terms of Service/Privacy Policy version — required before `POST /workflow/run`, the worker, or any inbound webhook reply handling will actually send anything |
 | POST | `/tenants/me/change-password` | `{currentPassword?, newPassword}` — self-service while already signed in, owner-only (see "Team accounts"); `currentPassword` is only required if one is already set |
 | POST | `/public/leads/:tenantId` | Public, no tenant-auth — a lead-capture form embedded on the tenant's own website posts here with `{formKey, name?, phone?, email?, requestedService?, notes?}` (`formKey` is `Tenant.publicFormKey`, safe to publish — it can only ever create a lead through this one endpoint) |
 | POST | `/public/chat/:tenantId/start` | Public — the chat widget's first call: `{formKey, name?, phone?, email?}` → `{leadId, chatToken}`. Creates a real lead (`source: "chat"`); `chatToken` is a second, per-conversation secret distinct from `formKey` — see "Website chat widget" above |
-| POST | `/public/chat/:tenantId/message` | Public — `{formKey, leadId, chatToken, body}` → `{classification, displayText}`. Same classify/auto-reply/escalate pipeline as an inbound SMS/WhatsApp/email reply, answered synchronously in the response instead of over a provider |
+| POST | `/public/chat/:tenantId/message` | Public — `{formKey, leadId, chatToken, body}` → `{classification, displayText}`. Same classify/escalate pipeline as an inbound SMS/WhatsApp/email reply, answered synchronously in the response instead of over a provider |
 | GET | `/public/chat/:tenantId/history` | Public — `?formKey=&leadId=&chatToken=` → this one conversation's messages, oldest first. Lets the widget resume across page reloads |
 | GET | `/admin/tenants` | List tenants (admin) |
 | POST | `/admin/tenants` | Create a tenant (admin); returns the API key once. Also accepts `consentBasisConfirmed`/`termsAttested`/`carrierApprovalConfirmed` (recorded attestations — see `COMPLIANCE.md`) and any self-service field |
@@ -493,36 +480,8 @@ See [`.env.example`](./.env.example) for the copyable version with full comments
 | `LEADRECOVERY_RUN_ONCE` | `true` runs the worker once and exits, instead of scheduling |
 | `LEADRECOVERY_WORKER_CONCURRENCY` | How many tenants the worker processes in parallel per tick (default 4) — tunes concurrency *within* the one worker process only; see `DEPLOYMENT.md` for why exactly one worker replica must run |
 | `LEADRECOVERY_USE_LLM_CLASSIFICATION` | `true` enables the optional Claude-based reply classification enhancement |
-| `ANTHROPIC_API_KEY` | Required if the above is enabled, **or** if any tenant has `autoReplyEnabled: true` (the chatbot) |
+| `ANTHROPIC_API_KEY` | Required if `LEADRECOVERY_USE_LLM_CLASSIFICATION` is enabled |
 | `OPERATOR_ALERT_WEBHOOK_URL` | Optional: a Slack-compatible webhook this app pings on its own operational problems (a fatal error, a failed worker tick, a notification exhausting its retries) — see "Alerting" in `DEPLOYMENT.md` |
-
-## Auto-reply chatbot
-
-Off by default — a tenant must opt in. To turn it on for a tenant:
-
-```bash
-curl -X PATCH https://<host>/tenants/me \
-  -H "Authorization: Bearer <tenant api key>" -H "Content-Type: application/json" \
-  -d '{"knowledgeBase": "We offer callouts from R500. Open Mon-Fri 8am-5pm. Standard jobs take 24-48 hours.", "autoReplyEnabled": true}'
-```
-
-(`npm run onboard` can also set this up at onboarding time.) With both fields
-set, an inbound SMS/WhatsApp/email that classifies as a `question` (or
-`unknown`) gets a reply generated by Claude, grounded strictly in that
-`knowledgeBase` text — it's instructed to never invent a price, policy, or
-fact the knowledge base doesn't state, and to answer honestly (never claim
-to be human) if asked whether it's a bot. Anything it isn't confident is a
-simple, clearly-covered question — price negotiation, a complaint, a
-complex/multi-part request, or an explicit ask for a person — gets escalated
-to a human via `notifyWebhookUrl` instead of an automated answer.
-Conversation history for the lead (via `GET /leads/:id/messages`) is passed
-along so replies stay coherent across a multi-turn exchange.
-
-The first auto-reply of every conversation proactively discloses it's
-automated by default (some jurisdictions require this — see "Bot
-disclosure" in `COMPLIANCE.md`); set `{"botDisclosureEnabled": false}` via
-`PATCH /tenants/me` only after confirming the client's jurisdiction doesn't
-require it.
 
 ## Website chat widget
 
@@ -537,25 +496,25 @@ exact snippet for a specific tenant:
 `formKey` is `Tenant.publicFormKey` — the same safe-to-publish token the
 lead-capture form above uses, scoped to only this purpose. A visitor's
 first message creates a real `Lead` (`source: "chat"`); every message after
-that is answered by the exact same auto-reply chatbot above (same
-knowledge-base grounding, same escalation rules, same proactive bot
-disclosure) — the only difference is the reply comes back synchronously in
-the widget itself instead of over SMS/WhatsApp/email, since there's no
-provider in the loop to push an async send through. `src/chatWidget.ts` is
-the shared classify → branch → compose pipeline (mirrors
-`recordInboundAndClassify` in `src/webhooks/index.ts`); `src/routes/publicChat.ts`
-is the three public endpoints it's wired into (`POST .../start`,
-`POST .../message`, `GET .../history`). A second, per-conversation
-`chatToken` (returned by `.../start`, stored by the widget in
-`localStorage`) keeps one visitor's conversation private from every other
-visitor to the same site — `formKey` alone only scopes a caller to *a*
-tenant's widget, not to one specific thread. See COMPLIANCE.md "Bot
-disclosure" for what applies to this channel.
+that is classified the exact same way an inbound SMS/WhatsApp/email reply
+is, and always escalates to a human via `notifyWebhookUrl` rather than
+being auto-answered — the only difference is the classification result
+comes back synchronously in the widget itself instead of over
+SMS/WhatsApp/email, since there's no provider in the loop to push an async
+send through. `src/chatWidget.ts` is the shared classify → branch →
+compose pipeline (mirrors `recordInboundAndClassify` in
+`src/webhooks/index.ts`); `src/routes/publicChat.ts` is the three public
+endpoints it's wired into (`POST .../start`, `POST .../message`,
+`GET .../history`). A second, per-conversation `chatToken` (returned by
+`.../start`, stored by the widget in `localStorage`) keeps one visitor's
+conversation private from every other visitor to the same site — `formKey`
+alone only scopes a caller to *a* tenant's widget, not to one specific
+thread.
 
 ## Needs-attention inbox
 
-Every time a lead's reply gets classified `"interested"`, or the auto-reply
-chatbot escalates instead of answering, the lead is flagged in-app — not
+Every time a lead's reply gets classified `"interested"`, or a
+`question`/`unknown` reply escalates, the lead is flagged in-app — not
 just via `notifyWebhookUrl` (Slack/custom webhook), which is best-effort and
 easy to miss. `src/notify.ts#flagNeedsAttention` is the single place this
 happens, called from both `recordInboundAndClassify`
@@ -644,15 +603,11 @@ that language directly, with no code change:
   placeholders — nothing in `src/messaging.ts`/`src/followup.ts` assumes
   English, so a tenant sets these to Portuguese, isiZulu, French, or
   anything else and every automated send goes out in that language.
-- **The auto-reply chatbot** — answers strictly from `tenant.knowledgeBase`
-  (see "Auto-reply chatbot" above), so whatever language that text is
-  written in is the language Claude answers in; no separate translation
-  step is needed.
 - **Compliance opt-out wording** ("Reply STOP...") in the default English
   templates is exactly that: a default. A tenant overriding `templates`
   is responsible for including their own opt-out instruction in whatever
-  language they use — see "Bot disclosure"/opt-out language requirements
-  in `COMPLIANCE.md`.
+  language they use — see the opt-out language requirements in
+  `COMPLIANCE.md`.
 
 What is **not** localized, and would need real code changes if a client
 ever required it:
@@ -728,9 +683,9 @@ and `npm run format` apply automatic fixes.
 template overrides), follow-up scheduling, quiet hours, reply
 classification (keyword path fully offline; the optional Claude-based
 enhancement covered with `@anthropic-ai/sdk` mocked — no live API key
-needed), the chatbot (reply/escalate/disabled outcomes, conversation-
-history capping, the per-lead auto-reply rate limit, and that it never
-calls the network when disabled), encryption/constant-time-compare
+needed), that a `question`/`unknown` reply always escalates to a human
+(never an automated answer) and that a `not_interested` reply gets a fixed,
+no-LLM closer, encryption/constant-time-compare
 (`src/crypto.ts`/`src/security.ts`, including the encryption-key rotation
 fallback and the full old-key→new-key rotation pattern), bounded-concurrency
 tenant processing (`src/concurrency.ts`), the worker's advisory-lock logic
@@ -743,7 +698,7 @@ live database, including credential encryption at rest, delivery-status
 updates, tenant status, `deleteTenant`'s cascade to a tenant's
 leads/messages, failed-notification bookkeeping, and the audit log), and
 the HTTP auth/webhook/rate-limiting routes — including the full
-question→auto-reply and question→escalate flows, tenant
+question→escalate and not_interested→closer flows, tenant
 suspend/reactivate/delete/key-rotation, admin audit log and failed-
 notification visibility, admin listing pagination, and real SendGrid Event
 Webhook ECDSA signature verification — via `supertest`; the appointment

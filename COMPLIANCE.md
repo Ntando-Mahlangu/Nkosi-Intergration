@@ -23,7 +23,7 @@ and their own leads.
 - The client accepts these themselves, on their own first login (a
   blocking gate on every dashboard) — not something you tick on their
   behalf during onboarding. `POST /workflow/run`, the worker, and every
-  inbound webhook's auto-reply all refuse to send for a tenant that
+  inbound webhook's reply handling all refuse to send for a tenant that
   hasn't accepted, so this isn't just a UI formality.
 - The admin UI's "Add new client" form separately requires checking a
   "Client has reviewed and agreed to the Terms of Service and Privacy
@@ -185,49 +185,6 @@ deliberately-opt-in feature (`Tenant.winBackEnabled` +
   came from SendGrid than the shared-secret fallback gives. Do this before
   handling real client traffic.
 
-## Bot disclosure (auto-reply chatbot)
-
-If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
-— see README "Auto-reply chatbot"):
-
-- Several jurisdictions require **proactively** disclosing that a customer
-  is interacting with an automated system in a commercial messaging
-  context — for example California's B.O.T. Act (Bus. & Prof. Code
-  §17941) for online commercial communications, and similar rules are
-  emerging elsewhere. LeadRecovery's chatbot is instructed to answer
-  *honestly* if asked whether it's a bot/AI regardless, and additionally
-  **proactively discloses this by default**: the first auto-reply of every
-  conversation is prefixed with a short disclosure note (see
-  `src/chatbot.ts`'s `BOT_DISCLOSURE_NOTE`), controlled by
-  `Tenant.botDisclosureEnabled` (default true when unset). Only set it to
-  `false` for a specific tenant if you've confirmed their jurisdiction
-  doesn't require it and the client prefers not to show it — don't disable
-  it globally without that check.
-- The knowledge base itself is the compliance boundary: the model is
-  instructed to answer only from what the business wrote there and to
-  escalate anything else, but it's still an LLM — review real
-  conversation transcripts (`GET /leads/:id/messages`) periodically,
-  especially early on, to confirm it's staying on script and escalating
-  appropriately rather than trusting the instruction blindly.
-- Auto-replies still go out through the same SMS/WhatsApp/Email channels
-  as everything else in this system, so every item above (10DLC,
-  WhatsApp template approval, CAN-SPAM, STOP handling) applies to them too.
-- **The website chat widget** (`public/chat-widget.js`, see README
-  "Website chat widget") is a fourth channel the same bot disclosure logic
-  covers — a visitor chatting through it gets the exact same proactive
-  disclosure, knowledge-base-only answers, and escalation behavior as an
-  SMS/WhatsApp/email reply. It has no 10DLC/WhatsApp-template/CAN-SPAM
-  requirements of its own (there's no carrier or email provider in the
-  loop — it's a direct HTTP request/response on the client's own website),
-  but STOP/opt-out handling and the compliance boundary above both still
-  apply identically.
-- **A manual reply an operator sends from the dashboard's needs-attention
-  inbox** (`POST /leads/:id/reply`, see README "Needs-attention inbox") is a
-  human-authored message, not the chatbot — none of the bot-disclosure
-  rules above apply to it. It still goes out through the same
-  SMS/WhatsApp/Email/chat channels, so STOP/opt-out handling and the other
-  per-channel requirements above still apply.
-
 ## Data handling
 
 - Tenant channel credentials (Twilio auth tokens, SendGrid API keys) are
@@ -283,11 +240,11 @@ If a tenant enables the auto-reply chatbot (`autoReplyEnabled` + `knowledgeBase`
   the library's default (fail closed) since those guard authenticated,
   credentialed routes instead.
 - Twilio's `/webhooks/:tenantId/twilio/sms` route dedupes by MessageSid
-  (`Message.providerMessageId` on the inbound log entry) — the auto-reply
-  path calls out to an LLM before responding to Twilio's webhook, so a slow
-  enough response can trigger a provider-level retry of the exact same
-  message; without this, a retry would classify and reply/notify a second
-  time.
+  (`Message.providerMessageId` on the inbound log entry) — with
+  `LEADRECOVERY_USE_LLM_CLASSIFICATION` enabled, classification calls out to
+  an LLM before responding to Twilio's webhook, so a slow enough response
+  can trigger a provider-level retry of the exact same message; without
+  this, a retry would classify and reply/notify a second time.
 - A client's right-of-access request — "send me a copy of everything you
   have on my leads" — is `GET /leads/export` (`?format=csv`, the default,
   or `?format=json`), every lead field as a one-shot download.

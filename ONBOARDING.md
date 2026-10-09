@@ -192,7 +192,7 @@ magic link), they'll see a "Before you continue" gate asking them to
 accept LeadRecovery's Terms of Service/Privacy Policy — this is the
 client's own acceptance, not something you tick on their behalf during
 onboarding. It's not just a UI formality: the worker, every inbound
-webhook auto-reply, and `POST /workflow/run` all refuse to actually send
+webhook's reply handling, and `POST /workflow/run` all refuse to actually send
 anything for a tenant that hasn't accepted, so nothing can go out before
 they've agreed, even if you're the one clicking around in the dashboard
 for them during this review step.
@@ -234,8 +234,8 @@ npm run check-providers -- --tenant <id>
 ```
 
 This makes one real, lightweight, read-only call per configured provider
-(Twilio account fetch, SendGrid scope check, Anthropic if the chatbot or
-LLM classification is enabled) and reports pass/fail — catching a
+(Twilio account fetch, SendGrid scope check, Anthropic if LLM
+classification is enabled) and reports pass/fail — catching a
 typo'd/revoked/misscoped credential now instead of it failing silently on
 a real customer's first message.
 
@@ -247,56 +247,23 @@ Flip a small batch live first:
 - Confirm STOP handling actually works by texting/emailing "STOP" from a
   test number/address and checking the lead flips to `opted_out`.
 
-## 7. Optional: turn on the auto-reply chatbot
-
-If the client wants routine customer questions (hours, pricing, policies)
-answered automatically instead of always waiting on a human:
-
-1. Write the knowledge base with the client — plain text is fine (services
-   offered, pricing, hours, policies, whatever they'd want a front-desk
-   person to know). Keep it factual and specific; the bot only answers from
-   what's here and is instructed to escalate anything it isn't confident is
-   covered.
-2. Set it and turn the feature on — either through `public/settings.html`
-   (paste the knowledge base into the form, tick "Turn on auto-reply") or:
-   ```bash
-   curl -X PATCH https://<host>/tenants/me \
-     -H "Authorization: Bearer <tenant api key>" -H "Content-Type: application/json" \
-     -d '{"knowledgeBase": "<the text above>", "autoReplyEnabled": true}'
-   ```
-   (`npm run onboard` can also prompt for a knowledge-base file and enable
-   this at initial setup time.)
-3. Test it directly — text/email the tenant's number/address a few sample
-   questions (something clearly covered, something ambiguous, something
-   that should escalate like a price negotiation or a complaint) and check
-   the replies via `GET /leads/:id/messages` before trusting it with real
-   customers.
-4. Read "Bot disclosure" in `COMPLIANCE.md` — some jurisdictions require
-   proactively disclosing that a customer is messaging with an automated
-   system; this is a decision for the client and their counsel, not
-   something the code assumes for them.
-
-Anything the bot escalates (price negotiation, complaints, complex
-requests, an explicit ask for a person, or a question outside the
-knowledge base) routes to `notifyWebhookUrl` just like an `interested`
-reply — see step 8 below for setting that up.
-
-## 8. Go live
+## 7. Go live
 
 - Start the worker (`npm run worker`, or point your infrastructure's
   scheduler at `LEADRECOVERY_RUN_ONCE=true npm run worker` on the cadence
   you want) — for a real deployment (Docker/Compose or systemd), see
   `DEPLOYMENT.md`, including the hard "exactly one worker replica" rule.
 - Make sure someone on the client's side is watching for `interested`
-  replies and anything the chatbot escalates. Set `notifyWebhookUrl` on the
-  tenant (via `PATCH /tenants/me` or the admin API) to a Slack incoming
+  replies and any `question`/`unknown` reply that escalates. Set
+  `notifyWebhookUrl` on the tenant (via `PATCH /tenants/me` or the admin
+  API) to a Slack incoming
   webhook URL (or any endpoint that accepts a JSON POST) and LeadRecovery
   notifies it automatically — no need to poll `GET /leads/:id/messages`.
 - Agree on a reporting cadence (conversations recovered, appointments
   booked, revenue attributed) — this is the number that justifies the
   service to the client, and the retainer invoice you send them.
 
-## 9. Ongoing
+## 8. Ongoing
 
 - Pull `GET /tenants/me/report?since=<start of period>&until=<end of period>`
   for the numbers a monthly retainer report needs — lead status counts
@@ -317,7 +284,7 @@ reply — see step 8 below for setting that up.
   (`?format=csv`, the default, or `?format=json`) gives every lead field as
   a one-shot download — see `COMPLIANCE.md` "Data handling."
 
-## 10. Pausing or offboarding a client
+## 9. Pausing or offboarding a client
 
 All of the below can be done via curl against the admin API, or from
 `public/admin.html` — connect with `ADMIN_API_KEY` (not a tenant key) for

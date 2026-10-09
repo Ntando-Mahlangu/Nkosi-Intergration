@@ -277,7 +277,7 @@ paths:
       summary: Update the tenant's own operational config
       description: >
         Updates timezone/quietHours/devMode/channels/notifyWebhookUrl/
-        templates/knowledgeBase/autoReplyEnabled. `status` cannot be changed
+        templates. `status` cannot be changed
         here — a tenant can't un-suspend itself; use the admin API.
         Owner-only (see "Team accounts") — a "member"-role team account
         gets 403.
@@ -306,7 +306,7 @@ paths:
       summary: Record the tenant's acceptance of the current Terms of Service/Privacy Policy
       description: >
         Required before anything actually sends on this tenant's behalf —
-        the worker, every inbound webhook's auto-reply, and
+        the worker, every inbound webhook's reply handling, and
         POST /workflow/run all refuse to send for a tenant that hasn't
         accepted (a brand-new tenant starts unaccepted; pre-existing
         tenants were grandfathered by migration 0013). Only the exact
@@ -1221,10 +1221,10 @@ paths:
       summary: Send a message in an existing chat-widget conversation
       description: >
         Public — requires both formKey and the conversation's own
-        chatToken (from /start). Runs the same classify → auto-reply/
-        escalate pipeline as an inbound SMS/WhatsApp/email reply
-        (src/chatWidget.ts), but returns the reply synchronously instead of
-        sending through a channel adapter.
+        chatToken (from /start). Runs the same classify → escalate
+        pipeline as an inbound SMS/WhatsApp/email reply
+        (src/chatWidget.ts), but returns the classification result
+        synchronously instead of sending through a channel adapter.
       security: []
       parameters:
         - name: tenantId
@@ -1551,8 +1551,6 @@ components:
           description: Per-channel provider credentials — write-only, never returned by any GET.
         notifyWebhookUrl: { type: string, format: uri }
         templates: { $ref: "#/components/schemas/MessageTemplates" }
-        knowledgeBase: { type: string, maxLength: 20000 }
-        autoReplyEnabled: { type: boolean }
         status:
           type: string
           enum: [active, suspended]
@@ -1599,9 +1597,6 @@ components:
             true records carrierApprovalConfirmedAt now; false clears it.
             Gates the sms/whatsapp channels — see COMPLIANCE.md
             "SMS / WhatsApp (Twilio)".
-        botDisclosureEnabled:
-          type: boolean
-          description: Whether the chatbot's first auto-reply per conversation proactively discloses it's automated. Defaults to true when unset.
         dataRetentionDays:
           type: integer
           minimum: 30
@@ -1666,8 +1661,6 @@ components:
             email: { type: boolean }
         notifyWebhookUrl: { type: string }
         templates: { $ref: "#/components/schemas/MessageTemplates" }
-        knowledgeBase: { type: string }
-        autoReplyEnabled: { type: boolean }
         status: { type: string, enum: [active, suspended] }
         statusReason:
           type: string
@@ -1683,7 +1676,6 @@ components:
         consentBasisConfirmedAt: { type: string, format: date-time, description: "When the agency confirmed this client has a lawful basis to contact its leads. An audit record, not enforced server-side." }
         termsAttestedAt: { type: string, format: date-time, description: "When the agency recorded that this client already agreed to the Terms of Service/Privacy Policy outside the app. An onboarding record only — does not substitute for termsAcceptedAt." }
         carrierApprovalConfirmedAt: { type: string, format: date-time, description: "When the agency confirmed 10DLC/WhatsApp carrier approval. Unset blocks the sms/whatsapp channels (falls back to email, or skips the lead)." }
-        botDisclosureEnabled: { type: boolean, description: "Whether the chatbot's first auto-reply per conversation proactively discloses it's automated. Defaults to true when unset." }
         dataRetentionDays: { type: integer, description: "Days after a lead closes out before the worker auto-purges it. Defaults to 365 when unset." }
         email: { type: string, description: "The tenant's login identity for /auth/login, if set." }
         loginPhone: { type: string, description: "The tenant's phone-based login identity for /auth/request-code + /auth/verify-code, if set — the primary sign-in path going forward." }
@@ -1788,7 +1780,7 @@ components:
         needsAttentionAt:
           type: string
           format: date-time
-          description: Set when this lead needs a human's attention (an "interested" reply, or the auto-reply chatbot escalating) — drives the dashboard's needs-attention inbox. Never overwritten by a later inbound message while already set, so it reflects true wait time. Cleared by POST /leads/{id}/reply or /leads/{id}/mark-handled.
+          description: Set when this lead needs a human's attention (an "interested" reply, or a "question"/"unknown" reply escalating) — drives the dashboard's needs-attention inbox. Never overwritten by a later inbound message while already set, so it reflects true wait time. Cleared by POST /leads/{id}/reply or /leads/{id}/mark-handled.
         needsAttentionReason:
           type: string
           enum: [interested, needs_human_reply]

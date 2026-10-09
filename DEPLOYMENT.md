@@ -323,7 +323,7 @@ npm run check-providers -- --tenant <id>
 
 This makes one real, lightweight, authenticated call per configured
 provider (a Twilio account fetch, a SendGrid API-key scope check, an
-Anthropic models list if the chatbot or LLM classification is enabled) and
+Anthropic models list if LLM classification is enabled) and
 reports pass/fail per provider, exiting non-zero if any fail. It's the
 closest thing this repo has to an integration test against real
 infrastructure — CI and the unit suite only ever run against emulators
@@ -402,7 +402,7 @@ doesn't need backing up.
 
 The server and worker log structured JSON lines (one object per line —
 `src/logger.ts`) instead of free-form text: request logs, per-tenant worker
-tick results, and send/notification/chatbot failures. Pipe stdout/stderr
+tick results, and send/notification failures. Pipe stdout/stderr
 into whatever log aggregator you use (CloudWatch Logs, Loki, Datadog,
 Google Cloud Logging, ...) — no special configuration needed, it's already
 one JSON object per line.
@@ -429,8 +429,8 @@ and this app pings it on:
 - A worker tick failing outright (not a single tenant's send failing —
   that's already isolated per-tenant and just logged — but the run itself
   throwing, e.g. the tenant list failing to load).
-- A notification (an `interested` reply, or a chatbot escalation)
-  permanently failing after exhausting every retry — the same `dead`
+- A notification (an `interested` reply, or a `question`/`unknown` reply
+  escalating) permanently failing after exhausting every retry — the same `dead`
   transition `GET /admin/notifications/failed` shows, surfaced proactively
   instead of only on request.
 - `/webhooks/paddle` auto-suspending or reactivating a tenant (see "Billing
@@ -471,8 +471,8 @@ alongside the existing `logger.error(...)` calls, or have your aggregator
 alert directly on `"level":"error"` lines instead of adding a second
 vendor SDK.
 
-A notification (an `interested` reply, or a chatbot escalation) that fails
-to reach a tenant's `notifyWebhookUrl` is retried, then persisted rather
+A notification (an `interested` reply, or a `question`/`unknown` reply
+escalating) that fails to reach a tenant's `notifyWebhookUrl` is retried, then persisted rather
 than dropped, and retried again by the worker on every subsequent tick —
 see `GET /admin/notifications/failed` in the README's API reference. Check
 this endpoint periodically (or rely on the `OPERATOR_ALERT_WEBHOOK_URL`
