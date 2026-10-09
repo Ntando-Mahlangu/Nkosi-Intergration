@@ -124,8 +124,8 @@ export interface Lead {
   chatTokenHash?: string;
   /**
    * Set the moment this lead first needs a human to look at it — an
-   * "interested" reply, or a question/unknown reply the auto-reply chatbot
-   * escalated instead of answering (see src/notify.ts's notifyHumanAttention
+   * "interested" reply, or a question/unknown reply that always escalates
+   * (see src/notify.ts's notifyHumanAttention
    * call sites in src/webhooks/index.ts and src/chatWidget.ts). Drives the
    * dashboard's "Needs attention" inbox (`GET /leads?needsAttention=true`)
    * and the worker's stale-escalation SLA alert (src/dataRetention.ts-
@@ -273,19 +273,6 @@ export interface Tenant {
   notifyWebhookUrl?: string;
   templates?: MessageTemplates;
   /**
-   * Plain-text/FAQ knowledge the auto-reply chatbot may draw on (services,
-   * pricing, hours, policies, ...). The bot answers ONLY from this text and
-   * escalates to a human for anything it doesn't clearly cover — see
-   * src/chatbot.ts. Unset means no chatbot knowledge is configured.
-   */
-  knowledgeBase?: string;
-  /**
-   * Opt-in: when true (and knowledgeBase is set), inbound questions get an
-   * automated grounded reply instead of always waiting for a human. Off by
-   * default — a business must deliberately turn this on.
-   */
-  autoReplyEnabled?: boolean;
-  /**
    * "active" (default) or "suspended". A suspended tenant's API key is
    * rejected by requireTenantAuth — used to pause a client (e.g. non-
    * payment, an issue under investigation) without deleting their data.
@@ -380,16 +367,6 @@ export interface Tenant {
    */
   carrierApprovalConfirmedAt?: string;
   /**
-   * Whether the auto-reply chatbot proactively discloses (in the first
-   * auto-reply of a conversation) that the customer is talking to an
-   * automated assistant, ahead of being asked — some jurisdictions require
-   * this (e.g. California's B.O.T. Act) rather than only disclosing when
-   * asked. Defaults to true (recommended) when unset; only takes effect
-   * when autoReplyEnabled + knowledgeBase are also configured. See
-   * src/chatbot.ts and COMPLIANCE.md "Bot disclosure".
-   */
-  botDisclosureEnabled?: boolean;
-  /**
    * How many days of inactivity after a lead reaches a closed-out status
    * (do_not_contact, unqualified, fraudulent, converted, opted_out) before
    * the worker automatically purges it (and its message history) — a
@@ -451,8 +428,7 @@ export interface Tenant {
    * set are periodically re-contacted with a win-back check-in (see
    * src/winback.ts) — distinct from, and off by default alongside, the
    * initial-outreach/follow-up messaging every tenant already gets. Off by
-   * default — a business must deliberately turn this on, the same pattern
-   * as `autoReplyEnabled`.
+   * default — a business must deliberately turn this on.
    */
   winBackEnabled?: boolean;
   /** Days between win-back check-ins for one lead. Unset uses DEFAULT_WIN_BACK_COOLDOWN_DAYS (src/winback.ts). */
@@ -565,7 +541,7 @@ export interface Message {
    * MessageSid on /twilio/sms) — recordInboundAndClassify in
    * webhooks/index.ts uses it to detect and skip a duplicate delivery of
    * the same inbound message (a webhook retry after a slow response),
-   * rather than re-classifying it and re-sending an auto-reply/notification
+   * rather than re-classifying it and sending a duplicate notification
    * a second time.
    */
   providerMessageId?: string;
@@ -573,14 +549,15 @@ export interface Message {
   deliveryStatus?: string;
   /**
    * What produced an outbound message: unset/"campaign" = the scheduled
-   * recovery workflow (initial outreach or a follow-up nudge), "auto_reply"
-   * = the knowledge-base-grounded chatbot, "closer" = the fixed
-   * not-interested acknowledgment, "appointment_reminder" = the 24-hours-
-   * before nudge (see src/appointmentReminder.ts), "win_back" = a periodic
-   * check-in to an opted-in past customer (see src/winback.ts),
+   * recovery workflow (initial outreach or a follow-up nudge), "closer" =
+   * the fixed not-interested acknowledgment, "appointment_reminder" = the
+   * 24-hours-before nudge (see src/appointmentReminder.ts), "win_back" = a
+   * periodic check-in to an opted-in past customer (see src/winback.ts),
    * "manual_reply" = a human operator typed this directly from the
    * dashboard's "Needs attention" inbox (`POST /leads/:id/reply`). Inbound
-   * messages leave this unset.
+   * messages leave this unset. "auto_reply" is a retired kind — no code
+   * writes it anymore, but it's kept in the type so historical rows from
+   * the now-removed auto-reply chatbot still read back correctly.
    */
   kind?: "campaign" | "auto_reply" | "closer" | "appointment_reminder" | "win_back" | "manual_reply";
 }

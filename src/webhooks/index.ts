@@ -3,7 +3,6 @@ import twilio from "twilio";
 import multer from "multer";
 import type { Stores } from "../store/index.js";
 import { classifyReply } from "../reply/classify.js";
-import { generateAutoReply } from "../chatbot.js";
 import { hasCarrierApproval, safeSend } from "../channels/index.js";
 import { requireTenantAuth } from "../middleware/auth.js";
 import { createWebhookLimiter } from "../middleware/rateLimit.js";
@@ -106,8 +105,8 @@ async function sendAndLog(
   const messageId = generateId("msg");
   // safeSend never throws — a provider SDK (Twilio/SendGrid) can throw on a
   // provider-level error, not just return {ok: false}, and without that
-  // guarantee it would turn what's really just "the auto-reply/closer
-  // couldn't be sent" into a request failure for the whole inbound webhook.
+  // guarantee it would turn what's really just "the closer reply couldn't
+  // be sent" into a request failure for the whole inbound webhook.
   const result = await safeSend(message.channel, tenant, lead, message, messageId);
   if (!result.ok) {
     logger.error("send_failed", { kind, leadId: lead.id, channel: message.channel, detail: result.detail });
@@ -131,20 +130,16 @@ async function sendAndLog(
  * - stop -> opt out, nothing else.
  * - interested -> notify the tenant's team; a human takes it from here.
  * - not_interested -> a fixed, no-LLM-needed polite close-out reply.
- * - question / unknown -> attempt a knowledge-base-grounded auto-reply
- *   (src/chatbot.ts); if it's disabled, not configured, or the model itself
- *   determines this needs a human (price negotiation, complaint, complex
- *   request, explicit ask for a person, or anything outside the knowledge
- *   base), notify the tenant's team instead of guessing.
+ * - question / unknown -> notify the tenant's team; there's no automated
+ *   answering, only a human in the loop.
  *
  * `providerMessageId` (Twilio's MessageSid, when the caller has one) guards
- * against processing the same inbound delivery twice — this function calls
- * out to an LLM (classifyReply's optional enhancement, generateAutoReply)
+ * against processing the same inbound delivery twice — this function can
+ * call out to an LLM (classifyReply's optional classification enhancement)
  * before the caller responds to the provider's webhook request, so a slow
  * enough response can trigger a provider-level retry of the exact same
  * message. Without this, a retry would classify and reply/notify a second
- * time — a duplicate auto-reply sent to the lead, or a duplicate
- * "interested"/"needs human" alert to the tenant's team.
+ * time — a duplicate "interested"/"needs human" alert to the tenant's team.
  */
 async function recordInboundAndClassify(
   stores: Stores,
@@ -198,14 +193,8 @@ async function recordInboundAndClassify(
     return { classification };
   }
 
-  // "question" or "unknown"
-  const auto = await generateAutoReply(tenant, lead, history, body);
-  if (auto.action === "reply" && auto.replyBody) {
-    await sendAndLog(stores, tenant, lead, { channel, body: auto.replyBody }, "auto_reply");
-  } else {
-    await flagNeedsAttention(stores, tenant, lead, channel, body, "needs_human_reply");
-  }
-
+  // "question" or "unknown" — always escalates, no automated answering.
+  await flagNeedsAttention(stores, tenant, lead, channel, body, "needs_human_reply");
   return { classification };
 }
 
@@ -247,8 +236,8 @@ export function createWebhookRoutes(stores: Stores): Router {
       // A suspended tenant (see PATCH /admin/tenants/:id), or one that
       // hasn't accepted LeadRecovery's own Terms of Service/Privacy Policy
       // yet (a brand-new tenant starts unaccepted — see migration 0013),
-      // must be fully paused — no classification, no auto-reply/closer
-      // sends, no notifications — not just blocked from the authenticated
+      // must be fully paused — no classification, no closer sends, no
+      // notifications — not just blocked from the authenticated
       // tenant API. Responds exactly like "no lead matched" so this isn't
       // distinguishable from ordinary traffic and Twilio doesn't retry it
       // as an error.
@@ -637,7 +626,7 @@ export function createWebhookRoutes(stores: Stores): Router {
           details: { eventType, newStatus: patch.status },
         });
         logger.info("paddle_webhook_status_change", { tenantId: tenant.id, eventType, newStatus: patch.status });
-        // Unlike an "interested" reply or a chatbot escalation (notify.ts),
+        // Unlike an "interested" reply or an escalation (notify.ts),
         // this isn't something a tenant's own team needs to hear about via
         // their notifyWebhookUrl — it's the agency running LeadRecovery that
         // needs to know one of its clients just got auto-suspended (or

@@ -10,11 +10,9 @@ const ADMIN_KEY = "e2e-test-admin-key";
 
 async function createChatTenant(page: import("@playwright/test").Page) {
   const name = `Chat Widget Test ${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
-  // Deliberately no knowledgeBase/autoReplyEnabled: generateAutoReply then
-  // always resolves to {action: "disabled"} without ever calling the real
-  // Anthropic API, so this spec stays fully deterministic and network-free,
-  // the same as the unit suite's mocked equivalents — it asserts on the
-  // fixed ESCALATION_NOTICE hand-off text instead of a model-generated one.
+  // The chat widget never auto-answers — every question/unknown reply
+  // escalates to a human, so this spec stays fully deterministic and
+  // network-free; it asserts on the fixed ESCALATION_NOTICE hand-off text.
   const created = await page.request.post("/admin/tenants", {
     headers: { Authorization: `Bearer ${ADMIN_KEY}` },
     data: {

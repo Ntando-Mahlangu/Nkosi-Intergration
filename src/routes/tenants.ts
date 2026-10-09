@@ -22,8 +22,6 @@ import {
   type NumberHostingAddress,
 } from "../numberHosting.js";
 
-const MAX_KNOWLEDGE_BASE_LENGTH = 20_000;
-
 interface TenantConfigBody {
   name?: string;
   timezone?: string;
@@ -32,8 +30,6 @@ interface TenantConfigBody {
   channels?: Tenant["channels"];
   notifyWebhookUrl?: string;
   templates?: Tenant["templates"];
-  knowledgeBase?: string;
-  autoReplyEnabled?: boolean;
   status?: Tenant["status"];
   paddleSubscriptionId?: string | null;
   contactPhone?: string;
@@ -50,7 +46,6 @@ interface TenantConfigBody {
   termsAttested?: boolean;
   /** Admin-only — see PATCH /admin/tenants/:id. */
   carrierApprovalConfirmed?: boolean;
-  botDisclosureEnabled?: boolean;
   dataRetentionDays?: number;
   /** The tenant's SaaS-style login identity (src/routes/auth.ts) — distinct from contactEmail, see Tenant.email. Settable by the tenant itself or an admin; `null` clears it. */
   email?: string | null;
@@ -81,7 +76,7 @@ function isValidTimezone(timezone: string): boolean {
  * deliberately not format-validated — a real business's phone/email/site
  * comes in too many shapes ("call the shop, ask for John", a WhatsApp-only
  * number, no website yet) to reject without being unhelpful. Only a
- * sane length cap, same purpose as knowledgeBase's own cap above.
+ * sane length cap.
  */
 function isValidContactField(value: unknown): boolean {
   if (value === undefined) return true;
@@ -138,11 +133,6 @@ function isValidWebhookUrl(url: unknown): boolean {
   } catch {
     return false;
   }
-}
-
-function isValidKnowledgeBase(knowledgeBase: unknown): boolean {
-  if (knowledgeBase === undefined) return true;
-  return typeof knowledgeBase === "string" && knowledgeBase.length <= MAX_KNOWLEDGE_BASE_LENGTH;
 }
 
 function isValidStatus(status: unknown): boolean {
@@ -217,11 +207,9 @@ function isValidAttentionSlaHours(value: unknown): boolean {
 
 /**
  * Validates a tenant config patch/create body against the current (pre-merge)
- * tenant state, if any — so e.g. enabling autoReplyEnabled without touching
- * knowledgeBase in this request still checks against the tenant's existing
- * knowledgeBase. Returns an error message, or undefined if valid.
+ * tenant state, if any. Returns an error message, or undefined if valid.
  */
-function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant): string | undefined {
+function validateTenantConfig(body: Partial<TenantConfigBody>): string | undefined {
   if (body.timezone !== undefined && !isValidTimezone(body.timezone)) {
     return `invalid timezone: ${body.timezone}`;
   }
@@ -231,17 +219,11 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   if (!isValidWebhookUrl(body.notifyWebhookUrl)) {
     return "notifyWebhookUrl must be a valid http(s) URL";
   }
-  if (!isValidKnowledgeBase(body.knowledgeBase)) {
-    return `knowledgeBase must be a string up to ${MAX_KNOWLEDGE_BASE_LENGTH} characters`;
-  }
   if (!isValidStatus(body.status)) {
     return 'status must be "active" or "suspended"';
   }
   if (!isValidDataRetentionDays(body.dataRetentionDays)) {
     return `dataRetentionDays must be a whole number from ${MIN_DATA_RETENTION_DAYS} to ${MAX_DATA_RETENTION_DAYS}`;
-  }
-  if (body.botDisclosureEnabled !== undefined && typeof body.botDisclosureEnabled !== "boolean") {
-    return "botDisclosureEnabled must be a boolean";
   }
   if (body.carrierApprovalConfirmed !== undefined && typeof body.carrierApprovalConfirmed !== "boolean") {
     return "carrierApprovalConfirmed must be a boolean";
@@ -283,12 +265,6 @@ function validateTenantConfig(body: Partial<TenantConfigBody>, existing?: Tenant
   ) {
     return "paddleSubscriptionId must be a non-empty string, or null to clear it";
   }
-  const mergedKnowledgeBase = body.knowledgeBase !== undefined ? body.knowledgeBase : existing?.knowledgeBase;
-  const mergedAutoReplyEnabled =
-    body.autoReplyEnabled !== undefined ? body.autoReplyEnabled : existing?.autoReplyEnabled;
-  if (mergedAutoReplyEnabled && !mergedKnowledgeBase?.trim()) {
-    return "autoReplyEnabled requires a non-empty knowledgeBase";
-  }
   return undefined;
 }
 
@@ -303,12 +279,9 @@ function buildTenantPatch(
   if (body.channels !== undefined) patch.channels = body.channels;
   if (body.notifyWebhookUrl !== undefined) patch.notifyWebhookUrl = body.notifyWebhookUrl;
   if (body.templates !== undefined) patch.templates = body.templates;
-  if (body.knowledgeBase !== undefined) patch.knowledgeBase = body.knowledgeBase;
-  if (body.autoReplyEnabled !== undefined) patch.autoReplyEnabled = body.autoReplyEnabled;
   if (body.contactPhone !== undefined) patch.contactPhone = body.contactPhone;
   if (body.contactEmail !== undefined) patch.contactEmail = body.contactEmail;
   if (body.website !== undefined) patch.website = body.website;
-  if (body.botDisclosureEnabled !== undefined) patch.botDisclosureEnabled = body.botDisclosureEnabled;
   if (body.dataRetentionDays !== undefined) patch.dataRetentionDays = body.dataRetentionDays;
   // Trimmed for the same lookup-integrity reason as paddleSubscriptionId
   // below; null/empty clears it (same "explicitly clear" precedent as
@@ -619,7 +592,7 @@ export function createTenantRoutes({
 
   // Self-service settings: a tenant can update its own operational config
   // (timezone/quiet hours/devMode/channel credentials/notification hook/
-  // message templates/chatbot) using its own API key. id/apiKey/createdAt/
+  // message templates) using its own API key. id/apiKey/createdAt/
   // status are immutable here — a tenant can't un-suspend itself, and API
   // key rotation goes through the admin API.
   router.patch(
@@ -639,7 +612,7 @@ export function createTenantRoutes({
         res.status(400).json({ error: "paddleSubscriptionId can only be changed via the admin API" });
         return;
       }
-      const error = validateTenantConfig(body, tenant);
+      const error = validateTenantConfig(body);
       if (error) {
         res.status(400).json({ error });
         return;
@@ -734,8 +707,6 @@ export function createTenantRoutes({
         channels,
         notifyWebhookUrl: body.notifyWebhookUrl,
         templates: body.templates,
-        knowledgeBase: body.knowledgeBase,
-        autoReplyEnabled: body.autoReplyEnabled ?? false,
         status: "active",
         paddleSubscriptionId:
           typeof body.paddleSubscriptionId === "string" ? body.paddleSubscriptionId.trim() : undefined,
@@ -756,7 +727,6 @@ export function createTenantRoutes({
         // required in-app acceptance. See Tenant.termsAttestedAt.
         termsAttestedAt: body.termsAttested ? new Date().toISOString() : undefined,
         carrierApprovalConfirmedAt: body.carrierApprovalConfirmed ? new Date().toISOString() : undefined,
-        botDisclosureEnabled: body.botDisclosureEnabled,
         dataRetentionDays: body.dataRetentionDays,
         email: typeof body.email === "string" ? body.email.trim() : undefined,
         loginPhone: typeof body.loginPhone === "string" ? body.loginPhone.trim() : undefined,
@@ -812,7 +782,7 @@ export function createTenantRoutes({
         return;
       }
       const body = req.body as Partial<TenantConfigBody>;
-      const error = validateTenantConfig(body, existing);
+      const error = validateTenantConfig(body);
       if (error) {
         res.status(400).json({ error });
         return;
@@ -1018,7 +988,7 @@ export function createTenantRoutes({
   );
 
   // Visibility into notify.ts's dead-letter queue: notifications ("interested"
-  // replies / chatbot escalations) that failed to reach a tenant's
+  // replies / question-or-unknown escalations) that failed to reach a tenant's
   // notifyWebhookUrl even after retries. "pending" ones are still being
   // retried by the worker each tick; "dead" ones gave up after
   // NOTIFICATION_MAX_ATTEMPTS and need a human to notice (usually a broken

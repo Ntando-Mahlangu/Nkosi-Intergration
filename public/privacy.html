@@ -176,7 +176,7 @@
       <tr><td>Team member accounts</td><td>If you add additional people to your account ("team accounts"), each one's email address and role — no payment or billing data is attached to a team member</td></tr>
       <tr><td>Your lead data</td><td>Names, phone numbers, email addresses, source, notes, appointment details you upload or connect via webhook/CSV</td></tr>
       <tr><td>Message content</td><td>Outbound messages sent on your behalf and inbound replies received, plus delivery status</td></tr>
-      <tr><td>Configuration</td><td>Message template wording, and any knowledge-base text you provide for the automated reply assistant</td></tr>
+      <tr><td>Configuration</td><td>Message template wording</td></tr>
       <tr><td>Usage/technical data</td><td>API request logs, timestamps, IP address (for rate limiting and security)</td></tr>
     </table>
   </section>
@@ -202,13 +202,13 @@
   <section>
     <h2>4. How we use this information</h2>
     <ul>
-      <li>To operate the Service — compose, send, and track messages; classify replies; run the automated reply assistant when you enable it.</li>
+      <li>To operate the Service — compose, send, and track messages; classify replies.</li>
       <li>To notify your team when a lead reply needs human attention (via a webhook URL you configure, e.g. Slack).</li>
       <li>To provide activity/ROI reporting back to you.</li>
       <li>To maintain security (rate limiting, audit logging of admin actions) and to troubleshoot issues.</li>
       <li>To bill you, where applicable, via our payment processor.</li>
     </ul>
-    <p>We do not sell lead data, and we do not use it to train any model beyond the specific automated-reply behavior you configure for your own account.</p>
+    <p>We do not sell lead data, and we do not use it to train any model.</p>
   </section>
 
   <section>
@@ -217,7 +217,7 @@
     <ul>
       <li><strong>Twilio</strong> — to send/receive SMS and WhatsApp messages, when you configure that channel.</li>
       <li><strong>SendGrid</strong> — to send/receive email, when you configure that channel.</li>
-      <li><strong>Anthropic (Claude API)</strong> — to compose automated reply answers from your own knowledge-base text, and optionally to help classify ambiguous inbound replies, only when you enable those features.</li>
+      <li><strong>Anthropic (Claude API)</strong> — optionally, to help classify ambiguous inbound replies, only when that feature is enabled.</li>
       <li><strong>Paddle</strong> — to process billing, if your account is billed through it.</li>
       <li><strong>Our hosting/database provider</strong> — <span class="placeholder">[name your host]</span> — to store and run the Service.</li>
     </ul>

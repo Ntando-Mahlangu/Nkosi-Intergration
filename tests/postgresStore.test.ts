@@ -43,8 +43,7 @@ const TENANT: Tenant = {
   quietHours: { startHour: 20, endHour: 8 },
   devMode: false,
   channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+15550000" } },
-  autoReplyEnabled: false, // the DB column is NOT NULL DEFAULT FALSE, so a round-trip always returns a real boolean here
-  winBackEnabled: false, // ditto
+  winBackEnabled: false, // the DB column is NOT NULL DEFAULT FALSE, so a round-trip always returns a real boolean here
   status: "active", // ditto — NOT NULL DEFAULT 'active'
   createdAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
 };
@@ -83,23 +82,6 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(missing).toBeUndefined();
   });
 
-  it("round-trips knowledgeBase and autoReplyEnabled", async () => {
-    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
-    await tenantStore.createTenant({
-      ...TENANT,
-      knowledgeBase: "We open at 8am and close at 5pm, Monday to Friday.",
-      autoReplyEnabled: true,
-    });
-
-    const reread = await tenantStore.getTenant(TENANT.id);
-    expect(reread?.knowledgeBase).toBe("We open at 8am and close at 5pm, Monday to Friday.");
-    expect(reread?.autoReplyEnabled).toBe(true);
-
-    const updated = await tenantStore.updateTenant(TENANT.id, { autoReplyEnabled: false });
-    expect(updated?.autoReplyEnabled).toBe(false);
-    expect(updated?.knowledgeBase).toBe("We open at 8am and close at 5pm, Monday to Friday."); // untouched fields survive a partial update
-  });
-
   it("round-trips the legal-compliance attestation/config fields (migration 0014)", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant({
@@ -107,7 +89,6 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
       consentBasisConfirmedAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
       termsAttestedAt: new Date("2026-01-01T12:00:00.000Z").toISOString(),
       carrierApprovalConfirmedAt: new Date("2026-01-02T00:00:00.000Z").toISOString(),
-      botDisclosureEnabled: false,
       dataRetentionDays: 90,
     });
 
@@ -115,7 +96,6 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(reread?.consentBasisConfirmedAt).toBe("2026-01-01T00:00:00.000Z");
     expect(reread?.termsAttestedAt).toBe("2026-01-01T12:00:00.000Z");
     expect(reread?.carrierApprovalConfirmedAt).toBe("2026-01-02T00:00:00.000Z");
-    expect(reread?.botDisclosureEnabled).toBe(false);
     expect(reread?.dataRetentionDays).toBe(90);
 
     const updated = await tenantStore.updateTenant(TENANT.id, {
@@ -234,12 +214,12 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     await tenantStore.createTenant(TENANT);
 
     await Promise.all([
-      tenantStore.updateTenant(TENANT.id, { knowledgeBase: "concurrent write A" }),
+      tenantStore.updateTenant(TENANT.id, { website: "https://concurrent-write-a.example.com" }),
       tenantStore.updateTenant(TENANT.id, { status: "suspended" }),
     ]);
 
     const reread = await tenantStore.getTenant(TENANT.id);
-    expect(reread?.knowledgeBase).toBe("concurrent write A");
+    expect(reread?.website).toBe("https://concurrent-write-a.example.com");
     expect(reread?.status).toBe("suspended");
   });
 

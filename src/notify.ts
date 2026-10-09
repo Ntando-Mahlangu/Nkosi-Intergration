@@ -14,7 +14,7 @@ export type NotifyChannel = Channel | "chat";
 const SUMMARIES: Record<NotifyReason, (lead: Lead, channel: NotifyChannel, body: string) => string> = {
   interested: (lead, channel, body) => `🔥 ${lead.name ?? lead.id} replied "interested" via ${channel}: "${body}"`,
   needs_human_reply: (lead, channel, body) =>
-    `🙋 ${lead.name ?? lead.id} needs a human reply via ${channel} (auto-reply couldn't answer): "${body}"`,
+    `🙋 ${lead.name ?? lead.id} needs a human reply via ${channel}: "${body}"`,
 };
 
 const EVENT_NAMES: Record<NotifyReason, string> = {
@@ -50,7 +50,7 @@ function buildPayload(
  * instead. Uses postToUntrustedUrl (src/ssrf.ts) rather than a plain
  * fetch(): webhookUrl is entirely tenant-controlled and this is a real
  * server-side request triggered by lead/tenant-controlled events (a reply
- * classifying "interested", a chatbot escalation) — postToUntrustedUrl
+ * classifying "interested", a question/unknown escalation) — postToUntrustedUrl
  * pins the connection to a single validated address so this can't be used
  * as a DNS-rebinding SSRF proxy into an internal network, and never
  * follows a redirect a compromised/malicious target might issue.
@@ -73,9 +73,9 @@ export async function deliverNotification(
 
 /**
  * Best-effort notification for the two cases a human should act on
- * promptly: a reply classified "interested", or one the auto-reply
- * chatbot couldn't confidently answer from the knowledge base and
- * escalated. POSTs a JSON body to tenant.notifyWebhookUrl; the `text`
+ * promptly: a reply classified "interested", or a "question"/"unknown"
+ * reply, which always escalates rather than being auto-answered. POSTs a
+ * JSON body to tenant.notifyWebhookUrl; the `text`
  * field makes it work directly as a Slack (or similar) incoming webhook,
  * while the rest of the payload is there for a custom endpoint to use.
  *
@@ -143,8 +143,8 @@ export async function notifyHumanAttention(
  * webhook notification (notifyHumanAttention above) — called from both
  * webhooks/index.ts's recordInboundAndClassify (real SMS/WhatsApp/email)
  * and chatWidget.ts's answerChatMessage (website chat), the only two
- * places a reply gets classified "interested" or escalates past the
- * auto-reply bot.
+ * places a reply gets classified "interested" or escalates as a
+ * "question"/"unknown" reply.
  *
  * Deliberately does NOT overwrite an already-set needsAttentionAt: a
  * second inbound message while the lead is still unresolved must not

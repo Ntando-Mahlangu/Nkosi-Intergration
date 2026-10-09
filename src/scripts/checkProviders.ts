@@ -53,7 +53,7 @@ async function checkSendGrid(apiKey: string): Promise<CheckResult> {
 }
 
 async function checkAnthropic(apiKey: string): Promise<CheckResult> {
-  const label = "Anthropic (chatbot auto-reply / LLM reply classification)";
+  const label = "Anthropic (LLM reply classification)";
   try {
     const client = new Anthropic({ apiKey });
     await client.models.list(); // lightweight metadata call, no token cost
@@ -66,7 +66,7 @@ async function checkAnthropic(apiKey: string): Promise<CheckResult> {
 /**
  * Makes a real, lightweight, authenticated call to every provider a tenant
  * has credentials configured for (Twilio SMS/WhatsApp, SendGrid, and
- * Anthropic if the chatbot or LLM classification is enabled), to catch a
+ * Anthropic if LLM reply classification is enabled), to catch a
  * bad/revoked/misscoped credential before it fails silently on a real
  * customer's first message. Run this after onboarding a tenant and before
  * flipping it live — see ONBOARDING.md step 6 (Pilot).
@@ -93,7 +93,7 @@ async function main() {
   if (tenant.channels.sms) checks.push(checkTwilio("Twilio (SMS)", tenant.channels.sms));
   if (tenant.channels.whatsapp) checks.push(checkTwilio("Twilio (WhatsApp)", tenant.channels.whatsapp));
   if (tenant.channels.email) checks.push(checkSendGrid(tenant.channels.email.apiKey));
-  const needsAnthropic = tenant.autoReplyEnabled || process.env.LEADRECOVERY_USE_LLM_CLASSIFICATION === "true";
+  const needsAnthropic = process.env.LEADRECOVERY_USE_LLM_CLASSIFICATION === "true";
   if (needsAnthropic && process.env.ANTHROPIC_API_KEY) {
     checks.push(checkAnthropic(process.env.ANTHROPIC_API_KEY));
   }
@@ -110,7 +110,7 @@ async function main() {
 
   if (needsAnthropic && !process.env.ANTHROPIC_API_KEY) {
     console.log(
-      "✗ Anthropic: chatbot/LLM classification is enabled but ANTHROPIC_API_KEY is not set in this environment."
+      "✗ Anthropic: LLM reply classification is enabled but ANTHROPIC_API_KEY is not set in this environment."
     );
   }
 

@@ -209,7 +209,7 @@
   <header>
     <div>
       <h1 id="tenant-name">LeadRecovery</h1>
-      <div class="sub" id="tenant-sub">Message &amp; auto-reply settings</div>
+      <div class="sub" id="tenant-sub">Message &amp; notification settings</div>
     </div>
     <div style="display:flex; gap:8px;">
       <a class="secondary" href="index.html">Command Center</a>
@@ -316,42 +316,6 @@
     </section>
 
     <section>
-      <h2>Auto-reply chatbot</h2>
-      <div class="desc">
-        Answers routine inbound questions (hours, pricing, policies)
-        automatically instead of always waiting for a human. It only ever
-        answers from the text below — nothing it wasn't told — and escalates
-        anything it isn't confident is covered (price negotiation,
-        complaints, an explicit request for a person).
-      </div>
-
-      <div class="field">
-        <div class="field-label">
-          <label for="knowledge-base" style="margin:0;">Knowledge base</label>
-          <span class="counter" id="kb-counter">0 / 20,000</span>
-        </div>
-        <textarea id="knowledge-base" rows="8" placeholder="Services offered, pricing, hours, policies — whatever you'd want a front-desk person to know."></textarea>
-      </div>
-
-      <div class="checkbox-row">
-        <input type="checkbox" id="auto-reply-enabled" />
-        <label for="auto-reply-enabled">Turn on auto-reply</label>
-      </div>
-      <div class="hint">Requires a non-empty knowledge base above — grayed out until you've written one.</div>
-
-      <div class="checkbox-row" style="margin-top:16px;">
-        <input type="checkbox" id="bot-disclosure-enabled" />
-        <label for="bot-disclosure-enabled">Proactively disclose that replies are automated</label>
-      </div>
-      <div class="hint">
-        On by default (recommended) — the first auto-reply of every conversation
-        says up front that it's an automated assistant. Some jurisdictions
-        require this (e.g. California's B.O.T. Act) — only turn it off after
-        confirming your jurisdiction doesn't.
-      </div>
-    </section>
-
-    <section>
       <h2>Win-back messaging</h2>
       <div class="desc">
         Periodic check-ins to past customers — distinct from the recovery
@@ -380,7 +344,7 @@
     <section>
       <h2>Needs-attention alerting</h2>
       <div class="desc">
-        Every "interested" reply, and every chatbot escalation, already shows
+        Every "interested" reply, and every question/unknown escalation, already shows
         up in the dashboard's "Needs attention" inbox. Set an hours threshold
         here to also get a one-time alert (sent to LeadRecovery's own
         operator, not this business's team) if one sits unresolved past it —
@@ -488,12 +452,10 @@
     <section>
       <h2>Add a chat box to your website</h2>
       <div class="desc">
-        A floating chat widget visitors can talk to live — answered by the
-        same knowledge-base auto-reply above (set "Knowledge base" and turn
-        on "Turn on auto-reply" for it to answer questions automatically;
-        otherwise every message is simply flagged for a human). Same safe-
-        to-publish key as the capture form above — it can only ever create
-        or continue a chat conversation through this one widget.
+        A floating chat widget visitors can talk to live — every message is
+        flagged for a human to follow up on; there's no automated answering.
+        Same safe-to-publish key as the capture form above — it can only
+        ever create or continue a chat conversation through this one widget.
       </div>
       <div class="field">
         <label for="chat-widget-snippet">Embeddable script tag</label>
@@ -593,15 +555,10 @@
     document.getElementById("tpl-fu-0").value = fu[0] || "";
     document.getElementById("tpl-fu-1").value = fu[1] || "";
     document.getElementById("tpl-fu-2").value = fu[2] || "";
-    document.getElementById("knowledge-base").value = tenant.knowledgeBase || "";
-    document.getElementById("auto-reply-enabled").checked = Boolean(tenant.autoReplyEnabled);
-    document.getElementById("bot-disclosure-enabled").checked = tenant.botDisclosureEnabled !== false;
     document.getElementById("data-retention-days").value = tenant.dataRetentionDays || "";
     document.getElementById("win-back-enabled").checked = Boolean(tenant.winBackEnabled);
     document.getElementById("win-back-cooldown-days").value = tenant.winBackCooldownDays || "";
     document.getElementById("attention-sla-hours").value = tenant.attentionSlaHours || "";
-    updateKbCounter();
-    updateAutoReplyAvailability();
   }
 
   // A copy-pasteable contact-form snippet for the client's own website —
@@ -648,28 +605,6 @@ document.getElementById("leadrecovery-form").addEventListener("submit", function
     const snippet = `<script src="${base}/chat-widget.js" data-tenant="${tenant.id}" data-form-key="${tenant.publicFormKey || ""}"><\/script>`;
     document.getElementById("chat-widget-snippet").value = snippet;
   }
-
-  function updateKbCounter() {
-    const len = document.getElementById("knowledge-base").value.length;
-    const counter = document.getElementById("kb-counter");
-    counter.textContent = len.toLocaleString() + " / 20,000";
-    counter.classList.toggle("over", len > 20000);
-  }
-
-  // Mirrors the server's own rule (autoReplyEnabled requires a non-empty
-  // knowledgeBase) so a client sees why the checkbox is unavailable instead
-  // of hitting a 400 after the fact.
-  function updateAutoReplyAvailability() {
-    const hasKb = document.getElementById("knowledge-base").value.trim().length > 0;
-    const checkbox = document.getElementById("auto-reply-enabled");
-    checkbox.disabled = !hasKb;
-    if (!hasKb) checkbox.checked = false;
-  }
-
-  document.getElementById("knowledge-base").addEventListener("input", () => {
-    updateKbCounter();
-    updateAutoReplyAvailability();
-  });
 
   function buildTemplatesPatch() {
     const templates = {};
@@ -976,16 +911,10 @@ document.getElementById("leadrecovery-form").addEventListener("submit", function
       return;
     }
 
-    const knowledgeBase = val("knowledge-base");
-    const autoReplyEnabled = document.getElementById("auto-reply-enabled").checked;
-    const botDisclosureEnabled = document.getElementById("bot-disclosure-enabled").checked;
     const winBackEnabled = document.getElementById("win-back-enabled").checked;
 
     const patchBody = {
       templates,
-      knowledgeBase,
-      autoReplyEnabled,
-      botDisclosureEnabled,
       winBackEnabled,
       email: val("account-email") || null,
     };
@@ -1107,7 +1036,7 @@ document.getElementById("leadrecovery-form").addEventListener("submit", function
   document.getElementById("reset-btn").addEventListener("click", async () => {
     const session = getSession();
     if (!session) return;
-    if (!confirm("Reset all custom message wording to LeadRecovery's built-in defaults? This doesn't touch the chatbot's knowledge base.")) return;
+    if (!confirm("Reset all custom message wording to LeadRecovery's built-in defaults?")) return;
     saveStatus.textContent = "";
     saveStatus.className = "save-status";
     try {

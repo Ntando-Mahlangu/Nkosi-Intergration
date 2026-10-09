@@ -137,10 +137,10 @@ export function createPublicChatRoutes(stores: Stores): Router {
       if (!session) return;
       const { tenant, lead } = session;
 
-      // Same compliance gate every other send/auto-reply path enforces
-      // (worker.ts, webhooks/index.ts, POST /workflow/run) — a tenant that
-      // hasn't accepted LeadRecovery's own Terms of Service/Privacy Policy
-      // yet must be fully paused, including the chatbot.
+      // Same compliance gate every other send path enforces (worker.ts,
+      // webhooks/index.ts, POST /workflow/run) — a tenant that hasn't
+      // accepted LeadRecovery's own Terms of Service/Privacy Policy yet
+      // must be fully paused, including the chat widget.
       if (!tenant.termsAcceptedAt) {
         res.status(503).json({ error: "chat is temporarily unavailable" });
         return;

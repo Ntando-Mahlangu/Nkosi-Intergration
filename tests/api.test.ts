@@ -20,16 +20,6 @@ import { CURRENT_TERMS_VERSION } from "../src/terms.js";
 import type { Lead, Tenant } from "../src/types.js";
 import type { Stores } from "../src/store/index.js";
 
-// Chatbot auto-replies (src/chatbot.ts) call the Anthropic SDK directly whenever a
-// tenant has autoReplyEnabled + knowledgeBase set, independent of the reply-
-// classification LLM flag — mock it so those tests never hit the network.
-const anthropicCreateMock = vi.fn();
-vi.mock("@anthropic-ai/sdk", () => ({
-  default: class MockAnthropic {
-    messages = { create: anthropicCreateMock };
-  },
-}));
-
 // deliverNotification (src/notify.ts) goes through src/ssrf.ts's
 // postToUntrustedUrl, which resolves notifyWebhookUrl's hostname itself
 // (node:dns/promises) and issues the request via node:http/node:https
@@ -397,7 +387,7 @@ describe("tenant management routes", () => {
     delete process.env.ADMIN_API_KEY;
   });
 
-  it("lets a tenant self-configure botDisclosureEnabled and dataRetentionDays via PATCH /tenants/me", async () => {
+  it("lets a tenant self-configure dataRetentionDays via PATCH /tenants/me", async () => {
     process.env.ADMIN_API_KEY = "admin-secret";
     const stores = buildStores();
     const app = express();
@@ -412,9 +402,8 @@ describe("tenant management routes", () => {
     const patched = await request(app)
       .patch("/tenants/me")
       .set("Authorization", `Bearer ${created.body.apiKey}`)
-      .send({ botDisclosureEnabled: false, dataRetentionDays: 90 });
+      .send({ dataRetentionDays: 90 });
     expect(patched.status).toBe(200);
-    expect(patched.body.botDisclosureEnabled).toBe(false);
     expect(patched.body.dataRetentionDays).toBe(90);
 
     delete process.env.ADMIN_API_KEY;
@@ -2001,15 +1990,12 @@ describe("webhook: sms/whatsapp replies are blocked until carrier approval is co
   // *send* (sendAndLog's hasCarrierApproval check) — the inbound message is
   // still recorded and classified, since receiving isn't what carrier
   // approval governs (see COMPLIANCE.md "SMS / WhatsApp (Twilio)").
-  it("twilio/sms: still classifies the inbound reply, but suppresses the auto-reply send", async () => {
+  it("twilio/sms: still classifies the inbound reply, but suppresses the closer send", async () => {
     vi.spyOn(twilio, "validateRequest").mockReturnValue(true);
-    anthropicCreateMock.mockResolvedValueOnce({ content: [{ type: "text", text: "We're open 8-5!" }] });
     const tenant: Tenant = {
       ...TENANT,
       devMode: false, // devMode would otherwise bypass the gate this test proves
       channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+1" } },
-      autoReplyEnabled: true,
-      knowledgeBase: "Open Mon-Fri 8am-5pm.",
       carrierApprovalConfirmedAt: undefined,
     };
     const stores: Stores = {
@@ -2027,13 +2013,13 @@ describe("webhook: sms/whatsapp replies are blocked until carrier approval is co
     const res = await request(app)
       .post(`/webhooks/${tenant.id}/twilio/sms`)
       .type("form")
-      .send({ From: LEAD.phone, Body: "what are your hours?" });
+      .send({ From: LEAD.phone, Body: "not interested, thanks" });
 
     expect(res.status).toBe(200);
     const history = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
     expect(history).toHaveLength(1); // the inbound message was still recorded...
     expect(history[0].direction).toBe("inbound");
-    expect(history.some((m) => m.direction === "outbound")).toBe(false); // ...but no reply was sent
+    expect(history.some((m) => m.direction === "outbound")).toBe(false); // ...but the closer reply wasn't sent
   });
 });
 
@@ -2324,34 +2310,6 @@ describe("tenant self-service settings", () => {
     expect(res.status).toBe(200);
   });
 
-  it("lets a tenant set a knowledge base and enable auto-reply together", async () => {
-    const stores = buildStores();
-    const app = express();
-    app.use(express.json());
-    app.use(createTenantRoutes(stores));
-
-    const res = await request(app)
-      .patch("/tenants/me")
-      .set("Authorization", `Bearer ${TENANT.apiKey}`)
-      .send({ knowledgeBase: "We're open 9-5 Mon-Fri.", autoReplyEnabled: true });
-
-    expect(res.status).toBe(200);
-  });
-
-  it("rejects enabling auto-reply with no knowledge base set (on this or a prior request)", async () => {
-    const stores = buildStores();
-    const app = express();
-    app.use(express.json());
-    app.use(createTenantRoutes(stores));
-
-    const res = await request(app)
-      .patch("/tenants/me")
-      .set("Authorization", `Bearer ${TENANT.apiKey}`)
-      .send({ autoReplyEnabled: true });
-
-    expect(res.status).toBe(400);
-  });
-
   it("lets a tenant turn on win-back check-ins and set a cooldown", async () => {
     const stores = buildStores();
     const app = express();
@@ -2426,20 +2384,6 @@ describe("tenant self-service settings", () => {
       .set("Authorization", `Bearer ${TENANT.apiKey}`)
       .send({ attentionSlaHours: 2.5 });
     expect(notAnInteger.status).toBe(400);
-  });
-
-  it("rejects an oversized knowledge base", async () => {
-    const stores = buildStores();
-    const app = express();
-    app.use(express.json());
-    app.use(createTenantRoutes(stores));
-
-    const res = await request(app)
-      .patch("/tenants/me")
-      .set("Authorization", `Bearer ${TENANT.apiKey}`)
-      .send({ knowledgeBase: "x".repeat(20_001) });
-
-    expect(res.status).toBe(400);
   });
 
   it("refuses to let a tenant change its own status — a tenant can't un-suspend itself", async () => {
@@ -2698,18 +2642,8 @@ describe("rate limiting", () => {
   });
 });
 
-describe("chatbot auto-reply on inbound messages", () => {
-  const CHATBOT_TENANT: Tenant = {
-    ...TENANT,
-    autoReplyEnabled: true,
-    knowledgeBase: "We offer callouts starting at R500. Open Mon-Fri 8am-5pm.",
-    // Most of this block's assertions match the model's reply body exactly —
-    // disabled here so they aren't also asserting on the (separately tested,
-    // see "prepends a proactive bot-disclosure note...") disclosure prefix.
-    botDisclosureEnabled: false,
-  };
-
-  function buildChatbotStores(tenant: Tenant = CHATBOT_TENANT): Stores {
+describe("question/unknown replies always escalate to a human on inbound messages", () => {
+  function buildEscalationStores(tenant: Tenant = TENANT): Stores {
     return {
       leadStore: new InMemoryLeadStore([LEAD]),
       tenantStore: new InMemoryTenantStore([tenant]),
@@ -2721,99 +2655,20 @@ describe("chatbot auto-reply on inbound messages", () => {
     };
   }
 
-  beforeEach(() => {
-    anthropicCreateMock.mockReset();
-  });
-
-  it("sends a knowledge-base-grounded reply for a question and logs it as kind=auto_reply", async () => {
-    anthropicCreateMock.mockResolvedValueOnce({
-      content: [{ type: "text", text: "We're open Mon-Fri 8am-5pm!" }],
-    });
-    const stores = buildChatbotStores();
-    const app = express();
-    app.use(createWebhookRoutes(stores));
-
-    const res = await request(app)
-      .post(`/webhooks/${CHATBOT_TENANT.id}/sendgrid/email?token=${CHATBOT_TENANT.apiKey}`)
-      .field("from", "Jordan <jordan@example.com>")
-      .field("text", "what are your hours?");
-
-    expect(res.status).toBe(204);
-    const history = await stores.messageStore.getMessagesForLead(CHATBOT_TENANT.id, LEAD.id);
-    const autoReply = history.find((m) => m.direction === "outbound");
-    expect(autoReply?.kind).toBe("auto_reply");
-    expect(autoReply?.body).toBe("We're open Mon-Fri 8am-5pm!");
-
-    const lead = await stores.leadStore.getLeadById(CHATBOT_TENANT.id, LEAD.id);
-    expect(lead?.status).toBe("responded");
-  });
-
-  it("proactively discloses it's an automated assistant on the first auto-reply, end to end, unless the tenant opts out", async () => {
-    anthropicCreateMock.mockResolvedValueOnce({
-      content: [{ type: "text", text: "We're open Mon-Fri 8am-5pm!" }],
-    });
-    // Unlike CHATBOT_TENANT above, leaves botDisclosureEnabled unset — the
-    // recommended default (see COMPLIANCE.md "Bot disclosure").
-    const tenant: Tenant = { ...CHATBOT_TENANT, botDisclosureEnabled: undefined };
-    const stores = buildChatbotStores(tenant);
-    const app = express();
-    app.use(createWebhookRoutes(stores));
-
-    await request(app)
-      .post(`/webhooks/${tenant.id}/sendgrid/email?token=${tenant.apiKey}`)
-      .field("from", "Jordan <jordan@example.com>")
-      .field("text", "what are your hours?");
-
-    const history = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
-    const autoReply = history.find((m) => m.direction === "outbound");
-    expect(autoReply?.body).toContain("you're chatting with an automated assistant");
-    expect(autoReply?.body).toContain("We're open Mon-Fri 8am-5pm!");
-  });
-
-  it("survives the channel adapter throwing while sending the auto-reply instead of failing the whole webhook request", async () => {
-    // Regression test: sendAndLog's adapter.send() call had no try/catch,
-    // so a real provider-level error (not just {ok: false}) used to
-    // propagate out of the whole inbound-webhook request.
-    anthropicCreateMock.mockResolvedValueOnce({
-      content: [{ type: "text", text: "We're open Mon-Fri 8am-5pm!" }],
-    });
-    const stores = buildChatbotStores();
-    const app = express();
-    app.use(createWebhookRoutes(stores));
-
-    const { emailAdapter } = await import("../src/channels/email.js");
-    const sendSpy = vi.spyOn(emailAdapter, "send").mockRejectedValueOnce(new Error("SendGrid: 401 unauthorized"));
-
-    const res = await request(app)
-      .post(`/webhooks/${CHATBOT_TENANT.id}/sendgrid/email?token=${CHATBOT_TENANT.apiKey}`)
-      .field("from", "Jordan <jordan@example.com>")
-      .field("text", "what are your hours?");
-
-    expect(res.status).toBe(204);
-    // Classification/status still completed even though the reply couldn't be sent.
-    const lead = await stores.leadStore.getLeadById(CHATBOT_TENANT.id, LEAD.id);
-    expect(lead?.status).toBe("responded");
-    const history = await stores.messageStore.getMessagesForLead(CHATBOT_TENANT.id, LEAD.id);
-    expect(history.some((m) => m.direction === "outbound")).toBe(false); // the failed send was never logged
-
-    sendSpy.mockRestore();
-  });
-
-  it("notifies for a human instead of replying when the model escalates", async () => {
-    anthropicCreateMock.mockResolvedValueOnce({ content: [{ type: "text", text: "ESCALATE" }] });
-    const tenant: Tenant = { ...CHATBOT_TENANT, notifyWebhookUrl: "https://hooks.example.com/notify" };
-    const stores = buildChatbotStores(tenant);
+  it("notifies for a human instead of ever auto-answering a question", async () => {
+    const tenant: Tenant = { ...TENANT, notifyWebhookUrl: "https://hooks.example.com/notify" };
+    const stores = buildEscalationStores(tenant);
     const app = express();
     app.use(createWebhookRoutes(stores));
 
     const res = await request(app)
       .post(`/webhooks/${tenant.id}/sendgrid/email?token=${tenant.apiKey}`)
       .field("from", "Jordan <jordan@example.com>")
-      .field("text", "can you do it for R200 instead?");
+      .field("text", "what are your hours?");
 
     expect(res.status).toBe(204);
     const history = await stores.messageStore.getMessagesForLead(tenant.id, LEAD.id);
-    expect(history.some((m) => m.direction === "outbound")).toBe(false); // no auto-reply sent
+    expect(history.some((m) => m.direction === "outbound")).toBe(false); // no automated reply sent
 
     // Fired via `void notifyHumanAttention(...)`, not awaited by the route —
     // wait for the mock instead of asserting immediately (see the identical
@@ -2827,22 +2682,22 @@ describe("chatbot auto-reply on inbound messages", () => {
     const lead = await stores.leadStore.getLeadById(tenant.id, LEAD.id);
     expect(lead?.needsAttentionAt).toBeTruthy();
     expect(lead?.needsAttentionReason).toBe("needs_human_reply");
+    expect(lead?.status).toBe("responded");
   });
 
-  it("never calls the LLM for a not_interested reply — sends a fixed closer instead", async () => {
-    const stores = buildChatbotStores();
+  it("sends a fixed closer, not an escalation, for a not_interested reply", async () => {
+    const stores = buildEscalationStores();
     const app = express();
     app.use(createWebhookRoutes(stores));
 
     const res = await request(app)
-      .post(`/webhooks/${CHATBOT_TENANT.id}/sendgrid/email?token=${CHATBOT_TENANT.apiKey}`)
+      .post(`/webhooks/${TENANT.id}/sendgrid/email?token=${TENANT.apiKey}`)
       .field("from", "Jordan <jordan@example.com>")
       .field("text", "no thanks, not interested");
 
     expect(res.status).toBe(204);
-    expect(anthropicCreateMock).not.toHaveBeenCalled();
 
-    const history = await stores.messageStore.getMessagesForLead(CHATBOT_TENANT.id, LEAD.id);
+    const history = await stores.messageStore.getMessagesForLead(TENANT.id, LEAD.id);
     const closer = history.find((m) => m.direction === "outbound");
     expect(closer?.kind).toBe("closer");
     expect(closer?.body).toContain("Jordan");
@@ -2850,16 +2705,16 @@ describe("chatbot auto-reply on inbound messages", () => {
     // SYSTEM_PROMPT.md STEP 4: a negative signal must suppress the lead
     // (do_not_contact is in compliance.ts's SUPPRESSED_STATUSES), not just
     // leave it at the generic "responded" every other classification gets.
-    const updated = await stores.leadStore.getLeadById(CHATBOT_TENANT.id, LEAD.id);
+    const updated = await stores.leadStore.getLeadById(TENANT.id, LEAD.id);
     expect(updated?.status).toBe("do_not_contact");
   });
 
-  it("still auto-replies with the tenant's own template when a custom notInterestedCloser is set", async () => {
+  it("sends the tenant's own template when a custom notInterestedCloser is set", async () => {
     const tenant: Tenant = {
-      ...CHATBOT_TENANT,
+      ...TENANT,
       templates: { notInterestedCloser: "All good {name}, {businessName} is here whenever you need us." },
     };
-    const stores = buildChatbotStores(tenant);
+    const stores = buildEscalationStores(tenant);
     const app = express();
     app.use(createWebhookRoutes(stores));
 
@@ -2873,27 +2728,20 @@ describe("chatbot auto-reply on inbound messages", () => {
     expect(closer?.body).toBe("All good Jordan, Acme Co is here whenever you need us.");
   });
 
-  it("does not attempt an auto-reply when the tenant hasn't enabled it, even for a question", async () => {
-    const stores: Stores = {
-      leadStore: new InMemoryLeadStore([LEAD]),
-      tenantStore: new InMemoryTenantStore([TENANT]), // autoReplyEnabled unset
-      messageStore: new InMemoryMessageStore(),
-      notificationStore: new InMemoryNotificationStore(),
-      auditLogStore: new InMemoryAuditLogStore(),
-      salesInquiryStore: new InMemorySalesInquiryStore(),
-      tenantUserStore: new InMemoryTenantUserStore(),
-    };
+  it("escalates an unknown reply just like a question", async () => {
+    const stores = buildEscalationStores();
     const app = express();
     app.use(createWebhookRoutes(stores));
 
     const res = await request(app)
       .post(`/webhooks/${TENANT.id}/sendgrid/email?token=${TENANT.apiKey}`)
       .field("from", "Jordan <jordan@example.com>")
-      .field("text", "what are your hours?");
+      .field("text", "ok");
 
     expect(res.status).toBe(204);
-    expect(anthropicCreateMock).not.toHaveBeenCalled();
     const history = await stores.messageStore.getMessagesForLead(TENANT.id, LEAD.id);
     expect(history.some((m) => m.direction === "outbound")).toBe(false);
+    const lead = await stores.leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(lead?.needsAttentionReason).toBe("needs_human_reply");
   });
 });

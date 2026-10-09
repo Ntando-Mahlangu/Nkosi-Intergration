@@ -33,8 +33,8 @@ export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, mess
     asyncHandler(async (req: Request, res: Response) => {
       let leads = await leadStore.getAllLeads(req.tenant!.id);
       // Backs the dashboard's "Needs attention" inbox section — every lead
-      // notifyHumanAttention has fired for (an "interested" reply, or the
-      // chatbot escalating) that hasn't yet been replied to or marked
+      // notifyHumanAttention has fired for (an "interested" reply, or a
+      // question/unknown reply escalating) that hasn't yet been replied to or marked
       // handled (see POST /leads/:id/reply and /leads/:id/mark-handled).
       if (req.query.needsAttention === "true") {
         leads = leads.filter((lead) => Boolean(lead.needsAttentionAt));
@@ -255,7 +255,7 @@ export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, mess
     asyncHandler(async (req: Request, res: Response) => {
       const tenant = req.tenant!;
       // Same gate every other send path in this app already enforces
-      // (worker.ts, POST /workflow/run, every webhook auto-reply/closer,
+      // (worker.ts, POST /workflow/run, every webhook closer send,
       // the chat widget) — this is a real outbound send on the tenant's
       // behalf, not exempt just because a human typed it.
       if (!tenant.termsAcceptedAt) {

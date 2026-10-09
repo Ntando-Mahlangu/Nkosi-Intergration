@@ -224,9 +224,9 @@ export class PostgresLeadStore implements LeadStore {
 }
 
 const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at,
-  notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at,
+  notify_webhook_url, templates, status, status_reason, paddle_subscription_id, paddle_last_event_at,
   contact_phone, contact_email, website, terms_accepted_at, terms_version,
-  consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days,
+  consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, data_retention_days,
   email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, number_hosting_order,
   login_phone, otp_code_hash, otp_expires_at, otp_attempts, win_back_enabled, win_back_cooldown_days, attention_sla_hours`;
 
@@ -290,8 +290,6 @@ export class PostgresTenantStore implements TenantStore {
       channels: this.decodeChannels(row.channels),
       notifyWebhookUrl: (row.notify_webhook_url as string | null) ?? undefined,
       templates: (row.templates as Tenant["templates"] | null) ?? undefined,
-      knowledgeBase: (row.knowledge_base as string | null) ?? undefined,
-      autoReplyEnabled: Boolean(row.auto_reply_enabled),
       status: (row.status as Tenant["status"]) ?? "active",
       statusReason: (row.status_reason as Tenant["statusReason"] | null) ?? undefined,
       paddleSubscriptionId: (row.paddle_subscription_id as string | null) ?? undefined,
@@ -312,7 +310,6 @@ export class PostgresTenantStore implements TenantStore {
       carrierApprovalConfirmedAt: (row.carrier_approval_confirmed_at as string | null)
         ? new Date(row.carrier_approval_confirmed_at as string).toISOString()
         : undefined,
-      botDisclosureEnabled: (row.bot_disclosure_enabled as boolean | null) ?? undefined,
       dataRetentionDays: (row.data_retention_days as number | null) ?? undefined,
       email: (row.email as string | null) ?? undefined,
       passwordHash: (row.password_hash as string | null) ?? undefined,
@@ -388,8 +385,8 @@ export class PostgresTenantStore implements TenantStore {
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, knowledge_base, auto_reply_enabled, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, bot_disclosure_enabled, data_retention_days, email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, number_hosting_order, login_phone, otp_code_hash, otp_expires_at, otp_attempts, win_back_enabled, win_back_cooldown_days, attention_sla_hours)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, data_retention_days, email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, number_hosting_order, login_phone, otp_code_hash, otp_expires_at, otp_attempts, win_back_enabled, win_back_cooldown_days, attention_sla_hours)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)`,
       [
         tenant.id,
         tenant.name,
@@ -402,8 +399,6 @@ export class PostgresTenantStore implements TenantStore {
         tenant.createdAt,
         tenant.notifyWebhookUrl ?? null,
         tenant.templates ? JSON.stringify(tenant.templates) : null,
-        tenant.knowledgeBase ?? null,
-        tenant.autoReplyEnabled ?? false,
         tenant.status ?? "active",
         tenant.statusReason ?? null,
         tenant.paddleSubscriptionId ?? null,
@@ -416,7 +411,6 @@ export class PostgresTenantStore implements TenantStore {
         tenant.consentBasisConfirmedAt ?? null,
         tenant.termsAttestedAt ?? null,
         tenant.carrierApprovalConfirmedAt ?? null,
-        tenant.botDisclosureEnabled ?? null,
         tenant.dataRetentionDays ?? null,
         tenant.email ?? null,
         tenant.passwordHash ?? null,
@@ -466,8 +460,6 @@ export class PostgresTenantStore implements TenantStore {
     if ("channels" in patch) push("channels", this.encodeChannels(patch.channels ?? {}));
     if ("notifyWebhookUrl" in patch) push("notify_webhook_url", patch.notifyWebhookUrl ?? null);
     if ("templates" in patch) push("templates", patch.templates ? JSON.stringify(patch.templates) : null);
-    if ("knowledgeBase" in patch) push("knowledge_base", patch.knowledgeBase ?? null);
-    if ("autoReplyEnabled" in patch) push("auto_reply_enabled", patch.autoReplyEnabled ?? false);
     if ("status" in patch) push("status", patch.status ?? "active");
     if ("statusReason" in patch) push("status_reason", patch.statusReason ?? null);
     if ("paddleSubscriptionId" in patch) push("paddle_subscription_id", patch.paddleSubscriptionId ?? null);
@@ -482,7 +474,6 @@ export class PostgresTenantStore implements TenantStore {
     if ("carrierApprovalConfirmedAt" in patch) {
       push("carrier_approval_confirmed_at", patch.carrierApprovalConfirmedAt ?? null);
     }
-    if ("botDisclosureEnabled" in patch) push("bot_disclosure_enabled", patch.botDisclosureEnabled ?? null);
     if ("dataRetentionDays" in patch) push("data_retention_days", patch.dataRetentionDays ?? null);
     if ("email" in patch) push("email", patch.email ?? null);
     if ("passwordHash" in patch) push("password_hash", patch.passwordHash ?? null);

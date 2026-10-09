@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import request from "supertest";
 import express from "express";
 import {
@@ -15,16 +15,6 @@ import { CURRENT_TERMS_VERSION } from "../src/terms.js";
 import type { Tenant } from "../src/types.js";
 import type { Stores } from "../src/store/index.js";
 
-// generateAutoReply (src/chatbot.ts) calls the Anthropic SDK directly
-// whenever a tenant has autoReplyEnabled + knowledgeBase set — mock it so
-// these tests never hit the network.
-const anthropicCreateMock = vi.fn();
-vi.mock("@anthropic-ai/sdk", () => ({
-  default: class MockAnthropic {
-    messages = { create: anthropicCreateMock };
-  },
-}));
-
 const TENANT: Tenant = {
   id: "tenant-1",
   name: "Acme Co",
@@ -35,9 +25,6 @@ const TENANT: Tenant = {
   publicFormKey: "lrf_test_form_key",
   termsAcceptedAt: new Date().toISOString(),
   termsVersion: CURRENT_TERMS_VERSION,
-  autoReplyEnabled: true,
-  knowledgeBase: "We offer callouts starting at R500. Open Mon-Fri 8am-5pm.",
-  botDisclosureEnabled: false,
   createdAt: new Date().toISOString(),
 };
 
@@ -66,10 +53,6 @@ async function startChat(app: ReturnType<typeof buildApp>, overrides: Record<str
     .send({ formKey: TENANT.publicFormKey, name: "Jordan", ...overrides });
   return res;
 }
-
-beforeEach(() => {
-  anthropicCreateMock.mockReset();
-});
 
 describe("POST /public/chat/:tenantId/start", () => {
   it("creates a lead and returns a leadId + chatToken", async () => {
@@ -115,8 +98,7 @@ describe("POST /public/chat/:tenantId/start", () => {
 });
 
 describe("POST /public/chat/:tenantId/message", () => {
-  it("answers a question from the knowledge base and logs both sides of the exchange", async () => {
-    anthropicCreateMock.mockResolvedValueOnce({ content: [{ type: "text", text: "We're open Mon-Fri 8am-5pm!" }] });
+  it("escalates a question to a human instead of ever auto-answering it", async () => {
     const stores = buildStores();
     const app = buildApp(stores);
     const { body: session } = await startChat(app);
@@ -129,16 +111,17 @@ describe("POST /public/chat/:tenantId/message", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(res.body.displayText).toBe("We're open Mon-Fri 8am-5pm!");
+    expect(res.body.displayText).toMatch(/follow up/i);
     expect(res.body.classification).toBe("question");
 
     const history = await stores.messageStore.getMessagesForLead(TENANT.id, session.leadId);
-    expect(history).toHaveLength(2);
+    expect(history).toHaveLength(1); // only the inbound message — no automated reply sent
     expect(history[0]).toMatchObject({ direction: "inbound", channel: "chat" });
-    expect(history[1]).toMatchObject({ direction: "outbound", channel: "chat", kind: "auto_reply" });
 
     const lead = await stores.leadStore.getLeadById(TENANT.id, session.leadId);
     expect(lead?.status).toBe("responded");
+    expect(lead?.needsAttentionAt).toBeTruthy();
+    expect(lead?.needsAttentionReason).toBe("needs_human_reply");
   });
 
   it("rejects a wrong chatToken — one visitor can't post into another's conversation", async () => {
@@ -202,7 +185,6 @@ describe("POST /public/chat/:tenantId/message", () => {
     expect(res.status).toBe(200);
     expect(res.body.classification).toBe("interested");
     expect(res.body.displayText).toMatch(/follow up/i);
-    expect(anthropicCreateMock).not.toHaveBeenCalled();
 
     const lead = await stores.leadStore.getLeadById(TENANT.id, session.leadId);
     expect(lead?.needsAttentionAt).toBeTruthy();
@@ -226,7 +208,6 @@ describe("POST /public/chat/:tenantId/message", () => {
 
 describe("GET /public/chat/:tenantId/history", () => {
   it("returns only this lead's chat-channel messages, in order", async () => {
-    anthropicCreateMock.mockResolvedValueOnce({ content: [{ type: "text", text: "We're open Mon-Fri 8am-5pm!" }] });
     const stores = buildStores();
     const app = buildApp(stores);
     const { body: session } = await startChat(app);
@@ -235,7 +216,7 @@ describe("GET /public/chat/:tenantId/history", () => {
       formKey: TENANT.publicFormKey,
       leadId: session.leadId,
       chatToken: session.chatToken,
-      body: "what are your hours?",
+      body: "not interested, thanks",
     });
 
     const res = await request(app)
@@ -244,8 +225,8 @@ describe("GET /public/chat/:tenantId/history", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(2);
-    expect(res.body[0]).toMatchObject({ direction: "inbound", body: "what are your hours?" });
-    expect(res.body[1]).toMatchObject({ direction: "outbound", body: "We're open Mon-Fri 8am-5pm!" });
+    expect(res.body[0]).toMatchObject({ direction: "inbound", body: "not interested, thanks" });
+    expect(res.body[1]).toMatchObject({ direction: "outbound" });
   });
 
   it("rejects a wrong chatToken", async () => {

@@ -13,7 +13,7 @@ function stripBrackets(hostname: string): string {
  * A tenant sets notifyWebhookUrl themselves (via PATCH /tenants/me or the
  * admin API) and this server later does a real outbound POST to it
  * (src/notify.ts's deliverNotification) whenever a lead replies "interested"
- * or the chatbot escalates — both entirely lead/tenant-controlled triggers.
+ * or a question/unknown reply escalates — both entirely lead/tenant-controlled triggers.
  * Without this check, a tenant (or anyone holding a leaked tenant API key)
  * could point notifyWebhookUrl at an internal address — a cloud metadata
  * endpoint (169.254.169.254), a database on the deployment's private

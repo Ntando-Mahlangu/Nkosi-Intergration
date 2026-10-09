@@ -1,7 +1,7 @@
 import type { Lead, LeadStatus, Message, Tenant, TenantUser } from "../types.js";
 
 /**
- * A notification (an "interested" reply, or a chatbot escalation) that
+ * A notification (an "interested" reply, or a question/unknown escalation) that
  * failed to reach tenant.notifyWebhookUrl even after notify.ts's inline
  * retry — persisted so it isn't silently lost. The worker retries pending
  * ones on each tick; after MAX_NOTIFICATION_ATTEMPTS (see notify.ts) it's
