@@ -79,7 +79,15 @@ and their own leads.
   rights — see "Data handling" below, and "International data transfers"
   in `DEPLOYMENT.md`); a UK client acting as data controller for its leads
   should also register with the ICO and pay its annual data-protection
-  fee unless a specific exemption applies. None of this is triggered by
+  fee unless a specific exemption applies. Separately from the client's own
+  registration: if *you* (the agency running LeadRecovery) have no UK
+  establishment but process UK residents' personal data at scale, UK GDPR
+  Article 27 (DPA 2018 Schedule 21) requires appointing a **UK
+  representative** — a person or firm in the UK who can be contacted by
+  the ICO and data subjects on your behalf — unless a narrow exemption
+  applies (occasional, low-risk processing with no special-category data
+  at scale). This is about your own exposure as the one operating the
+  Service, not the client's. None of this is triggered by
   LeadRecovery making outbound *phone calls* — it doesn't — but if the
   client's own team separately makes live/automated marketing calls to the
   same leads outside this tool, they're also responsible for screening
