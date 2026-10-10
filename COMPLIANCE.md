@@ -74,7 +74,19 @@ and their own leads.
   enquired about a quote" supports a single factual recovery message more
   readily than ongoing marketing — confirm with the client which bucket
   their outreach actually falls into, and don't assume the TCPA-style
-  framing applies here either. Separately, UK GDPR and the Data Protection
+  framing applies here either. PECR's opt-in requirement is also narrower
+  than it first looks in another way: it applies to **individual
+  subscribers**, not **corporate subscribers** — marketing by electronic
+  means to a company's own line/inbox (rather than a named individual) generally
+  isn't covered by this opt-in rule at all. This matters for LeadRecovery
+  specifically because it's pitched at service businesses (plumbers,
+  clinics) whose own leads are typically individual consumers — but if a
+  UK client's leads are themselves businesses (a B2B use case), confirm
+  which category actually applies rather than assuming the opt-in/soft-
+  opt-in framing above is the relevant one; a named individual at a
+  corporate subscriber still keeps their general right to object to
+  unsolicited marketing (PECR reg. 23) and their UK GDPR rights regardless.
+  Separately, UK GDPR and the Data Protection
   Act 2018 govern the lead data itself (lawful basis, access/erasure
   rights — see "Data handling" below, and "International data transfers"
   in `DEPLOYMENT.md`); a UK client acting as data controller for its leads
