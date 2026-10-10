@@ -53,6 +53,46 @@ Three long-running things, plus a one-off migration step:
 `app` and `worker` are built from the same image (`Dockerfile`) — only the
 container command differs.
 
+## Data residency and international transfers
+
+This app has no built-in region restriction — Postgres, the `app`/`worker`
+containers, and every third-party processor (Twilio, SendGrid, Anthropic,
+Paddle) can each run or route through whatever region you/they choose, and
+nothing here enforces otherwise. Where you actually provision each of
+those is a decision you make before first deploy, and it determines what
+your `privacy.html` needs to say (see its "International data transfers"
+section) and what COMPLIANCE.md's own note on this covers:
+
+- **If every client/lead is in one jurisdiction with no particular
+  cross-border restriction** (e.g. a US-only agency serving US clients),
+  this mostly doesn't matter — pick whatever region is operationally
+  convenient.
+- **If you have UK or EU clients/leads and host outside the UK/EEA**
+  (e.g. a US-region managed Postgres, or a US-region deployment generally),
+  UK GDPR (and EU GDPR, if applicable) requires a lawful transfer
+  mechanism for that personal data leaving the UK/EEA — typically an
+  adequacy regulation covering the destination country, or a contractual
+  mechanism like the UK's International Data Transfer Agreement/Addendum
+  (built on the EU Standard Contractual Clauses) with whoever's actually
+  processing the data there. This is a legal/contractual step between you
+  and each processor, not something this app's code can satisfy on its
+  own — Twilio, SendGrid, Anthropic, and Paddle each separately publish
+  their own data-processing terms and transfer mechanisms; confirm what
+  each offers for your actual hosting choice.
+- **Picking a region for Postgres/hosting that's already inside the
+  jurisdiction you're serving** (e.g. a UK/EU-region managed Postgres
+  instance for a UK-only client base) sidesteps the question entirely for
+  that data store — it's the simplest option if most of your clients are
+  concentrated in one jurisdiction with its own residency expectations,
+  though it doesn't by itself control where Twilio/SendGrid/Anthropic/
+  Paddle process their own slice of the data.
+
+Whatever you land on, say so concretely in `privacy.html`'s own
+"International data transfers" section (it ships with a placeholder
+precisely because this is a hosting decision only you can make) — and see
+COMPLIANCE.md's "Data handling" section for the same point from the
+compliance-checklist side.
+
 ## Option 1: Docker Compose (self-hosted, all-in-one)
 
 ```bash

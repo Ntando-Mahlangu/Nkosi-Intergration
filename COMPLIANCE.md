@@ -62,6 +62,29 @@ and their own leads.
   framing applies. A South African client should also have (or appoint) an
   Information Officer registered with the Information Regulator, per
   POPIA's registration requirement.
+- **United Kingdom (PECR + UK GDPR)**: like POPIA, and unlike the US's
+  opt-out-based TCPA model, the UK's Privacy and Electronic Communications
+  Regulations 2003 (PECR) require **prior opt-in consent** before
+  marketing by electronic means (SMS, WhatsApp, email, or an automated/
+  recorded call) to an individual. PECR has its own **"soft opt-in"**
+  exception, narrower than it sounds: it only covers marketing your own
+  similar products/services to an existing customer, and only if they were
+  given a clear, free opt-out both when their details were first collected
+  and in every message since. As with the POPIA guidance above, "this lead
+  enquired about a quote" supports a single factual recovery message more
+  readily than ongoing marketing — confirm with the client which bucket
+  their outreach actually falls into, and don't assume the TCPA-style
+  framing applies here either. Separately, UK GDPR and the Data Protection
+  Act 2018 govern the lead data itself (lawful basis, access/erasure
+  rights — see "Data handling" below, and "International data transfers"
+  in `DEPLOYMENT.md`); a UK client acting as data controller for its leads
+  should also register with the ICO and pay its annual data-protection
+  fee unless a specific exemption applies. None of this is triggered by
+  LeadRecovery making outbound *phone calls* — it doesn't — but if the
+  client's own team separately makes live/automated marketing calls to the
+  same leads outside this tool, they're also responsible for screening
+  against the Telephone Preference Service (TPS)/Corporate TPS before
+  doing so; that's entirely outside what this app does or tracks.
 - The admin UI's "Add new client" form requires checking a "Client has a
   documented lawful basis to contact its leads" box before it will create
   the tenant — a recorded attestation (`Tenant.consentBasisConfirmedAt`),
@@ -90,7 +113,12 @@ deliberately-opt-in feature (`Tenant.winBackEnabled` +
   message was lighter-touch (e.g. "they enquired, so a single factual
   follow-up is fine"). Don't let `consentBasisConfirmedAt` (a tenant-level,
   onboarding-time attestation about the *original* outreach) stand in for
-  this.
+  this. For a UK client, this is exactly the scenario PECR's "soft opt-in"
+  exception (see "Consent basis" above) is actually meant to cover — but
+  it still has its own test to satisfy (similar products/services, plus a
+  clear opt-out offered both at collection and in this message itself),
+  so confirm that test is met rather than assuming a prior recovery
+  message alone earns it.
 - **Enforced per-lead, not just per-tenant.** Turning on
   `Tenant.winBackEnabled` in Settings messages no one by itself — a lead is
   only ever included once someone has separately recorded, on that specific
@@ -126,6 +154,13 @@ deliberately-opt-in feature (`Tenant.winBackEnabled` +
   alphanumeric sender ID) and documentation the client's use case needs
   before their first real send — the requirements and lead time differ
   from the US 10DLC process above, but a lead time still applies.
+- **United Kingdom**: also no 10DLC-equivalent brand/campaign registration,
+  but Twilio requires its own UK A2P SMS sender registration before a UK
+  (+44) long code can send bulk/automated SMS at any real volume — confirm
+  current requirements and lead time with Twilio support before the
+  client's first real send, the same way you would for the US/South Africa
+  cases above; don't assume a number that sends fine in one country is
+  automatically cleared to send in another.
 - **WhatsApp Business API approval**: the client's WhatsApp sender number
   must go through Meta's business verification and template-message
   approval process via Twilio before `src/channels/whatsapp.ts` can send
@@ -144,7 +179,12 @@ deliberately-opt-in feature (`Tenant.winBackEnabled` +
   (`quietHours` on the admin/self-service tenant config). For South African
   clients, the Consumer Protection Act similarly restricts direct-marketing
   contact hours/days — confirm current guidance with the client's counsel
-  rather than assuming the default window already satisfies it.
+  rather than assuming the default window already satisfies it. PECR
+  doesn't set a specific statutory hours restriction for SMS/email the way
+  it does for live/automated voice calls, but ICO guidance still
+  recommends avoiding unsociable hours for text marketing — the default
+  window is a reasonable starting point for a UK client too, confirmed the
+  same way.
   **One deliberate exception**: an appointment reminder within
   `APPOINTMENT_REMINDER_LAST_CHANCE_HOURS` (2h, `src/appointmentReminder.ts`)
   of the appointment sends even during quiet hours rather than being
@@ -174,7 +214,12 @@ deliberately-opt-in feature (`Tenant.winBackEnabled` +
   unsubscribe path. LeadRecovery's messages include a STOP instruction and
   the inbound webhook flips matching leads to `opted_out` immediately, but
   confirm this satisfies the client's jurisdiction's specific requirements
-  (e.g. a physical mailing address in the footer for CAN-SPAM).
+  (e.g. a physical mailing address in the footer for CAN-SPAM). For a UK
+  client, the same "working, honored unsubscribe" mechanics satisfy PECR's
+  equivalent requirement — but remember PECR's *consent* model for email
+  marketing is opt-in-based (see "Consent basis" above), unlike CAN-SPAM's
+  opt-out-based one, so having an unsubscribe link alone doesn't establish
+  that the client was allowed to send the email in the first place.
 - **SendGrid Inbound Parse / Event Webhook signing**: `src/webhooks/index.ts`'s
   inbound-parse webhook uses a constant-time-compared `?token=` shared
   secret (see `src/security.ts`). The Event Webhook (delivery/bounce
@@ -187,6 +232,16 @@ deliberately-opt-in feature (`Tenant.winBackEnabled` +
 
 ## Data handling
 
+- **International data transfers**: if your hosting (Postgres, or the app
+  itself) runs outside the client's own country — e.g. a US-region
+  deployment serving a UK client — UK GDPR requires a lawful transfer
+  mechanism for that lead/message data leaving the UK (an adequacy
+  regulation, the UK's International Data Transfer Agreement/Addendum, or
+  equivalent). This is a hosting-region decision, not something the app
+  enforces — see "Data residency and international transfers" in
+  `DEPLOYMENT.md` before picking where to run this for a UK (or EU) client,
+  and fill in `public/privacy.html`'s own "International data transfers"
+  section with the mechanism you actually rely on.
 - Tenant channel credentials (Twilio auth tokens, SendGrid API keys) are
   encrypted at rest (AES-256-GCM, `src/crypto.ts`) in the `tenants.channels`
   JSONB column, keyed by `LEADRECOVERY_ENCRYPTION_KEY`. The key can be
