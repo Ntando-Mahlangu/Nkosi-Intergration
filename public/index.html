@@ -904,6 +904,78 @@
   }
   setInterval(heartbeat, 6000);
 
+  /* ===================== demo growth simulation =====================
+   * Purely cosmetic, purely client-side, and only ever runs when boot()
+   * resolved to the bundled DEMO_TENANT (tenant.id === "demo" — see
+   * src/demoTenant.ts). It never calls the API: it only mutates this
+   * page's own in-memory leadsByCategory/node state, the same state
+   * boot() itself populates, so a real tenant's dashboard (and the real
+   * backend data behind it) is never touched and nothing here survives a
+   * reload. The point is purely to make the bundled demo feel like a
+   * live, moving pipeline instead of a frozen snapshot, without ever
+   * fabricating activity for an actual client's account. */
+  let demoGrowthStarted = false;
+  const DEMO_GROWTH_NAMES = [
+    "Sipho Dlamini", "Thandeka Mabaso", "Nomvula Khanyile", "Kagiso Molefe",
+    "Zanele Buthelezi", "Werner de Wet", "Ayanda Cele", "Lerato Tau",
+  ];
+  let demoGrowthNameIdx = 0;
+
+  // One growth shape per category this simulates arrivals into — each
+  // produces a lead shaped so that category's own CATEGORIES[].match
+  // predicate would agree with it, for internal consistency, even though
+  // nothing here is ever sent through that predicate for real.
+  const DEMO_GROWTH_TARGETS = {
+    missed: () => ({ hadMissedCall: true, status: "new", source: "missed_call" }),
+    quotes: () => ({ previousQuote: "R" + (500 + Math.floor(Math.random() * 2000)), status: "new", source: "crm" }),
+    forms: () => ({ source: "website_form", status: "new" }),
+    nurture: () => ({ status: "contacted_no_response", source: "crm" }),
+    replied: () => ({ status: "responded", source: "sms" }),
+    booked: () => ({ status: "booked", source: "crm" }),
+  };
+
+  function simulateDemoGrowth() {
+    const keys = Object.keys(DEMO_GROWTH_TARGETS);
+    const key = keys[Math.floor(Math.random() * keys.length)];
+    const node = nodes.find((n) => n.cat.key === key);
+    if (!node) return;
+
+    const name = DEMO_GROWTH_NAMES[demoGrowthNameIdx % DEMO_GROWTH_NAMES.length];
+    demoGrowthNameIdx++;
+    const synthetic = {
+      id: "demo-sim-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+      name,
+      createdAt: new Date().toISOString(),
+      ...DEMO_GROWTH_TARGETS[key](),
+    };
+
+    leadsByCategory[key] = [synthetic, ...(leadsByCategory[key] || [])];
+    node.count += 1;
+    node.activity = Math.min(1, node.activity + 0.15);
+    if (node.countEl) node.countEl.textContent = String(node.count);
+    if (node.groupEl) {
+      node.groupEl.setAttribute("aria-label", `${node.cat.label}: ${node.count} lead(s). Activate to view.`);
+    }
+    spawnParticle(node, true); // inbound pulse toward the node, marking the simulated arrival
+    logLine("sim", `new ${node.cat.label.toLowerCase()} — ${escapeHtml(name)}`, false);
+
+    // Keep the open detail panel (if any) in sync, the same way a real
+    // boot() refresh would, rather than leaving it showing a stale count.
+    if (openCategoryKey === key) openDetail(node.cat);
+  }
+
+  function startDemoGrowthSimulation() {
+    if (demoGrowthStarted) return;
+    demoGrowthStarted = true;
+    (function scheduleNext() {
+      const delay = 10000 + Math.random() * 8000; // 10-18s, irregular on purpose
+      setTimeout(() => {
+        simulateDemoGrowth();
+        scheduleNext();
+      }, delay);
+    })();
+  }
+
   /* ===================== stats rail ===================== */
   function renderStats(plan) {
     const statsEl = document.getElementById("stats");
@@ -972,6 +1044,7 @@
     const tenant = await api(session, "/tenants/me");
     document.getElementById("tenant-label").textContent = tenant.name.toUpperCase();
     document.getElementById("clock-status").textContent = "LINKED";
+    if (tenant.id === "demo") startDemoGrowthSimulation();
 
     const leads = await api(session, "/leads");
     const plan = await api(session, "/leads/plan");
