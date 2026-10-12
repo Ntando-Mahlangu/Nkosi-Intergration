@@ -968,7 +968,7 @@
     if (demoGrowthStarted) return;
     demoGrowthStarted = true;
     (function scheduleNext() {
-      const delay = 10000 + Math.random() * 8000; // 10-18s, irregular on purpose
+      const delay = 5000 + Math.random() * 5000; // 5-10s, irregular on purpose
       setTimeout(() => {
         simulateDemoGrowth();
         scheduleNext();
