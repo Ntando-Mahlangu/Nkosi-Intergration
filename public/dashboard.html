@@ -376,6 +376,7 @@
     </div>
     <div style="margin-top:10px;">
       <button type="button" id="detail-appt-save">Save appointment</button>
+      <button type="button" class="secondary" id="detail-appt-copy-link">Copy self-serve booking link</button>
       <span class="import-status" id="detail-appt-status-msg" role="status" aria-live="polite"></span>
     </div>
 
@@ -527,6 +528,10 @@
   /* ===================== all leads + lead detail (conversation + appointment) ===================== */
 
   let allLeadsCache = [];
+  // Set once per connect()/loadDashboard() — needed here just to build the
+  // self-serve booking link (tenant.id + tenant.publicFormKey), not for
+  // anything auth-related (the dashboard's own session already handles that).
+  let currentTenant = null;
 
   function renderAllLeads(leads) {
     const el = document.getElementById("all-leads");
@@ -753,6 +758,31 @@
     }
   });
 
+  document.getElementById("detail-appt-copy-link").addEventListener("click", async () => {
+    const statusMsg = document.getElementById("detail-appt-status-msg");
+    if (!detailLeadId || !currentTenant || !currentTenant.publicFormKey) {
+      statusMsg.textContent = "Could not build link.";
+      statusMsg.className = "import-status err";
+      return;
+    }
+    const url =
+      window.location.origin +
+      "/book-appointment.html?tenant=" +
+      encodeURIComponent(currentTenant.id) +
+      "&lead=" +
+      encodeURIComponent(detailLeadId) +
+      "&key=" +
+      encodeURIComponent(currentTenant.publicFormKey);
+    try {
+      await navigator.clipboard.writeText(url);
+      statusMsg.textContent = "Booking link copied.";
+      statusMsg.className = "import-status ok";
+    } catch (err) {
+      statusMsg.textContent = url;
+      statusMsg.className = "import-status";
+    }
+  });
+
   document.getElementById("detail-convert-btn").addEventListener("click", async () => {
     const session = getSession();
     if (!session || !detailLeadId) return;
@@ -891,6 +921,7 @@
 
   async function loadDashboard(session) {
     const tenant = await api(session, "/tenants/me");
+    currentTenant = tenant;
     document.getElementById("tenant-name").textContent = tenant.name;
     document.getElementById("tenant-sub").textContent =
       tenant.timezone + (tenant.devMode ? " · dev mode (console-only sends)" : "");

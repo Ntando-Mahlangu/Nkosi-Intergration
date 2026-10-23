@@ -399,11 +399,13 @@ any OpenAPI viewer (Swagger UI, Redoc, Postman's import) for interactive
 docs.
 
 All routes except `/health`, `/terms-version`, `/auth/*`, `/public/leads/:tenantId`,
-`/inquiries`, and the webhooks require `Authorization: Bearer <tenant api key>`. Admin
+`/public/appointments/:tenantId/:leadId`, `/inquiries`, and the webhooks require
+`Authorization: Bearer <tenant api key>`. Admin
 routes require `Authorization: Bearer <ADMIN_API_KEY>` instead. All routes
 are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 `/tenants/me` at 60/min, admin routes at 30/15min, webhooks at 120/min,
-`/auth/*` at 10/15min, `/public/leads/:tenantId` at 20/min, `/inquiries` at
+`/auth/*` at 10/15min, `/public/leads/:tenantId` and
+`/public/appointments/:tenantId/:leadId` at 20/min, `/inquiries` at
 10/min, all per IP.
 
 | Method | Path | Description |
@@ -424,6 +426,8 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | POST | `/public/chat/:tenantId/start` | Public — the chat widget's first call: `{formKey, name?, phone?, email?}` → `{leadId, chatToken}`. Creates a real lead (`source: "chat"`); `chatToken` is a second, per-conversation secret distinct from `formKey` — see "Website chat widget" above |
 | POST | `/public/chat/:tenantId/message` | Public — `{formKey, leadId, chatToken, body}` → `{classification, displayText}`. Same classify/escalate pipeline as an inbound SMS/WhatsApp/email reply, answered synchronously in the response instead of over a provider |
 | GET | `/public/chat/:tenantId/history` | Public — `?formKey=&leadId=&chatToken=` → this one conversation's messages, oldest first. Lets the widget resume across page reloads |
+| GET | `/public/appointments/:tenantId/:leadId` | Public — `?formKey=` → `{businessName, leadName, appointmentStatus, appointmentAt}`. Backs the self-serve booking page (`public/book-appointment.html`, linked from a lead's detail view via "Copy self-serve booking link") |
+| POST | `/public/appointments/:tenantId/:leadId` | Public — `{formKey, appointmentAt}` → `{ok, appointmentAt}`. Sets the lead's `appointmentStatus` to `"booked"` and `appointmentAt`, the same fields `src/appointmentReminder.ts` reads for the 24-hours-before reminder; `appointmentAt` must be in the future and within 180 days |
 | GET | `/admin/tenants` | List tenants (admin) |
 | POST | `/admin/tenants` | Create a tenant (admin); returns the API key once. Also accepts `consentBasisConfirmed`/`termsAttested`/`carrierApprovalConfirmed` (recorded attestations — see `COMPLIANCE.md`) and any self-service field |
 | PATCH | `/admin/tenants/:id` | Admin update: any self-service field, plus `status` (`"active"` \| `"suspended"`) and `carrierApprovalConfirmed` (admin-only — the only way to clear an sms/whatsapp send block for a tenant) |
@@ -510,6 +514,29 @@ endpoints it's wired into (`POST .../start`, `POST .../message`,
 conversation private from every other visitor to the same site — `formKey`
 alone only scopes a caller to *a* tenant's widget, not to one specific
 thread.
+
+## Self-serve appointment booking
+
+A public page (`public/book-appointment.html`) a specific lead can use to
+pick their own appointment time without a human setting it by hand. From a
+lead's detail view in the dashboard, "Copy self-serve booking link"
+(`public/dashboard.html`) builds a URL scoped to that one lead:
+
+```
+https://<host>/book-appointment.html?tenant=<tenantId>&lead=<leadId>&key=<formKey>
+```
+
+`formKey` is the same `Tenant.publicFormKey` the lead-capture form and chat
+widget use; `leadId` only the business ever hands out (e.g. by sending this
+link to that one lead), so together they scope a caller to nothing but this
+one lead's own appointment. `src/routes/publicBooking.ts` is the two public
+endpoints it calls (`GET`/`POST /public/appointments/:tenantId/:leadId`).
+Booking sets `Lead.appointmentStatus` to `"booked"` and `Lead.appointmentAt`
+— the exact fields `src/appointmentReminder.ts` already reads — so the
+existing 24-hours-before reminder starts working with no other setup.
+Re-visiting the same link lets a lead reschedule; there's no concept of
+available slots or double-booking prevention, since the app has no
+calendar/availability model elsewhere either.
 
 ## Needs-attention inbox
 

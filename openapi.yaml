@@ -20,6 +20,7 @@ tags:
   - name: admin
   - name: leads
   - name: chat
+  - name: appointments
   - name: inquiries
   - name: webhooks
 
@@ -1312,6 +1313,104 @@ paths:
                     at: { type: string, format: date-time }
         "401":
           description: Invalid formKey/leadId/chatToken combination
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /public/appointments/{tenantId}/{leadId}:
+    get:
+      tags: [appointments]
+      summary: Fetch a lead's current appointment state for the self-serve booking page
+      description: >
+        Public, no tenant-auth — formKey is Tenant.publicFormKey (same token
+        used by /public/leads/{tenantId}), scoped further by leadId, which
+        only the business ever hands out (e.g. in a link sent to that one
+        lead). Backs public/book-appointment.html.
+      security: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: leadId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: formKey
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Business name and this lead's current appointment state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  businessName: { type: string }
+                  leadName: { type: string }
+                  appointmentStatus: { type: string, enum: [none, requested, abandoned, booked] }
+                  appointmentAt: { type: string, format: date-time }
+        "401":
+          description: Invalid tenantId, leadId, or formKey
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Tenant is suspended
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    post:
+      tags: [appointments]
+      summary: Self-serve book (or reschedule) an appointment
+      description: >
+        Public — sets Lead.appointmentStatus to "booked" and
+        Lead.appointmentAt, which src/appointmentReminder.ts already reads to
+        send the 24-hours-before reminder. No concept of available slots or
+        double-booking prevention — this records a date/time, nothing more.
+      security: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: leadId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [formKey, appointmentAt]
+              properties:
+                formKey: { type: string }
+                appointmentAt:
+                  type: string
+                  format: date-time
+                  description: Must be in the future and within 180 days.
+      responses:
+        "200":
+          description: Booked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  appointmentAt: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Invalid tenantId, leadId, or formKey
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Tenant is suspended
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

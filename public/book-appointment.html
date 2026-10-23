@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Book your appointment</title>
+<style>
+  :root {
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --ink: #0b1220;
+    --body: #4b5768;
+    --muted: #8591a1;
+    --bg-bottom: #e4f3fc;
+    --panel: #ffffff;
+    --border: #e6ebf1;
+    --accent: #1479e0;
+    --accent2: #35c6f4;
+    --accent-soft: #eaf4fd;
+    --ok: #16a34a;
+    --err: #dc2626;
+    --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    font-family: var(--sans);
+    color: var(--ink);
+    line-height: 1.6;
+    background: linear-gradient(180deg, #ffffff 0%, #ffffff 55%, var(--bg-bottom) 100%);
+  }
+  .panel {
+    width: 100%;
+    max-width: 420px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 28px;
+    box-shadow: var(--shadow);
+  }
+  .logo { font-weight: 800; font-size: 17px; letter-spacing: -0.01em; margin-bottom: 18px; }
+  .logo .dot { color: var(--accent); }
+  h1 { font-size: 20px; font-weight: 800; margin: 0 0 6px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  label { display: block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 14px 0 6px; }
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    background: #fbfcfe;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 14px;
+  }
+  input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(20,121,224,0.14);
+  }
+  button { cursor: pointer; border: none; border-radius: 999px; font-size: 14px; font-weight: 700; }
+  button#book-btn {
+    width: 100%;
+    margin-top: 20px;
+    padding: 13px 16px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(20,121,224,0.28);
+  }
+  button#book-btn:disabled { opacity: 0.6; cursor: default; box-shadow: none; }
+  .err { color: var(--err); font-size: 12.5px; min-height: 16px; margin-top: 10px; }
+  .existing {
+    background: var(--accent-soft);
+    border: 1px solid rgba(20,121,224,0.18);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+  .success { text-align: center; padding: 10px 0; }
+  .success .check {
+    width: 46px; height: 46px; border-radius: 50%;
+    background: rgba(22,163,74,0.1); color: var(--ok);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 14px; font-size: 21px;
+  }
+  .success h3 { font-weight: 800; margin: 0 0 8px; }
+  .success p { color: var(--muted); font-size: 13.5px; margin: 0; }
+  .loading, .invalid { text-align: center; color: var(--muted); font-size: 13.5px; padding: 20px 0; }
+  .invalid { color: var(--err); }
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <div class="logo">NDO<span class="dot">.</span></div>
+
+  <div id="loading-state" class="loading">Loading…</div>
+
+  <div id="invalid-state" class="invalid" style="display:none;">
+    This booking link is invalid or has expired. Please contact the business directly to schedule.
+  </div>
+
+  <div id="form-state" style="display:none;">
+    <h1 id="heading">Book your appointment</h1>
+    <div class="sub" id="subheading"></div>
+
+    <div class="existing" id="existing-appt" style="display:none;"></div>
+
+    <label for="appt-datetime">Date &amp; time</label>
+    <input type="datetime-local" id="appt-datetime" />
+
+    <button type="button" id="book-btn">Confirm appointment</button>
+    <div class="err" id="form-error" role="alert"></div>
+  </div>
+
+  <div class="success" id="success-state" style="display:none;">
+    <div class="check">&#10003;</div>
+    <h3>Appointment booked</h3>
+    <p id="success-detail"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const tenantId = params.get("tenant");
+  const leadId = params.get("lead");
+  const formKey = params.get("key");
+
+  const loadingEl = document.getElementById("loading-state");
+  const invalidEl = document.getElementById("invalid-state");
+  const formEl = document.getElementById("form-state");
+  const successEl = document.getElementById("success-state");
+
+  if (!tenantId || !leadId || !formKey) {
+    loadingEl.style.display = "none";
+    invalidEl.style.display = "block";
+    return;
+  }
+
+  const apiBase = window.location.origin + "/public/appointments/" + encodeURIComponent(tenantId) + "/" + encodeURIComponent(leadId);
+
+  function formatDisplay(iso) {
+    try {
+      return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    } catch {
+      return iso;
+    }
+  }
+
+  async function load() {
+    try {
+      const res = await fetch(apiBase + "?formKey=" + encodeURIComponent(formKey));
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "This booking link is invalid.");
+
+      loadingEl.style.display = "none";
+      formEl.style.display = "block";
+      document.getElementById("subheading").textContent = body.businessName
+        ? "with " + body.businessName
+        : "";
+
+      if (body.appointmentStatus === "booked" && body.appointmentAt) {
+        const existingEl = document.getElementById("existing-appt");
+        existingEl.style.display = "block";
+        existingEl.textContent = "Currently booked for " + formatDisplay(body.appointmentAt) + " — pick a new time below to reschedule.";
+        document.getElementById("book-btn").textContent = "Reschedule appointment";
+      }
+    } catch (err) {
+      loadingEl.style.display = "none";
+      invalidEl.style.display = "block";
+      invalidEl.textContent = err.message;
+    }
+  }
+
+  const bookBtn = document.getElementById("book-btn");
+  const errorEl = document.getElementById("form-error");
+
+  bookBtn.addEventListener("click", async () => {
+    errorEl.textContent = "";
+    const value = document.getElementById("appt-datetime").value;
+    if (!value) {
+      errorEl.textContent = "Please choose a date and time.";
+      return;
+    }
+    const iso = new Date(value).toISOString();
+
+    bookBtn.disabled = true;
+    bookBtn.textContent = "Booking…";
+    try {
+      const res = await fetch(apiBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ formKey, appointmentAt: iso }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || (res.status + " " + res.statusText));
+
+      formEl.style.display = "none";
+      successEl.style.display = "block";
+      document.getElementById("success-detail").textContent = "You're booked for " + formatDisplay(body.appointmentAt) + ".";
+    } catch (err) {
+      errorEl.textContent = "Could not book: " + err.message;
+      bookBtn.disabled = false;
+      bookBtn.textContent = "Confirm appointment";
+    }
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>
