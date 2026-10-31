@@ -61,7 +61,14 @@ and their own leads.
   don't assume the TCPA-style "no opt-in needed unless they've opted out"
   framing applies. A South African client should also have (or appoint) an
   Information Officer registered with the Information Regulator, per
-  POPIA's registration requirement.
+  POPIA's registration requirement. See "Data handling" below for the
+  operator-relationship, cross-border-transfer, and security-compromise-
+  notification obligations that apply once you're actually running
+  LeadRecovery for them — distinct from this initial consent-basis
+  question. (Related but separate: a South African client of a certain
+  size may also need a PAIA manual under the Promotion of Access to
+  Information Act — outside what this app does, but worth flagging to
+  their counsel alongside POPIA.)
 - **United Kingdom (PECR + UK GDPR)**: like POPIA, and unlike the US's
   opt-out-based TCPA model, the UK's Privacy and Electronic Communications
   Regulations 2003 (PECR) require **prior opt-in consent** before
@@ -257,11 +264,46 @@ deliberately-opt-in feature (`Tenant.winBackEnabled` +
   deployment serving a UK client — UK GDPR requires a lawful transfer
   mechanism for that lead/message data leaving the UK (an adequacy
   regulation, the UK's International Data Transfer Agreement/Addendum, or
-  equivalent). This is a hosting-region decision, not something the app
-  enforces — see "Data residency and international transfers" in
-  `DEPLOYMENT.md` before picking where to run this for a UK (or EU) client,
-  and fill in `public/privacy.html`'s own "International data transfers"
-  section with the mechanism you actually rely on.
+  equivalent). **The same issue applies to a South African client under
+  POPIA section 72** — it restricts transferring personal information
+  outside South Africa unless the recipient (your hosting/database
+  provider, if it runs outside SA) is subject to a law, binding corporate
+  rules, or a binding agreement providing an adequate, POPIA-equivalent
+  level of protection, or another section 72 ground applies (e.g. the data
+  subject consented). This is directly relevant here: if you run this app's
+  Postgres/hosting outside South Africa (the common case — e.g. Railway's
+  US regions) while serving a South African client, you need that
+  agreement in place before their first real send, not just a general
+  "international data transfers" disclosure. This is a hosting-region
+  decision, not something the app enforces — see "Data residency and
+  international transfers" in `DEPLOYMENT.md` before picking where to run
+  this for a South African, UK, or EU client, and fill in
+  `public/privacy.html`'s own "International data transfers" section with
+  the mechanism you actually rely on.
+- **POPIA operator obligations (sections 20-21)**: running LeadRecovery for
+  a South African client makes you (the agency) an "operator" processing
+  personal information on behalf of the client, who is the "responsible
+  party." POPIA requires this relationship be established in a written
+  contract — `public/terms.html` section 4 ("Data protection roles") does
+  this: it fixes that the client determines the purpose/means of
+  processing, that you process their lead data only to provide the
+  Service, treat it as confidential, and notify them promptly of any
+  suspected unauthorized access (see the next bullet). Have a South African
+  client's own counsel confirm this section satisfies their specific
+  operator-agreement requirements before relying on it.
+- **POPIA security-compromise notification (section 22)**: if there are
+  reasonable grounds to believe a South African client's lead data has
+  been accessed or acquired by an unauthorized person, POPIA requires
+  notifying the Information Regulator and the affected data subjects as
+  soon as reasonably possible — this is a legal obligation on the client
+  as responsible party, not optional PR. `public/terms.html` section 4 and
+  `public/privacy.html`'s "Security" section commit you (as operator) to
+  notifying the client without undue delay if you become aware of such an
+  incident, so they can meet this obligation — but there's no code-level
+  breach-detection or auto-notification mechanism; this is a manual
+  process you need a plan for (who gets notified, how fast, by what
+  channel) before a real incident happens, not something to improvise
+  during one.
 - Tenant channel credentials (Twilio auth tokens, SendGrid API keys) are
   encrypted at rest (AES-256-GCM, `src/crypto.ts`) in the `tenants.channels`
   JSONB column, keyed by `LEADRECOVERY_ENCRYPTION_KEY`. The key can be
