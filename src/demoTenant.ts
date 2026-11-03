@@ -10,13 +10,13 @@ export const DEMO_TENANT: Tenant = {
   id: "demo",
   name: "NDO Integrations (Demo)",
   apiKey: "demo-key",
-  timezone: "Africa/Johannesburg",
+  timezone: "America/Chicago",
   devMode: true,
   channels: {},
   // A zero-width window disables quiet hours entirely (see
   // isWithinQuietHours in src/quietHours.ts) — without this, the demo (and
   // every e2e test that runs its recovery workflow) would silently defer
-  // every send whenever it happens to run between 8pm-8am Johannesburg
+  // every send whenever it happens to run between 8pm-8am Chicago
   // time (the DEFAULT_QUIET_HOURS a tenant with no override gets), which
   // directly contradicts "the bundled demo should work out of the box"
   // above: a demo that only sends messages during specific hours of the

@@ -9,6 +9,20 @@ their jurisdiction and industry; rules differ meaningfully between, e.g.,
 the US (TCPA), the EU/UK (GDPR + PECR), and South Africa (POPIA), and this
 document is not a substitute for that review.
 
+**Current market focus: United States.** The US sections below (TCPA/
+FCC, CAN-SPAM, state privacy laws, 10DLC) are where client onboarding
+should concentrate right now. The UK and South Africa *client-facing*
+sections (PECR/UK GDPR consent basis, UK A2P SMS registration, POPIA's
+direct-marketing opt-in) are kept as reference, not an active
+workstream — revisit them if/when a UK or South African client is
+actually being onboarded, rather than treating them as current
+priorities. This is distinct from the South Africa *operator*
+obligations further down ("POPIA operator obligations," "POPIA
+security-compromise notification," "International data transfers") —
+those apply because the agency itself is domiciled in South Africa,
+regardless of which country its clients are in, so they stay in force
+even with a US-only client base.
+
 ## Your own Terms of Service / Privacy Policy
 
 Distinct from lead consent below: this is the agreement between your
@@ -50,6 +64,43 @@ and their own leads.
   valid basis depending on jurisdiction and how long ago that was — this is
   a business/legal decision, not a technical one, and nothing in the code
   can verify it for you.
+- **United States (TCPA/FCC + CAN-SPAM + state privacy laws)**: the
+  primary jurisdiction to get right given current market focus (see the
+  note at the top of this document).
+  - **TCPA/FCC** governs automated SMS/WhatsApp marketing — confirm the
+    consent standard the client's actual messages need (marketing vs.
+    transactional/informational isn't the same standard; see "Sending
+    windows" below and the recovery-message framing throughout this
+    file), and use `Lead.consentStatus`/`consentTimestamp`/
+    `consentSource`/`consentScope` (see "Per-lead consent evidence"
+    below) to actually record *when*, *where*, and *for what* consent
+    was obtained — not just that the business says it has it. An
+    existing customer relationship or a past enquiry does not by itself
+    authorize unlimited ongoing marketing texts; confirm the client
+    understands that distinction before importing a stale list.
+  - **CAN-SPAM** (email) is opt-out-based, unlike TCPA — no advance
+    consent required, but every email needs accurate sender info, a
+    non-deceptive subject line, a real postal address, and a working
+    unsubscribe honored promptly. LeadRecovery's automatic STOP handling
+    (flips a lead to `opted_out`, suppressed immediately — see
+    `checkSuppression`) already satisfies the "honor it" half; the
+    sender-identity/postal-address/subject-line half is the client's own
+    template wording to get right, not something the code enforces.
+  - **State privacy laws** (CCPA/CPRA in California, and similar laws in
+    Virginia, Colorado, Texas, Connecticut, Oregon, Montana, New Jersey,
+    and others) have different applicability thresholds (often tied to a
+    business's revenue, the volume of consumer data processed, or
+    whether personal information is sold) — confirm per client whether
+    its specific size/activity actually triggers one, rather than
+    assuming it does or doesn't. Where one applies, you (the agency) are
+    typically the "processor"/"service provider"/"contractor" acting on
+    the client's instructions, not the party determining why the data is
+    processed — confirm that characterization doesn't flip for any
+    specific client relationship. The same mechanisms already documented
+    for UK/POPIA data-subject rights elsewhere in this file cover the
+    access/correction/deletion rights these laws typically grant:
+    `GET /leads/export` (access), `PATCH /leads/:id` (correction),
+    `DELETE /leads/:id` (deletion) — see "Data handling" below.
 - **South Africa (POPIA)**: unlike the US's opt-out-based TCPA model, POPIA
   section 69 requires **opt-in** consent before direct marketing by
   electronic communication (SMS/WhatsApp/email), with a narrow exception

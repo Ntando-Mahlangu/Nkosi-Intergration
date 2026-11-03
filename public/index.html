@@ -916,8 +916,8 @@
    * fabricating activity for an actual client's account. */
   let demoGrowthStarted = false;
   const DEMO_GROWTH_NAMES = [
-    "Sipho Dlamini", "Thandeka Mabaso", "Nomvula Khanyile", "Kagiso Molefe",
-    "Zanele Buthelezi", "Werner de Wet", "Ayanda Cele", "Lerato Tau",
+    "Tyler Brooks", "Madison Reyes", "Connor Walsh", "Ashley Kim",
+    "Brandon Foster", "Hailey Mitchell", "Austin Turner", "Samantha Price",
   ];
   let demoGrowthNameIdx = 0;
 
@@ -927,7 +927,7 @@
   // nothing here is ever sent through that predicate for real.
   const DEMO_GROWTH_TARGETS = {
     missed: () => ({ hadMissedCall: true, status: "new", source: "missed_call" }),
-    quotes: () => ({ previousQuote: "R" + (500 + Math.floor(Math.random() * 2000)), status: "new", source: "crm" }),
+    quotes: () => ({ previousQuote: "$" + (500 + Math.floor(Math.random() * 2000)), status: "new", source: "crm" }),
     forms: () => ({ source: "website_form", status: "new" }),
     nurture: () => ({ status: "contacted_no_response", source: "crm" }),
     replied: () => ({ status: "responded", source: "sms" }),

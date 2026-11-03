@@ -248,7 +248,7 @@ export function createWebhookRoutes(stores: Stores): Router {
 
       const from = req.body.From as string | undefined;
       const body = (req.body.Body as string | undefined) ?? "";
-      // Twilio's WhatsApp `From` is "whatsapp:+2782..." — stored lead phone
+      // Twilio's WhatsApp `From` is "whatsapp:+1312..." — stored lead phone
       // numbers are always bare E.164 (the "whatsapp:" prefix is only ever
       // added when *sending*, see src/channels/whatsapp.ts's toWhatsAppAddress),
       // so this must be stripped before the lookup or a genuine WhatsApp reply

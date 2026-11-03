@@ -542,7 +542,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
   test("the needs-attention inbox shows a flagged lead, lets an operator reply, and clears once resolved", async ({
     page,
   }) => {
-    // Flags lead-002 (Bongani Dube, a sample lead with an email on file) via
+    // Flags lead-002 (Ryan Thompson, a sample lead with an email on file) via
     // a real inbound "interested" reply through the SendGrid webhook path —
     // the exact mechanism recordInboundAndClassify/flagNeedsAttention uses in
     // production (src/webhooks/index.ts). Uses this specific lead (rather
@@ -550,7 +550,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
     // collide with other tests in this fullyParallel suite that mutate the
     // shared in-memory demo tenant.
     const form = new FormData();
-    form.set("from", "Bongani Dube <bongani.dube@example.com>");
+    form.set("from", "Ryan Thompson <ryan.thompson@example.com>");
     form.set("text", "yes I'm interested, let's do it");
     const flagRes = await fetch(`${BASE_URL}/webhooks/demo/sendgrid/email?token=demo-key`, {
       method: "POST",
@@ -564,11 +564,11 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
     await page.click("#connect-btn");
     await expect(page.locator("#app")).toBeVisible();
 
-    const attentionRow = page.locator("#attention-list .lead-row", { hasText: "Bongani Dube" });
+    const attentionRow = page.locator("#attention-list .lead-row", { hasText: "Ryan Thompson" });
     await expect(attentionRow).toBeVisible();
     await expect(attentionRow).toContainText("Interested");
 
-    const allLeadsRow = page.locator("#all-leads .lead-row", { hasText: "Bongani Dube" });
+    const allLeadsRow = page.locator("#all-leads .lead-row", { hasText: "Ryan Thompson" });
     await expect(allLeadsRow).toContainText("needs attention");
 
     await attentionRow.click();
@@ -584,7 +584,7 @@ test.describe("List dashboard (public/dashboard.html, secondary working view)", 
     await expect(page.locator("#detail-thread")).toContainText("Thanks for your interest! Calling you now.");
 
     await page.click("#detail-close-btn");
-    await expect(page.locator("#attention-list")).not.toContainText("Bongani Dube");
+    await expect(page.locator("#attention-list")).not.toContainText("Ryan Thompson");
     await expect(allLeadsRow).not.toContainText("needs attention");
   });
 });
