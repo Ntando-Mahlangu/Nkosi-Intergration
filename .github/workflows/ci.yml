@@ -30,7 +30,13 @@ jobs:
       - run: npx --yes swagger-cli validate openapi.yaml
 
   e2e:
-    runs-on: ubuntu-latest
+    # Pinned below ubuntu-latest (which GitHub moved to 26.04): Playwright
+    # 1.56.0 doesn't support chromium there yet ("Playwright does not
+    # support chromium on ubuntu26.04-x64"), so `playwright install --with-
+    # deps` fails outright before any test runs. ubuntu-24.04 is a
+    # Playwright-supported LTS; revisit this pin once @playwright/test adds
+    # 26.04 support.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
