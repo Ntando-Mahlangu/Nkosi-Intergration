@@ -23,12 +23,19 @@ describe("leadsToCsv", () => {
     expect(header).toBe(
       "id,name,phone,email,source,status,createdAt,firstOutreachSentAt,lastContactedAt,followUpCount," +
         "nextFollowUpAt,requestedService,previousQuote,previousConversationSummary,appointmentStatus," +
-        "appointmentAt,appointmentReminderSentAt,preferredChannel,hadMissedCall,respondedAfterContact,notes"
+        "appointmentAt,appointmentReminderSentAt,preferredChannel,hadMissedCall,respondedAfterContact,notes," +
+        "consentStatus,consentTimestamp,consentSource,consentScope,privacyNoticeVersion"
     );
     expect(row).toBe(
       "lead-1,Jordan Smith,+27821234567,jordan@example.com,crm,contacted_no_response,2026-08-01T00:00:00.000Z" +
-        ",,,1,,fencing,,,,,,,true,,"
+        ",,,1,,fencing,,,,,,,true,,,,,,,"
     );
+  });
+
+  it("exports consentScope as a comma-joined, quoted field", () => {
+    const csv = leadsToCsv([{ ...LEAD, consentStatus: "granted", consentScope: ["sms", "email"] }]);
+    const [, row] = csv.split("\r\n");
+    expect(row).toContain('granted,,,"sms,email",');
   });
 
   it("leaves undefined fields blank rather than printing 'undefined'", () => {
@@ -62,14 +69,16 @@ describe("leadsToCsv", () => {
     for (const formula of ["=cmd|'/c calc'!A1", "+1+1", "-1+1", "@SUM(1+1)"]) {
       const csv = leadsToCsv([{ ...LEAD, notes: formula }]);
       const [, row] = csv.split("\r\n");
-      expect(row.endsWith(`'${formula}`)).toBe(true);
+      // notes isn't the last column (the consent fields follow it), so check
+      // it's immediately followed by the column separator, not string-end.
+      expect(row).toContain(`'${formula},`);
     }
   });
 
   it("still quotes a neutralized formula field if it also contains a comma", () => {
     const csv = leadsToCsv([{ ...LEAD, notes: '=HYPERLINK("http://evil.example","click")' }]);
     const [, row] = csv.split("\r\n");
-    expect(row.endsWith(`"'=HYPERLINK(""http://evil.example"",""click"")"`)).toBe(true);
+    expect(row).toContain(`"'=HYPERLINK(""http://evil.example"",""click"")",`);
   });
 
   it("does not neutralize a leading + on the phone column — that's normal E.164 formatting", () => {

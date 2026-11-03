@@ -37,6 +37,14 @@ export function checkSuppression(lead: Lead): SuppressionCheck {
       reason: STATUS_LABELS[lead.status] ?? `status is ${lead.status}`,
     };
   }
+  // An explicit "withdrawn" consent is a genuine never-contact-again signal,
+  // the same category as opted_out/do_not_contact, even though it's recorded
+  // on a separate field (Lead.consentStatus) rather than `status` — see that
+  // field's own doc comment. "unknown" (unset) is deliberately NOT suppressed
+  // here: this field evidences consent, it doesn't newly gate it.
+  if (lead.consentStatus === "withdrawn") {
+    return { suppressed: true, reason: "consent withdrawn" };
+  }
   return { suppressed: false };
 }
 
@@ -62,9 +70,10 @@ export function isContactable(lead: Lead): boolean {
 export const HARD_STOP_STATUSES: ReadonlySet<LeadStatus> = new Set(["opted_out", "do_not_contact", "fraudulent"]);
 
 export function isHardStopped(lead: Lead): boolean {
-  return HARD_STOP_STATUSES.has(lead.status);
+  return HARD_STOP_STATUSES.has(lead.status) || lead.consentStatus === "withdrawn";
 }
 
 export function hardStopReason(lead: Lead): string {
+  if (lead.consentStatus === "withdrawn") return "consent withdrawn";
   return STATUS_LABELS[lead.status] ?? `status is ${lead.status}`;
 }

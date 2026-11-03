@@ -58,7 +58,9 @@ export interface ParsedLeadsCsv {
  * column mapping/validation can't drift between the two entry points.
  * Expected headers (case-insensitive, all but phone/email optional): name,
  * phone, email, source, createdAt, requestedService, previousQuote,
- * appointmentAt, notes.
+ * appointmentAt, notes, consentStatus, consentTimestamp, consentSource,
+ * consentScope (a quoted, comma-separated cell, e.g. "sms,email"),
+ * privacyNoticeVersion.
  */
 export function parseLeadsCsv(text: string, tenantId: string): ParsedLeadsCsv {
   const rows = parseCsv(text);
@@ -100,6 +102,30 @@ export function parseLeadsCsv(text: string, tenantId: string): ParsedLeadsCsv {
     const createdAt =
       createdAtRaw && !Number.isNaN(Date.parse(createdAtRaw)) ? new Date(createdAtRaw).toISOString() : undefined;
 
+    // Same "don't store an unvalidated raw string" reasoning as source above
+    // — an unrecognized value falls back to "unknown" rather than being cast
+    // through, since "unknown" is the safe default this field's own doc
+    // comment (Lead.consentStatus) requires: it must never be treated as
+    // "granted".
+    const consentStatusRaw = col(row, "consentstatus")?.toLowerCase();
+    const consentStatus: Lead["consentStatus"] =
+      consentStatusRaw === "granted" || consentStatusRaw === "withdrawn" ? consentStatusRaw : "unknown";
+
+    const consentTimestampRaw = col(row, "consenttimestamp");
+    const consentTimestamp =
+      consentTimestampRaw && !Number.isNaN(Date.parse(consentTimestampRaw))
+        ? new Date(consentTimestampRaw).toISOString()
+        : undefined;
+
+    const validChannels = new Set(["sms", "whatsapp", "email"]);
+    const consentScopeRaw = col(row, "consentscope");
+    const consentScope = consentScopeRaw
+      ? (consentScopeRaw
+          .split(",")
+          .map((c) => c.trim().toLowerCase())
+          .filter((c) => validChannels.has(c)) as Lead["consentScope"])
+      : undefined;
+
     leads.push({
       id: generateId("lead"),
       tenantId,
@@ -122,6 +148,15 @@ export function parseLeadsCsv(text: string, tenantId: string): ParsedLeadsCsv {
       appointmentAt,
       appointmentStatus: appointmentAt ? "booked" : undefined,
       notes: col(row, "notes") || undefined,
+      // consentStatus is always set (defaults to "unknown" above), unlike
+      // the other consent fields, which stay unset when their column is
+      // absent/blank rather than defaulting to something that looks like
+      // real evidence.
+      consentStatus,
+      consentTimestamp,
+      consentSource: col(row, "consentsource") || undefined,
+      consentScope: consentScope && consentScope.length > 0 ? consentScope : undefined,
+      privacyNoticeVersion: col(row, "privacynoticeversion") || undefined,
     });
   }
 

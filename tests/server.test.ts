@@ -138,7 +138,8 @@ describe("GET /leads/export", () => {
     expect(lines[0]).toBe(
       "id,name,phone,email,source,status,createdAt,firstOutreachSentAt,lastContactedAt,followUpCount," +
         "nextFollowUpAt,requestedService,previousQuote,previousConversationSummary,appointmentStatus," +
-        "appointmentAt,appointmentReminderSentAt,preferredChannel,hadMissedCall,respondedAfterContact,notes"
+        "appointmentAt,appointmentReminderSentAt,preferredChannel,hadMissedCall,respondedAfterContact,notes," +
+        "consentStatus,consentTimestamp,consentSource,consentScope,privacyNoticeVersion"
     );
     expect(lines).toHaveLength(1 + leads.body.length); // header + one row per lead
   });
@@ -268,6 +269,76 @@ describe("PATCH /leads/:id", () => {
       .set("Authorization", `Bearer ${DEMO_API_KEY}`)
       .send({ marketingOptIn: "yes" });
     expect(res.status).toBe(400);
+  });
+
+  it("sets consentStatus and auto-stamps consentTimestamp when none is given", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const before = Date.now();
+    const res = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ consentStatus: "granted", consentSource: "website_form", consentScope: ["sms", "email"] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.consentStatus).toBe("granted");
+    expect(res.body.consentSource).toBe("website_form");
+    expect(res.body.consentScope).toEqual(["sms", "email"]);
+    expect(Date.parse(res.body.consentTimestamp)).toBeGreaterThanOrEqual(before);
+  });
+
+  it("uses an explicitly supplied consentTimestamp instead of auto-stamping", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const res = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ consentStatus: "granted", consentTimestamp: "2020-01-01T00:00:00.000Z" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.consentTimestamp).toBe("2020-01-01T00:00:00.000Z");
+  });
+
+  it("rejects an invalid consentStatus, consentTimestamp, or consentScope", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    const badStatus = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ consentStatus: "yes-please" });
+    expect(badStatus.status).toBe(400);
+
+    const badTimestamp = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ consentTimestamp: "not-a-date" });
+    expect(badTimestamp.status).toBe(400);
+
+    const badScope = await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ consentScope: ["sms", "carrier-pigeon"] });
+    expect(badScope.status).toBe(400);
+  });
+
+  it("a withdrawn consent makes the lead stop showing up in the recovery/follow-up plan", async () => {
+    const app = createApp();
+    const leads = await request(app).get("/leads").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    const leadId = leads.body[0].id;
+
+    await request(app)
+      .patch(`/leads/${leadId}`)
+      .set("Authorization", `Bearer ${DEMO_API_KEY}`)
+      .send({ consentStatus: "withdrawn" });
+
+    const plan = await request(app).get("/leads/plan").set("Authorization", `Bearer ${DEMO_API_KEY}`);
+    expect(plan.body.plans.some((p: { lead: { id: string } }) => p.lead.id === leadId)).toBe(false);
   });
 });
 

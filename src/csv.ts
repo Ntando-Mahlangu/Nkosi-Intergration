@@ -28,6 +28,11 @@ const LEAD_EXPORT_COLUMNS: (keyof Lead)[] = [
   "hadMissedCall",
   "respondedAfterContact",
   "notes",
+  "consentStatus",
+  "consentTimestamp",
+  "consentSource",
+  "consentScope",
+  "privacyNoticeVersion",
 ];
 
 // Every column but `phone` is guarded against all four OWASP-listed
@@ -51,9 +56,13 @@ const FORMULA_TRIGGER_EXCEPT_PLUS = /^[=\-@\t\r]/;
  * lead's own inbound message or a CRM import, not just this business's
  * own input.
  */
-function escapeCsvField(value: string | number | boolean | undefined, column: keyof Lead): string {
+function escapeCsvField(value: string | number | boolean | string[] | undefined, column: keyof Lead): string {
   if (value === undefined) return "";
-  let str = String(value);
+  // consentScope is the one array-valued field here — joined the same way
+  // parseLeadsCsv's own consentscope column expects on the way back in
+  // (see leadImport.ts), and the resulting comma already triggers the
+  // quoting below, so a re-import of this export round-trips correctly.
+  let str = Array.isArray(value) ? value.join(",") : String(value);
   const trigger = column === "phone" ? FORMULA_TRIGGER_EXCEPT_PLUS : FORMULA_TRIGGER;
   if (trigger.test(str)) str = `'${str}`;
   return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;

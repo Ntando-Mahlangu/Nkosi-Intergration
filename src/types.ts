@@ -140,6 +140,28 @@ export interface Lead {
   needsAttentionReason?: "interested" | "needs_human_reply";
   /** Set once an operator-alert has already fired for this specific unresolved needsAttentionAt, so the worker never re-alerts on every tick for the same stale item. Cleared along with needsAttentionAt. */
   attentionAlertedAt?: string;
+  /**
+   * Evidence of *this specific lead's* consent, distinct from
+   * `Tenant.consentBasisConfirmedAt` (a one-time, tenant-level attestation
+   * made at onboarding about the business's leads generally). "unknown"
+   * (the default when unset) must never be treated as "granted" — it does
+   * NOT by itself change whether the ordinary recovery/follow-up logic may
+   * contact this lead (that's governed by `status`/`HARD_STOP_STATUSES`, as
+   * documented in `COMPLIANCE.md`'s "Consent basis" section, which explains
+   * why a one-off recovery message doesn't require the same opt-in this
+   * field is meant to evidence for ongoing marketing). Only an explicit
+   * "withdrawn" acts as a suppression signal — see `checkSuppression` in
+   * `src/compliance.ts`.
+   */
+  consentStatus?: "unknown" | "granted" | "withdrawn";
+  /** When `consentStatus` was last set to its current value (ISO date). */
+  consentTimestamp?: string;
+  /** Where this consent was obtained — free text (e.g. "website_form", "phone_enquiry", "crm_import"); not a closed enum, since wording varies too much per client/import source to validate meaningfully. */
+  consentSource?: string;
+  /** Which channel(s) this consent actually covers — a lead who agreed to SMS follow-up didn't necessarily agree to email marketing. */
+  consentScope?: Channel[];
+  /** Which version of the client's privacy notice was shown when this consent was captured — lets the client show what the lead actually agreed to if the notice changes later. */
+  privacyNoticeVersion?: string;
 }
 
 export interface ScoredLead {

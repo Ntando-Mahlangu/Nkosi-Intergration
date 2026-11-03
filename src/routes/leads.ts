@@ -150,6 +150,11 @@ export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, mess
           | "appointmentAt"
           | "preferredChannel"
           | "marketingOptIn"
+          | "consentStatus"
+          | "consentTimestamp"
+          | "consentSource"
+          | "consentScope"
+          | "privacyNoticeVersion"
         >
       >;
 
@@ -180,6 +185,27 @@ export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, mess
         res.status(400).json({ error: "preferredChannel must be sms/whatsapp/email, or null" });
         return;
       }
+      const validConsentStatuses = new Set(["unknown", "granted", "withdrawn"]);
+      if (body.consentStatus !== undefined && !validConsentStatuses.has(body.consentStatus)) {
+        res.status(400).json({ error: "consentStatus must be one of unknown/granted/withdrawn" });
+        return;
+      }
+      if (
+        body.consentTimestamp !== undefined &&
+        body.consentTimestamp !== null &&
+        Number.isNaN(Date.parse(body.consentTimestamp))
+      ) {
+        res.status(400).json({ error: "consentTimestamp must be a valid date, or null to clear it" });
+        return;
+      }
+      if (
+        body.consentScope !== undefined &&
+        body.consentScope !== null &&
+        (!Array.isArray(body.consentScope) || body.consentScope.some((c) => !validChannels.has(c)))
+      ) {
+        res.status(400).json({ error: "consentScope must be an array of sms/whatsapp/email, or null" });
+        return;
+      }
 
       const patch: Partial<Lead> = {};
       if ("name" in body) patch.name = body.name ?? undefined;
@@ -200,6 +226,24 @@ export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, mess
       // to let the tenant toggle directly here, unlike `status` above. See
       // Lead.marketingOptIn and src/winback.ts.
       if ("marketingOptIn" in body) patch.marketingOptIn = body.marketingOptIn ?? undefined;
+      if ("consentStatus" in body) {
+        patch.consentStatus = body.consentStatus ?? undefined;
+        // Stamps when this was actually recorded, unless the caller
+        // explicitly supplied its own consentTimestamp in the same request
+        // (e.g. a CSV import carrying a historical consent date) — without
+        // this, setting consentStatus here would otherwise leave
+        // consentTimestamp unset, defeating the point of evidencing *when*
+        // consent was captured.
+        if (!("consentTimestamp" in body)) {
+          patch.consentTimestamp = new Date().toISOString();
+        }
+      }
+      if ("consentTimestamp" in body) {
+        patch.consentTimestamp = body.consentTimestamp ? new Date(body.consentTimestamp).toISOString() : undefined;
+      }
+      if ("consentSource" in body) patch.consentSource = body.consentSource ?? undefined;
+      if ("consentScope" in body) patch.consentScope = body.consentScope ?? undefined;
+      if ("privacyNoticeVersion" in body) patch.privacyNoticeVersion = body.privacyNoticeVersion ?? undefined;
 
       const updated = await leadStore.updateLead(tenant.id, req.params.id, patch);
       res.json(updated);

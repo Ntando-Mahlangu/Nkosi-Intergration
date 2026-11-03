@@ -1888,6 +1888,24 @@ components:
           type: string
           format: date-time
           description: Set once an SLA operator-alert has fired for this specific unresolved needsAttentionAt, so it only fires once. Cleared along with needsAttentionAt.
+        consentStatus:
+          type: string
+          enum: [unknown, granted, withdrawn]
+          description: "Evidence of this lead's own consent, distinct from the tenant-level consentBasisConfirmedAt attestation. \"unknown\" (the default) is never treated as \"granted\"; only an explicit \"withdrawn\" suppresses contact (see COMPLIANCE.md \"Consent basis\")."
+        consentTimestamp:
+          type: string
+          format: date-time
+          description: When consentStatus was last set to its current value.
+        consentSource:
+          type: string
+          description: Where this consent was obtained, e.g. "website_form", "phone_enquiry", "crm_import" — free text, not a closed enum.
+        consentScope:
+          type: array
+          items: { type: string, enum: [sms, whatsapp, email] }
+          description: Which channel(s) this consent actually covers.
+        privacyNoticeVersion:
+          type: string
+          description: Which version of the client's privacy notice was shown when this consent was captured.
 
     LeadPatchBody:
       type: object
@@ -1911,6 +1929,20 @@ components:
         marketingOptIn:
           type: boolean
           description: This lead's own opt-in to later win-back messaging.
+        consentStatus:
+          type: string
+          enum: [unknown, granted, withdrawn]
+          description: Setting this (without an explicit consentTimestamp in the same request) also stamps consentTimestamp to now.
+        consentTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set null to clear it.
+        consentSource: { type: string }
+        consentScope:
+          type: array
+          items: { type: string, enum: [sms, whatsapp, email] }
+        privacyNoticeVersion: { type: string }
 
     LeadConvertBody:
       type: object

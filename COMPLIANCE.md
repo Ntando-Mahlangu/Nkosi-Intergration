@@ -122,6 +122,23 @@ and their own leads.
   a pass.
 - Load any existing do-not-contact/opt-out list **before** the first import
   (see `ONBOARDING.md` step 2).
+- **Per-lead consent evidence** (`Lead.consentStatus`/`consentTimestamp`/
+  `consentSource`/`consentScope`/`privacyNoticeVersion`) — distinct from the
+  tenant-level attestation above, which only records that the *business* has
+  a documented basis for its leads generally, not evidence for any one
+  specific lead. Set these via `PATCH /leads/:id`, the CSV import's own
+  optional columns (see `ONBOARDING.md` step 4), or a CRM/webhook integration
+  that captures them at the point of collection. **`consentStatus` defaults
+  to (and an unrecognized CSV value falls back to) `"unknown"` — this is
+  never treated as `"granted"`**: it doesn't newly gate the ordinary
+  recovery/follow-up logic, which is governed by `status`/
+  `HARD_STOP_STATUSES` as documented throughout this file. Only an explicit
+  `"withdrawn"` acts as a genuine suppression signal — `checkSuppression`
+  and `isHardStopped` (`src/compliance.ts`) both treat it the same way as
+  `opted_out`/`do_not_contact`. This is evidence capture for your own
+  records (useful for a TCPA consent-defense file, or PECR/POPIA's opt-in
+  requirements — see those sections above), not a replacement for the
+  suppression logic that already governs who gets contacted.
 
 ## Win-back messaging for past customers
 

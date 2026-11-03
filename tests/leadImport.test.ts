@@ -107,6 +107,33 @@ describe("parseLeadsCsv", () => {
   it("returns nothing for an empty file", () => {
     expect(parseLeadsCsv("", TENANT_ID)).toEqual({ leads: [], skippedCount: 0 });
   });
+
+  it("maps the consent columns onto Lead fields", () => {
+    const csv =
+      "phone,consentStatus,consentTimestamp,consentSource,consentScope,privacyNoticeVersion\n" +
+      '+27821111111,granted,2026-01-01T00:00:00Z,website_form,"sms,email",v2\n';
+    const { leads } = parseLeadsCsv(csv, TENANT_ID);
+    expect(leads[0]).toMatchObject({
+      consentStatus: "granted",
+      consentTimestamp: "2026-01-01T00:00:00.000Z",
+      consentSource: "website_form",
+      consentScope: ["sms", "email"],
+      privacyNoticeVersion: "v2",
+    });
+  });
+
+  it("falls back to 'unknown' for a missing or unrecognized consentStatus, never 'granted'", () => {
+    const csv = "phone,consentStatus\n+27821111111,\n+27822222222,not-a-real-status\n+27823333333,withdrawn\n";
+    const { leads } = parseLeadsCsv(csv, TENANT_ID);
+    expect(leads.map((l) => l.consentStatus)).toEqual(["unknown", "unknown", "withdrawn"]);
+  });
+
+  it("ignores an unparseable consentTimestamp and an unrecognized consentScope entry", () => {
+    const csv = 'phone,consentTimestamp,consentScope\n+27821111111,not-a-date,"sms,carrier-pigeon"\n';
+    const { leads } = parseLeadsCsv(csv, TENANT_ID);
+    expect(leads[0].consentTimestamp).toBeUndefined();
+    expect(leads[0].consentScope).toEqual(["sms"]);
+  });
 });
 
 describe("createLeadsDeduped", () => {

@@ -249,6 +249,33 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(reread?.followUpCount).toBe(0);
   });
 
+  it("round-trips a lead's consent fields, including consentScope's comma-join/split", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant(TENANT);
+    const leadStore = new PostgresLeadStore(pool);
+    await leadStore.createLead(LEAD);
+
+    const updated = await leadStore.updateLead(TENANT.id, LEAD.id, {
+      consentStatus: "granted",
+      consentTimestamp: new Date("2026-01-01T00:00:00.000Z").toISOString(),
+      consentSource: "website_form",
+      consentScope: ["sms", "email"],
+      privacyNoticeVersion: "v2",
+    });
+    expect(updated?.consentStatus).toBe("granted");
+    expect(updated?.consentScope).toEqual(["sms", "email"]);
+
+    const reread = await leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(reread?.consentStatus).toBe("granted");
+    expect(reread?.consentTimestamp).toBe("2026-01-01T00:00:00.000Z");
+    expect(reread?.consentSource).toBe("website_form");
+    expect(reread?.consentScope).toEqual(["sms", "email"]);
+    expect(reread?.privacyNoticeVersion).toBe("v2");
+
+    const withdrawn = await leadStore.updateLead(TENANT.id, LEAD.id, { consentStatus: "withdrawn" });
+    expect(withdrawn?.consentStatus).toBe("withdrawn");
+  });
+
   it("round-trips appointmentAt/appointmentReminderSentAt", async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant(TENANT);

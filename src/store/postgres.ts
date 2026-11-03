@@ -53,6 +53,14 @@ function leadFromRow(row: Record<string, unknown>): Lead {
     attentionAlertedAt: row.attention_alerted_at
       ? new Date(row.attention_alerted_at as string).toISOString()
       : undefined,
+    consentStatus: (row.consent_status as Lead["consentStatus"] | null) ?? undefined,
+    consentTimestamp: row.consent_timestamp ? new Date(row.consent_timestamp as string).toISOString() : undefined,
+    consentSource: (row.consent_source as string | null) ?? undefined,
+    // Reverses the comma-join applied when writing (see LEAD_PATCH_COLUMNS'
+    // own comment) — undefined for both an absent column and an empty string,
+    // rather than [""], which isn't a real channel.
+    consentScope: row.consent_scope ? ((row.consent_scope as string).split(",") as Lead["consentScope"]) : undefined,
+    privacyNoticeVersion: (row.privacy_notice_version as string | null) ?? undefined,
   };
 }
 
@@ -61,7 +69,8 @@ const LEAD_COLUMNS = `id, tenant_id, name, phone, email, source, created_at, las
   appointment_at, appointment_reminder_sent_at, notes,
   status, preferred_channel, had_missed_call, responded_after_contact, follow_up_count,
   next_follow_up_at, first_outreach_sent_at, converted_at, marketing_opt_in, last_win_back_at,
-  chat_token_hash, needs_attention_at, needs_attention_reason, attention_alerted_at`;
+  chat_token_hash, needs_attention_at, needs_attention_reason, attention_alerted_at,
+  consent_status, consent_timestamp, consent_source, consent_scope, privacy_notice_version`;
 
 /** Maps a patchable Lead field to its column — `id`/`tenantId` are the WHERE key, never patched. */
 const LEAD_PATCH_COLUMNS: Partial<Record<keyof Lead, string>> = {
@@ -92,7 +101,26 @@ const LEAD_PATCH_COLUMNS: Partial<Record<keyof Lead, string>> = {
   needsAttentionAt: "needs_attention_at",
   needsAttentionReason: "needs_attention_reason",
   attentionAlertedAt: "attention_alerted_at",
+  consentStatus: "consent_status",
+  consentTimestamp: "consent_timestamp",
+  consentSource: "consent_source",
+  consentScope: "consent_scope",
+  privacyNoticeVersion: "privacy_notice_version",
 };
+
+/**
+ * Most Lead fields pass straight through to their column as-is (pg accepts
+ * an ISO string for a TIMESTAMPTZ column directly). consentScope is the one
+ * exception — it's a string[] in TypeScript but a single comma-joined TEXT
+ * column here (see migration 0026's own comment) — so it needs converting
+ * on the way in, mirroring leadFromRow's split() on the way out.
+ */
+function serializeLeadPatchValue(key: keyof Lead, value: unknown): unknown {
+  if (key === "consentScope") {
+    return Array.isArray(value) ? value.join(",") : null;
+  }
+  return value ?? null;
+}
 
 export class PostgresLeadStore implements LeadStore {
   constructor(private pool: Pool) {}
@@ -132,8 +160,9 @@ export class PostgresLeadStore implements LeadStore {
         appointment_at, appointment_reminder_sent_at, notes,
         status, preferred_channel, had_missed_call, responded_after_contact, follow_up_count,
         next_follow_up_at, first_outreach_sent_at, converted_at, marketing_opt_in, last_win_back_at,
-        chat_token_hash, needs_attention_at, needs_attention_reason, attention_alerted_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
+        chat_token_hash, needs_attention_at, needs_attention_reason, attention_alerted_at,
+        consent_status, consent_timestamp, consent_source, consent_scope, privacy_notice_version
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)`,
       [
         lead.id,
         lead.tenantId,
@@ -164,6 +193,11 @@ export class PostgresLeadStore implements LeadStore {
         lead.needsAttentionAt ?? null,
         lead.needsAttentionReason ?? null,
         lead.attentionAlertedAt ?? null,
+        lead.consentStatus ?? null,
+        lead.consentTimestamp ?? null,
+        lead.consentSource ?? null,
+        lead.consentScope ? lead.consentScope.join(",") : null,
+        lead.privacyNoticeVersion ?? null,
       ]
     );
     return lead;
@@ -188,7 +222,7 @@ export class PostgresLeadStore implements LeadStore {
   ): Promise<Lead | undefined> {
     const entries = (Object.keys(patch) as (keyof Lead)[])
       .filter((key) => key in LEAD_PATCH_COLUMNS)
-      .map((key) => [LEAD_PATCH_COLUMNS[key] as string, patch[key] ?? null] as const);
+      .map((key) => [LEAD_PATCH_COLUMNS[key] as string, serializeLeadPatchValue(key, patch[key])] as const);
     if (entries.length === 0) return this.getLeadById(tenantId, id);
 
     const values: unknown[] = [tenantId, id];

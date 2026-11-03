@@ -163,7 +163,11 @@ Pick whichever fits what they actually have:
   on `public/dashboard.html` (`POST /leads/import`) — no CLI access
   needed. Expected headers (case-insensitive): `name, phone, email,
   source, createdAt, requestedService, previousQuote, appointmentAt,
-  notes`. A row with a valid `appointmentAt` is automatically marked
+  notes, consentStatus, consentTimestamp, consentSource, consentScope,
+  privacyNoticeVersion`. `consentScope` is a quoted, comma-separated cell
+  (e.g. `"sms,email"`) if it covers more than one channel; an unrecognized
+  or blank `consentStatus` always falls back to `"unknown"`, never to
+  `"granted"` — see COMPLIANCE.md "Consent basis". A row with a valid `appointmentAt` is automatically marked
   `appointmentStatus: "booked"`, which is what makes it eligible for the
   24-hour-before appointment reminder (`src/appointmentReminder.ts` in
   `README.md`'s Architecture section) — wording is editable per tenant from
