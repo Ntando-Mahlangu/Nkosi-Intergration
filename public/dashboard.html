@@ -4,69 +4,29 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>LeadRecovery Dashboard</title>
+<link rel="stylesheet" href="theme.css" />
 <style>
   :root {
-    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --bg: #14171f;
-    --panel: #1b1e27;
-    --border: rgba(201, 168, 117, 0.22);
-    --text: #eee7d8;
-    --muted: #8b8677;
-    --accent: #c9a875;
-    --high: #b5555a;
-    --medium: #d99a4e;
-    --low: #8b8677;
-    --ok: #7fa88a;
-    --fail: #b5555a;
+    /* Repointed to the shared blue/green/steel palette (theme.css) — names
+       kept as-is since they're used throughout this file's CSS and JS. */
+    /* --border and --text are deliberately not redeclared here — theme.css
+       already defines both under these exact names, and redeclaring a
+       custom property as var(--same-name) on the same selector is a
+       circular reference (invalid at computed-value time), not an alias. */
+    --serif: var(--sans);
+    --bg: var(--black);
+    --panel: var(--charcoal);
+    --muted: var(--text-dim);
+    --accent: var(--blue);
+    --high: var(--danger);
+    --medium: var(--warning);
+    --low: var(--text-faint);
+    --ok: var(--success);
+    --fail: var(--danger);
   }
-  * { box-sizing: border-box; }
   html, body { min-height: 100%; }
-  body {
-    margin: 0;
-    font-family: var(--sans);
-    background: var(--bg);
-    color: var(--text);
-  }
-
-  /* ---------- ambient HUD backdrop (same as index.html's Command Center) ---------- */
-  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.35; pointer-events: none; }
-  #vignette {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 45%, rgba(12,14,19,0.75) 100%);
-  }
-
-  header {
-    position: relative;
-    z-index: 5;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 12px;
-    background: rgba(20,23,31,0.7);
-    backdrop-filter: blur(4px);
-  }
-  header h1 { font-family: var(--serif); font-size: 19px; letter-spacing: 0.01em; margin: 0; font-weight: 400; }
-  header .sub { color: var(--muted); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
-  main { position: relative; z-index: 5; max-width: 960px; margin: 0 auto; padding: 24px; }
-  .auth-panel {
-    position: relative;
-    z-index: 5;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-    padding: 28px;
-    max-width: 480px;
-    margin: 60px auto;
-  }
-  .auth-panel h2 { font-family: var(--serif); margin-top: 0; font-size: 19px; letter-spacing: 0.01em; font-weight: 400; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 28px 40px; }
+  .auth-panel h2 { margin-top: 0; font-size: 19px; letter-spacing: 0.01em; font-weight: 700; }
   label { display: block; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
   input, select {
     width: 100%;
@@ -81,7 +41,7 @@
   select { color-scheme: dark; }
   input:focus, select:focus { outline: none; border-color: var(--accent); }
   button {
-    background: rgba(201,168,117,0.12);
+    background: rgba(37,99,235,0.12);
     border: 1px solid var(--text);
     color: var(--text);
     border-radius: 6px;
@@ -93,7 +53,7 @@
     font-family: inherit;
     transition: background 0.2s, box-shadow 0.2s;
   }
-  button:hover { background: rgba(201,168,117,0.22); border-color: var(--accent); }
+  button:hover { background: rgba(37,99,235,0.22); border-color: var(--accent); }
   button.secondary, a.secondary {
     background: transparent;
     border: 1px solid var(--border);
@@ -102,8 +62,8 @@
     letter-spacing: 0.1em;
     font-weight: 600;
   }
-  button.secondary:hover, a.secondary:hover { background: rgba(201,168,117,0.08); border-color: var(--accent); }
-  .secondary.active { background: rgba(201,168,117,0.18); border-color: var(--accent); color: var(--accent); cursor: default; }
+  button.secondary:hover, a.secondary:hover { background: rgba(37,99,235,0.08); border-color: var(--accent); }
+  .secondary.active { background: rgba(37,99,235,0.18); border-color: var(--accent); color: var(--accent); cursor: default; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
   .stat { font-size: 12px; letter-spacing: 0.05em; color: var(--muted); }
@@ -125,8 +85,8 @@
     text-transform: uppercase;
     letter-spacing: 0.1em;
   }
-  .badge.HIGH { background: rgba(181,85,90,0.12); color: var(--high); border: 1px solid rgba(181,85,90,0.4); }
-  .badge.MEDIUM { background: rgba(217,154,78,0.12); color: var(--medium); border: 1px solid rgba(217,154,78,0.4); }
+  .badge.HIGH { background: rgba(239,68,68,0.12); color: var(--high); border: 1px solid rgba(239,68,68,0.4); }
+  .badge.MEDIUM { background: rgba(245,158,11,0.12); color: var(--medium); border: 1px solid rgba(245,158,11,0.4); }
   .badge.LOW { background: rgba(139,134,119,0.25); color: var(--muted); border: 1px solid var(--border); }
   .reasons { color: var(--muted); font-size: 12px; margin-top: 6px; }
   .message {
@@ -155,7 +115,7 @@
     cursor: pointer;
     border: 1px solid transparent;
   }
-  .lead-row:hover, .lead-row:focus-visible { background: rgba(201,168,117,0.06); border-color: var(--border); }
+  .lead-row:hover, .lead-row:focus-visible { background: rgba(37,99,235,0.06); border-color: var(--border); }
   .lead-row .lead-meta { color: var(--muted); font-size: 11px; letter-spacing: 0.05em; }
   .lead-row .appt-tag {
     font-size: 10px;
@@ -164,9 +124,9 @@
     border-radius: 6px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    background: rgba(217,154,78,0.12);
+    background: rgba(245,158,11,0.12);
     color: var(--medium);
-    border: 1px solid rgba(217,154,78,0.4);
+    border: 1px solid rgba(245,158,11,0.4);
     margin-left: 8px;
   }
   .lead-row .attention-tag {
@@ -176,9 +136,9 @@
     border-radius: 6px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    background: rgba(181,85,90,0.12);
+    background: rgba(239,68,68,0.12);
     color: var(--high);
-    border: 1px solid rgba(181,85,90,0.4);
+    border: 1px solid rgba(239,68,68,0.4);
     margin-left: 8px;
   }
 
@@ -199,7 +159,7 @@
   }
   #overlay.open { display: flex; }
   #lead-detail {
-    background: #1b1e27;
+    background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.45);
@@ -209,7 +169,7 @@
     max-height: 85vh;
     overflow-y: auto;
   }
-  #lead-detail h3 { margin: 0 0 4px; font-size: 14px; color: var(--amber, #d99a4e); text-transform: uppercase; letter-spacing: 0.1em; }
+  #lead-detail h3 { margin: 0 0 4px; font-size: 14px; color: var(--medium); text-transform: uppercase; letter-spacing: 0.1em; }
   #lead-detail .detail-meta { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
   #lead-detail .close-btn { float: right; }
   .appt-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; margin-top: 4px; }
@@ -222,15 +182,12 @@
     font-size: 13px;
     line-height: 1.4;
   }
-  .bubble.outbound { align-self: flex-end; background: rgba(201,168,117,0.1); border: 1px solid var(--border); }
+  .bubble.outbound { align-self: flex-end; background: rgba(37,99,235,0.1); border: 1px solid var(--border); }
   .bubble.inbound { align-self: flex-start; background: rgba(0,0,0,0.35); border: 1px solid var(--border); }
   .bubble .bubble-meta { color: var(--muted); font-size: 10px; margin-top: 4px; }
 </style>
 </head>
 <body>
-
-<div id="stars"></div>
-<div id="vignette"></div>
 
 <div id="auth" class="auth-panel">
   <h2>LeadRecovery Dashboard</h2>
@@ -273,43 +230,58 @@
   <div id="auth-error" class="error" role="alert"></div>
 </div>
 
-<div id="app" style="display:none;">
-  <header>
-    <div>
-      <h1 id="tenant-name">LeadRecovery</h1>
-      <div class="sub" id="tenant-sub"></div>
+<div class="app-shell" id="app" style="display:none;">
+  <aside class="sidebar">
+    <div class="logo">LeadRecovery<span class="dot">.</span>
+      <div class="tagline" id="tenant-name">LeadRecovery</div>
     </div>
-    <div style="display:flex; gap:8px;">
-      <a class="secondary" href="index.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:3px;">Command Center</a>
-      <span class="secondary active" aria-current="page" style="display:inline-flex; align-items:center; padding:0 16px; border-radius:3px;">List View</span>
-      <a class="secondary" href="settings.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:3px;">Settings</a>
-      <a class="secondary" href="reports.html" style="text-decoration:none; display:inline-flex; align-items:center; padding:0 16px; border-radius:3px;">Reports</a>
-      <button class="secondary" id="refresh-btn">Refresh</button>
-      <button id="run-btn">Run recovery workflow</button>
-      <button class="secondary" id="logout-btn">Back</button>
+    <nav>
+      <a href="index.html"><span class="icon">&#9679;</span> Command Center</a>
+      <span class="current" aria-current="page"><span class="icon">&#9776;</span> List View</span>
+      <a href="settings.html"><span class="icon">&#9881;</span> Settings</a>
+      <a href="reports.html"><span class="icon">&#9776;</span> Reports</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="help-card">
+        Need help?
+        <a href="get-started.html">Contact support</a>
+      </div>
     </div>
-  </header>
-  <main>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h1>List View</h1>
+        <div class="sub" id="tenant-sub"></div>
+      </div>
+      <div class="topbar-right">
+        <button class="secondary" id="refresh-btn">Refresh</button>
+        <button class="primary" id="run-btn">Run recovery workflow</button>
+        <button class="secondary" id="logout-btn">Back</button>
+      </div>
+    </div>
+
     <div class="toolbar">
       <span class="stat" id="summary" role="status" aria-live="polite"></span>
     </div>
 
-    <section>
+    <section class="card" style="margin-bottom:18px;">
       <h3>Needs attention</h3>
       <div id="attention-list"></div>
     </section>
 
-    <section>
+    <section class="card" style="margin-bottom:18px;">
       <h3>Recovery plan (dry run — nothing sent yet)</h3>
       <div id="plans"></div>
     </section>
 
-    <section>
+    <section class="card" style="margin-bottom:18px;">
       <h3>Skipped</h3>
       <ul class="skipped-list" id="skipped"></ul>
     </section>
 
-    <section>
+    <section class="card" style="margin-bottom:18px;">
       <h3>Import leads</h3>
       <div class="import-row">
         <input type="file" id="import-file" accept=".csv,text/csv" aria-label="CSV file to import" />
@@ -323,11 +295,11 @@
       </div>
     </section>
 
-    <section>
+    <section class="card">
       <h3>All leads</h3>
       <div id="all-leads"></div>
     </section>
-  </main>
+  </div>
 </div>
 
 <div id="overlay" role="presentation">
@@ -336,7 +308,7 @@
     <h3 id="detail-name">—</h3>
     <div class="detail-meta" id="detail-meta"></div>
 
-    <div id="detail-attention-row" style="display:none; margin:16px 0; padding:12px; border:1px solid var(--high); border-radius:8px; background:rgba(181,85,90,0.06);">
+    <div id="detail-attention-row" style="display:none; margin:16px 0; padding:12px; border:1px solid var(--high); border-radius:8px; background:rgba(239,68,68,0.06);">
       <div id="detail-attention-label" style="font-size:11px; color:var(--high); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px;"></div>
       <label for="detail-reply-text" style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Reply</label>
       <textarea id="detail-reply-text" rows="3" style="width:100%; resize:vertical;" placeholder="Type a reply to send…"></textarea>
@@ -418,22 +390,6 @@
 
 <script>
 (function () {
-  /* ===================== ambient starfield (matches index.html's Command Center) ===================== */
-  (function buildStars() {
-    const el = document.getElementById("stars");
-    let svg = "<svg width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>";
-    for (let i = 0; i < 70; i++) {
-      const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 1.1 + 0.2;
-      const op = Math.random() * 0.6 + 0.1;
-      const dur = (Math.random() * 4 + 3).toFixed(2);
-      svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#d9cbb0" opacity="${op}">
-        <animate attributeName="opacity" values="${op};${op * 0.15};${op}" dur="${dur}s" repeatCount="indefinite" />
-      </circle>`;
-    }
-    svg += "</svg>";
-    el.innerHTML = svg;
-  })();
-
   const authPanel = document.getElementById("auth");
   const app = document.getElementById("app");
   const authError = document.getElementById("auth-error");
@@ -951,7 +907,7 @@
       setSession(session);
       authPanel.style.display = "none";
       if (tenant.termsAcceptedAt) {
-        app.style.display = "block";
+        app.style.display = "";
       } else {
         showTermsGate();
       }
@@ -1089,7 +1045,7 @@
       const version = await currentTermsVersion();
       await api(session, "/tenants/me/accept-terms", { method: "POST", body: JSON.stringify({ version }) });
       document.getElementById("terms-gate").style.display = "none";
-      app.style.display = "block";
+      app.style.display = "";
     } catch (err) {
       errEl.textContent = "Could not save: " + err.message;
     }
@@ -1153,7 +1109,7 @@
       loadDashboard(existing)
         .then((tenant) => {
           if (tenant.termsAcceptedAt) {
-            app.style.display = "block";
+            app.style.display = "";
           } else {
             showTermsGate();
           }
