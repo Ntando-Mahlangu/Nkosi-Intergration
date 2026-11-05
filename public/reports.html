@@ -4,68 +4,35 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>LeadRecovery Reports</title>
+<link rel="stylesheet" href="theme.css" />
 <style>
   :root {
-    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --bg: #14171f;
-    --panel: #1b1e27;
-    --border: rgba(201, 168, 117, 0.22);
-    --text: #eee7d8;
-    --muted: #8b8677;
-    --accent: #c9a875;
-    --high: #b5555a;
-    --medium: #d99a4e;
-    --low: #8b8677;
-    --ok: #7fa88a;
-    --fail: #b5555a;
+    /* Repointed to the shared blue/green/steel palette (theme.css) — names
+       kept as-is since they're used throughout this file's CSS and JS.
+       --border/--text are deliberately not redeclared — theme.css already
+       defines both under these exact names, and redeclaring a custom
+       property as var(--same-name) on the same selector is a circular
+       reference (invalid at computed-value time), not an alias. */
+    --serif: var(--sans);
+    --bg: var(--black);
+    --panel: var(--charcoal);
+    --muted: var(--text-dim);
+    --accent: var(--blue);
+    --high: var(--danger);
+    --medium: var(--warning);
+    --low: var(--text-faint);
+    --ok: var(--success);
+    --fail: var(--danger);
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: var(--sans);
-    background: var(--bg);
-    color: var(--text);
-  }
-
-  /* ---------- ambient HUD backdrop (same as index.html's Command Center) ---------- */
-  #stars { position: fixed; inset: 0; z-index: 0; opacity: 0.35; pointer-events: none; }
-  #vignette {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 45%, rgba(12,14,19,0.75) 100%);
-  }
-
-  header {
-    position: relative;
-    z-index: 5;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 12px;
-    background: rgba(20,23,31,0.7);
-    backdrop-filter: blur(4px);
-  }
-  header h1 { font-family: var(--serif); font-size: 19px; letter-spacing: 0.01em; margin: 0; font-weight: 400; }
-  header .sub { color: var(--muted); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
-  main { position: relative; z-index: 5; max-width: 960px; margin: 0 auto; padding: 24px; }
-  .auth-panel {
-    position: relative;
-    z-index: 5;
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 28px 40px; }
+  .auth-panel h2 { margin-top: 0; font-size: 19px; letter-spacing: 0.01em; font-weight: 700; }
+  main > section {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-    padding: 28px;
-    max-width: 480px;
-    margin: 60px auto;
+    padding: 18px 20px;
+    margin-bottom: 18px;
   }
-  .auth-panel h2 { font-family: var(--serif); margin-top: 0; font-size: 19px; letter-spacing: 0.01em; font-weight: 400; }
   label { display: block; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
   input {
     width: 100%;
@@ -80,7 +47,7 @@
   }
   input:focus { outline: none; border-color: var(--accent); }
   button {
-    background: rgba(201,168,117,0.12);
+    background: rgba(37,99,235,0.12);
     border: 1px solid var(--text);
     color: var(--text);
     border-radius: 6px;
@@ -92,7 +59,7 @@
     font-family: inherit;
     transition: background 0.2s, box-shadow 0.2s;
   }
-  button:hover { background: rgba(201,168,117,0.22); border-color: var(--accent); }
+  button:hover { background: rgba(37,99,235,0.22); border-color: var(--accent); }
   button.secondary, a.secondary, .secondary.active {
     background: transparent;
     border: 1px solid var(--border);
@@ -106,8 +73,8 @@
     letter-spacing: 0.1em;
     font-weight: 600;
   }
-  button.secondary:hover, a.secondary:hover { background: rgba(201,168,117,0.08); border-color: var(--accent); }
-  .secondary.active { background: rgba(201,168,117,0.18); border-color: var(--accent); color: var(--accent); cursor: default; }
+  button.secondary:hover, a.secondary:hover { background: rgba(37,99,235,0.08); border-color: var(--accent); }
+  .secondary.active { background: rgba(37,99,235,0.18); border-color: var(--accent); color: var(--accent); cursor: default; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .error { color: var(--fail); font-size: 13px; margin-top: 8px; }
   .empty { color: var(--muted); padding: 32px; text-align: center; }
@@ -126,7 +93,7 @@
     box-shadow: 0 8px 24px rgba(0,0,0,0.28);
     padding: 14px 16px;
   }
-  .stat-card .stat-value { font-size: 26px; font-weight: 700; color: var(--text); text-shadow: 0 0 14px rgba(201,168,117,0.5); }
+  .stat-card .stat-value { font-size: 26px; font-weight: 700; color: var(--text); text-shadow: 0 0 14px rgba(37,99,235,0.5); }
   .stat-card .stat-label { color: var(--muted); font-size: 11px; letter-spacing: 0.05em; margin-top: 4px; }
 
   .breakdown {
@@ -149,8 +116,6 @@
 </head>
 <body>
 
-<div id="stars"></div>
-<div id="vignette"></div>
 
 <div id="auth" class="auth-panel">
   <h2>LeadRecovery Reports</h2>
@@ -193,22 +158,37 @@
   <div id="auth-error" class="error" role="alert"></div>
 </div>
 
-<div id="app" style="display:none;">
-  <header>
-    <div>
-      <h1 id="tenant-name">LeadRecovery</h1>
-      <div class="sub">Activity &amp; ROI report</div>
+<div class="app-shell" id="app" style="display:none;">
+  <aside class="sidebar">
+    <div class="logo">LeadRecovery<span class="dot">.</span>
+      <div class="tagline" id="tenant-name">LeadRecovery</div>
     </div>
-    <div style="display:flex; gap:8px;">
-      <a class="secondary" href="index.html">Command Center</a>
-      <a class="secondary" href="dashboard.html">List View</a>
-      <a class="secondary" href="settings.html">Settings</a>
-      <span class="secondary active" aria-current="page">Reports</span>
-      <button class="secondary" id="refresh-btn">Refresh</button>
-      <button id="run-btn">Run recovery workflow</button>
-      <button class="secondary" id="logout-btn">Back</button>
+    <nav>
+      <a href="index.html"><span class="icon">&#9679;</span> Command Center</a>
+      <a href="dashboard.html"><span class="icon">&#9776;</span> List View</a>
+      <a href="settings.html"><span class="icon">&#9881;</span> Settings</a>
+      <span class="current" aria-current="page"><span class="icon">&#9776;</span> Reports</span>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="help-card">
+        Need help?
+        <a href="get-started.html">Contact support</a>
+      </div>
     </div>
-  </header>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h1>Reports</h1>
+        <div class="sub">Activity &amp; ROI report</div>
+      </div>
+      <div class="topbar-right">
+        <button class="secondary" id="refresh-btn">Refresh</button>
+        <button class="primary" id="run-btn">Run recovery workflow</button>
+        <button class="secondary" id="logout-btn">Back</button>
+      </div>
+    </div>
   <main>
     <section>
       <h3>Date range</h3>
@@ -253,6 +233,7 @@
       <div class="breakdown" id="inbound-breakdown"></div>
     </section>
   </main>
+  </div>
 </div>
 
 <div id="terms-gate" role="dialog" aria-modal="true" aria-labelledby="terms-gate-title" style="display:none; position:fixed; inset:0; z-index:50; align-items:center; justify-content:center; background:rgba(12,14,19,0.85); padding:20px;">
@@ -275,22 +256,6 @@
 
 <script>
 (function () {
-  /* ===================== ambient starfield (matches index.html's Command Center) ===================== */
-  (function buildStars() {
-    const el = document.getElementById("stars");
-    let svg = "<svg width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>";
-    for (let i = 0; i < 70; i++) {
-      const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 1.1 + 0.2;
-      const op = Math.random() * 0.6 + 0.1;
-      const dur = (Math.random() * 4 + 3).toFixed(2);
-      svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#d9cbb0" opacity="${op}">
-        <animate attributeName="opacity" values="${op};${op * 0.15};${op}" dur="${dur}s" repeatCount="indefinite" />
-      </circle>`;
-    }
-    svg += "</svg>";
-    el.innerHTML = svg;
-  })();
-
   const authPanel = document.getElementById("auth");
   const app = document.getElementById("app");
   const authError = document.getElementById("auth-error");
@@ -407,7 +372,7 @@
       setSession(session);
       authPanel.style.display = "none";
       if (tenant.termsAcceptedAt) {
-        app.style.display = "block";
+        app.style.display = "";
       } else {
         showTermsGate();
       }
@@ -569,7 +534,7 @@
       const version = await currentTermsVersion();
       await api(session, "/tenants/me/accept-terms", { method: "POST", body: JSON.stringify({ version }) });
       document.getElementById("terms-gate").style.display = "none";
-      app.style.display = "block";
+      app.style.display = "";
     } catch (err) {
       errEl.textContent = "Could not save: " + err.message;
     }
@@ -633,7 +598,7 @@
       loadPage(existing)
         .then((tenant) => {
           if (tenant.termsAcceptedAt) {
-            app.style.display = "block";
+            app.style.display = "";
           } else {
             showTermsGate();
           }
