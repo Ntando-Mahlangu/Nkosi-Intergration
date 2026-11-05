@@ -4,20 +4,19 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>LeadRecovery — Get Started</title>
+<link rel="stylesheet" href="theme.css" />
 <style>
   :root {
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --ink: #0b1220;
-    --body: #4b5768;
-    --muted: #8591a1;
-    --bg-bottom: #e4f3fc;
-    --panel: #ffffff;
-    --border: #e6ebf1;
-    --accent: #1479e0;
-    --accent2: #35c6f4;
-    --accent-soft: #eaf4fd;
-    --ok: #16a34a;
-    --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    /* --sans/--border/--ok/--accent-soft/--shadow/--bg are already defined by theme.css;
+       redeclaring a token under the exact same name as a var() reference to itself is a
+       CSS circular reference, so this file only repoints its own, differently-named tokens. */
+    --ink: var(--text);
+    --body: var(--text-dim);
+    --muted: var(--text-faint);
+    --bg-bottom: var(--surface);
+    --panel: var(--surface);
+    --accent: var(--blue);
+    --accent2: #60a5fa;
   }
   * { box-sizing: border-box; }
   body {
@@ -25,7 +24,7 @@
     font-family: var(--sans);
     color: var(--ink);
     line-height: 1.6;
-    background: linear-gradient(180deg, #ffffff 0%, #ffffff 55%, var(--bg-bottom) 100%);
+    background: linear-gradient(180deg, var(--bg) 0%, var(--bg) 55%, var(--bg-bottom) 100%);
   }
   a { color: var(--accent); text-decoration: none; }
 
@@ -34,7 +33,7 @@
   nav {
     max-width: 1080px;
     margin: 0 auto;
-    background: rgba(255,255,255,0.9);
+    background: rgba(21, 26, 33, 0.85);
     backdrop-filter: blur(10px);
     border: 1px solid var(--border);
     border-radius: 999px;
@@ -64,7 +63,7 @@
     font-size: 13.5px;
     padding: 11px 20px;
     border-radius: 999px;
-    box-shadow: 0 8px 20px rgba(20,121,224,0.3);
+    box-shadow: 0 8px 20px rgba(37,99,235,0.3);
     white-space: nowrap;
     border: none;
     cursor: pointer;
@@ -82,7 +81,7 @@
     align-items: center;
     gap: 6px;
     background: var(--accent-soft);
-    border: 1px solid rgba(20,121,224,0.22);
+    border: 1px solid rgba(37,99,235,0.22);
     color: var(--accent);
     font-size: 11.5px;
     font-weight: 700;
@@ -131,10 +130,10 @@
   .cta.primary {
     background: linear-gradient(135deg, var(--accent), var(--accent2));
     color: #fff;
-    box-shadow: 0 10px 24px rgba(20,121,224,0.3);
+    box-shadow: 0 10px 24px rgba(37,99,235,0.3);
   }
   .cta.secondary {
-    background: #fff;
+    background: var(--surface);
     color: var(--ink);
     border: 1px solid var(--border);
   }
@@ -180,7 +179,7 @@
     position: absolute; left: 0; top: 2px;
     width: 22px; height: 22px; border-radius: 50%;
     background: var(--accent-soft);
-    box-shadow: inset 0 0 0 1px rgba(20,121,224,0.25);
+    box-shadow: inset 0 0 0 1px rgba(37,99,235,0.25);
   }
   section.pitch li::after {
     content: "\2713";
@@ -201,7 +200,7 @@
   input, textarea {
     width: 100%;
     padding: 10px 12px;
-    background: #fbfcfe;
+    background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--ink);
@@ -211,7 +210,7 @@
   input:focus, textarea:focus {
     outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(20,121,224,0.14);
+    box-shadow: 0 0 0 3px var(--accent-soft);
   }
   textarea { resize: vertical; min-height: 70px; }
   button { cursor: pointer; border: none; border-radius: 999px; font-size: 14px; font-weight: 700; }
@@ -221,14 +220,14 @@
     padding: 13px 16px;
     background: linear-gradient(135deg, var(--accent), var(--accent2));
     color: #fff;
-    box-shadow: 0 10px 24px rgba(20,121,224,0.28);
+    box-shadow: 0 10px 24px rgba(37,99,235,0.28);
   }
   button#submit-btn:disabled { opacity: 0.6; cursor: default; box-shadow: none; }
-  .err { color: #dc2626; font-size: 12.5px; min-height: 16px; margin-top: 10px; }
+  .err { color: var(--danger); font-size: 12.5px; min-height: 16px; margin-top: 10px; }
   .success { text-align: center; padding: 20px 0; }
   .success .check {
     width: 46px; height: 46px; border-radius: 50%;
-    background: rgba(22,163,74,0.1); color: var(--ok);
+    background: var(--ok-soft); color: var(--ok);
     display: flex; align-items: center; justify-content: center;
     margin: 0 auto 14px; font-size: 21px;
   }

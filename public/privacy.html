@@ -4,22 +4,22 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Privacy Policy</title>
+<link rel="stylesheet" href="theme.css" />
 <style>
   :root {
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --ink: #0b1220;
-    --body: #4b5768;
-    --muted: #8591a1;
-    --bg-bottom: #e4f3fc;
-    --panel: #ffffff;
-    --border: #e6ebf1;
-    --accent: #1479e0;
-    --accent2: #35c6f4;
-    --accent-soft: #eaf4fd;
-    --warn-bg: #fff7ed;
-    --warn-border: #fed7aa;
-    --warn-text: #9a5a16;
-    --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    /* --sans/--border/--accent-soft/--shadow/--bg are already defined by theme.css;
+       redeclaring a token under the exact same name as a var() reference to itself is a
+       CSS circular reference, so this file only repoints its own, differently-named tokens. */
+    --ink: var(--text);
+    --body: var(--text-dim);
+    --muted: var(--text-faint);
+    --bg-bottom: var(--surface);
+    --panel: var(--surface);
+    --accent: var(--blue);
+    --accent2: #60a5fa;
+    --warn-bg: var(--warning-soft);
+    --warn-border: rgba(245, 158, 11, 0.35);
+    --warn-text: #fbbf24;
   }
   * { box-sizing: border-box; }
   body {
@@ -27,7 +27,7 @@
     font-family: var(--sans);
     color: var(--body);
     line-height: 1.65;
-    background: linear-gradient(180deg, #ffffff 0%, #ffffff 60%, var(--bg-bottom) 100%);
+    background: linear-gradient(180deg, var(--bg) 0%, var(--bg) 60%, var(--bg-bottom) 100%);
   }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -36,7 +36,7 @@
   nav {
     max-width: 1080px;
     margin: 0 auto;
-    background: rgba(255,255,255,0.9);
+    background: rgba(21, 26, 33, 0.85);
     backdrop-filter: blur(10px);
     border: 1px solid var(--border);
     border-radius: 999px;
@@ -65,7 +65,7 @@
     font-size: 13.5px;
     padding: 11px 20px;
     border-radius: 999px;
-    box-shadow: 0 8px 20px rgba(20,121,224,0.3);
+    box-shadow: 0 8px 20px rgba(37,99,235,0.3);
     white-space: nowrap;
     text-decoration: none;
   }
@@ -106,7 +106,7 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { color: var(--muted); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
-  .placeholder { color: #c2410c; font-weight: 600; }
+  .placeholder { color: var(--warning); font-weight: 600; }
   code { background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
 
   footer {
