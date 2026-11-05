@@ -248,9 +248,11 @@
       </div>
     </div>
   </aside>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
   <div class="main">
     <div class="topbar">
+      <button class="menu-toggle" id="menu-toggle" aria-label="Toggle navigation">&#9776;</button>
       <div>
         <h1>List View</h1>
         <div class="sub" id="tenant-sub"></div>
@@ -1120,6 +1122,27 @@
         });
     }
   }
+})();
+</script>
+<script>
+(function () {
+  "use strict";
+  var sidebar = document.querySelector(".sidebar");
+  var backdrop = document.getElementById("sidebar-backdrop");
+  var toggle = document.getElementById("menu-toggle");
+  if (!sidebar || !backdrop || !toggle) return;
+  function closeNav() {
+    sidebar.classList.remove("open");
+    backdrop.classList.remove("open");
+  }
+  toggle.addEventListener("click", function () {
+    sidebar.classList.toggle("open");
+    backdrop.classList.toggle("open");
+  });
+  backdrop.addEventListener("click", closeNav);
+  sidebar.querySelectorAll("nav a").forEach(function (a) {
+    a.addEventListener("click", closeNav);
+  });
 })();
 </script>
 </body>
