@@ -1,0 +1,520 @@
+/*
+ * Shared design system for every public/*.html page — one file so the
+ * palette/components can't drift between pages the way ~10 copies of the
+ * same inline <style> block inevitably would. Linked via <link rel="stylesheet"
+ * href="theme.css"> from each page; a page's own <style> block only holds
+ * what's genuinely specific to that page (its own layout, its own one-off
+ * elements), never a redefinition of a token or component already here.
+ *
+ * Palette source: a flat Black/Charcoal/Steel/Blue/Success palette supplied
+ * by the agency. Steel's exact hex was illegible in the source swatch —
+ * approximated as a standard dark slate consistent with the other four
+ * values (which otherwise read as a conventional dark-UI scale); flag for
+ * correction if the agency has the exact value.
+ */
+
+:root {
+  /* Base palette */
+  --black: #080d10;
+  --charcoal: #151a21;
+  --steel: #1e293b;
+  --blue: #2563eb;
+  --success: #20b981;
+
+  /* Derived surfaces */
+  --bg: var(--black);
+  --surface: var(--charcoal);
+  --surface-raised: var(--steel);
+  --border: rgba(148, 163, 184, 0.16);
+  --border-strong: rgba(148, 163, 184, 0.28);
+
+  /* Text */
+  --text: #e8edf3;
+  --text-dim: #94a3b8;
+  --text-faint: #64748b;
+
+  /* Semantic */
+  --accent: var(--blue);
+  --accent-soft: rgba(37, 99, 235, 0.14);
+  --ok: var(--success);
+  --ok-soft: rgba(32, 185, 129, 0.14);
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.14);
+  --warning: #f59e0b;
+  --warning-soft: rgba(245, 158, 11, 0.14);
+  --purple: #a855f7;
+  --purple-soft: rgba(168, 85, 247, 0.14);
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+a {
+  color: var(--accent);
+}
+
+/* ---------- App shell: sidebar + topbar + main ---------- */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 240px;
+  flex: 0 0 240px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 14px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.sidebar .logo {
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  padding: 0 10px 18px;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar .logo .dot {
+  color: var(--accent);
+}
+.sidebar .logo .tagline {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.sidebar nav a,
+.sidebar nav span.current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-left: 3px solid transparent;
+}
+.sidebar nav a:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+.sidebar nav span.current {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-left-color: var(--accent);
+  cursor: default;
+}
+.sidebar nav .icon {
+  font-size: 15px;
+  width: 18px;
+  text-align: center;
+}
+
+.sidebar .sidebar-foot {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.sidebar .help-card {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 8px 10px;
+}
+.sidebar .help-card a {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  margin-top: 2px;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: 24px 28px 40px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.topbar h1 {
+  font-size: 22px;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.topbar .sub {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-top: 3px;
+}
+.topbar .topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.topbar .status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.topbar .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+}
+
+/* ---------- Buttons ---------- */
+
+button,
+.btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+  padding: 9px 16px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+button:hover,
+.btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--text-faint);
+}
+button:disabled,
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+button.primary,
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button.primary:hover,
+.btn.primary:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+button.danger,
+.btn.danger {
+  background: transparent;
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+button.danger:hover,
+.btn.danger:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+button.secondary,
+.btn.secondary {
+  background: transparent;
+}
+
+/* ---------- Cards ---------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  gap: 10px;
+}
+.card-header h3 {
+  font-size: 14.5px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-header .card-sub {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+.cards-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.cards-2col {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+@media (max-width: 900px) {
+  .cards-2col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Stat tiles ---------- */
+
+.stat-tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.stat-tile .stat-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.stat-tile .stat-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex: none;
+}
+.stat-tile .stat-label {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.stat-tile .stat-value {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.stat-tile .stat-delta {
+  font-size: 12px;
+  font-weight: 600;
+}
+.stat-tile .stat-delta.up {
+  color: var(--success);
+}
+.stat-tile .stat-delta.down {
+  color: var(--danger);
+}
+
+/* ---------- Badges / pills ---------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.badge.ok {
+  background: var(--ok-soft);
+  color: var(--success);
+}
+.badge.warn {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.badge.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.badge.neutral {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+}
+
+/* ---------- Activity / list rows ---------- */
+
+.activity-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  gap: 10px;
+}
+.activity-row:last-child {
+  border-bottom: none;
+}
+.activity-row .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.activity-row .time {
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ---------- Forms ---------- */
+
+label {
+  display: block;
+  font-size: 11.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 700;
+  margin: 12px 0 6px;
+}
+input,
+textarea,
+select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 9px 11px;
+  font-family: inherit;
+  font-size: 13.5px;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+textarea {
+  resize: vertical;
+}
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.checkbox-row input {
+  width: auto;
+}
+
+/* ---------- Tables ---------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 700;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-strong);
+}
+td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+tr:hover td {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+/* ---------- Auth / gate panels (pre-login) ---------- */
+
+.auth-panel,
+#gate .panel {
+  max-width: 380px;
+  margin: 10vh auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+}
+
+.error,
+.import-status.err {
+  color: var(--danger);
+  font-size: 12.5px;
+  margin-top: 8px;
+}
+.import-status.ok {
+  color: var(--success);
+  font-size: 12.5px;
+  margin-top: 8px;
+}
+
+@media (max-width: 760px) {
+  .sidebar {
+    position: fixed;
+    left: -240px;
+    z-index: 50;
+    transition: left 0.2s;
+    box-shadow: var(--shadow);
+  }
+  .sidebar.open {
+    left: 0;
+  }
+  .main {
+    padding: 18px 16px 32px;
+  }
+}

@@ -4,50 +4,69 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>LeadRecovery — Command Center</title>
+<link rel="stylesheet" href="theme.css" />
 <style>
   :root {
-    --void: #14171f;
-    --cyan: #eee7d8;
-    --cyan-dim: #8b8677;
-    --amber: #c9a875;
-    --red: #b5555a;
+    /* Repointed to the shared blue/green/steel palette (theme.css) — names
+       kept as-is since they're referenced throughout this file's CSS, inline
+       styles, and JS (the COLOR object); only the values moved. */
+    --void: #080d10;
+    --cyan: #e8edf3;
+    --cyan-dim: #94a3b8;
+    --amber: #2563eb;
+    --red: #ef4444;
     --glass: rgba(255, 255, 255, 0.03);
-    --line: rgba(201, 168, 117, 0.24);
-    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    --line: rgba(148, 163, 184, 0.2);
+    --serif: var(--sans);
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0;
     width: 100%;
-    height: 100%;
+    min-height: 100%;
     background: var(--void);
     color: var(--cyan);
     font-family: var(--sans);
-    overflow: hidden;
   }
   #scene {
-    position: fixed;
+    position: absolute;
     inset: 0;
+    width: 100%;
+    height: 100%;
   }
 
-  /* faint, sparse ambient starfield */
+  /* ---------- app shell: sidebar + topbar (theme.css) ---------- */
+  .scene-card {
+    position: relative;
+    overflow: hidden;
+    min-height: 480px;
+    padding: 0;
+  }
+  .scene-card .card-header,
+  .scene-card .scene-overlay-top {
+    position: relative;
+    z-index: 7;
+    padding: 18px 20px 0;
+  }
+
+  /* faint, sparse ambient starfield — contained within .scene-card now, not the viewport */
   #stars {
-    position: fixed;
+    position: absolute;
     inset: 0;
     z-index: 0;
     opacity: 0.35;
   }
 
   #vignette {
-    position: fixed;
+    position: absolute;
     inset: 0;
     z-index: 3;
     pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 45%, rgba(4,5,8,0.7) 100%);
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(4,5,8,0.5) 100%);
   }
   #grain {
-    position: fixed;
+    position: absolute;
     inset: 0;
     z-index: 6;
     pointer-events: none;
@@ -55,122 +74,64 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
-  header.hud {
-    position: fixed;
-    top: 26px;
-    left: 60px;
-    right: 60px;
-    z-index: 5;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    pointer-events: none;
-  }
-  header.hud .brand {
-    font-family: var(--serif);
-    font-size: 20px;
-    letter-spacing: 0.04em;
-    color: var(--cyan);
-    opacity: 0.95;
-  }
-  header.hud .brand .sub {
-    font-family: var(--sans);
-    font-size: 10px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
+  .nav-link {
     color: var(--cyan-dim);
-    margin-top: 6px;
-  }
-  header.hud .clock {
-    text-align: right;
-    font-size: 13px;
-    letter-spacing: 0.08em;
-    opacity: 0.9;
-    font-variant-numeric: tabular-nums;
-  }
-  header.hud .clock .status {
-    color: var(--amber);
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    margin-top: 6px;
-  }
-  .nav-link, button.ghost {
-    pointer-events: auto;
-    color: var(--cyan);
-    background: transparent;
-    border: 1px solid var(--line);
-    text-decoration: none;
+    text-decoration: underline;
     font-family: var(--sans);
-    font-size: 10.5px;
-    letter-spacing: 0.1em;
-    padding: 7px 13px;
-    border-radius: 5px;
-    cursor: pointer;
-    margin-top: 10px;
-    display: inline-block;
-    transition: background 0.2s, border-color 0.2s;
+    font-size: 11px;
   }
-  .nav-link:hover:not(.active), button.ghost:hover {
-    background: rgba(201,168,117,0.10);
-    border-color: var(--amber);
+  .nav-link:hover { color: var(--cyan); }
+  button.ghost {
+    background: transparent;
   }
-  .nav-link.active {
-    color: var(--amber);
-    border-color: var(--amber);
-    background: rgba(201,168,117,0.16);
-    cursor: default;
-  }
-  .nav-link:focus-visible, button.ghost:focus-visible, #gate button:focus-visible, #terms-gate button:focus-visible,
+  button.ghost:focus-visible, #gate button:focus-visible, #terms-gate button:focus-visible,
   #detail .close:focus-visible, g.node:focus-visible {
     outline: 2px solid var(--amber);
     outline-offset: 3px;
   }
 
-  /* ---------- ticker log ---------- */
+  /* ---------- activity feed card ---------- */
   #log {
-    position: fixed;
-    bottom: 26px;
-    left: 60px;
-    width: 420px;
-    max-height: 150px;
-    overflow: hidden;
-    z-index: 5;
-    font-size: 11.5px;
-    line-height: 1.8;
-    pointer-events: none;
-    -webkit-mask-image: linear-gradient(to top, black 60%, transparent), linear-gradient(to right, black 82%, transparent);
-    -webkit-mask-composite: source-in;
-    mask-image: linear-gradient(to top, black 60%, transparent), linear-gradient(to right, black 82%, transparent);
-    mask-composite: intersect;
+    font-size: 12.5px;
+    line-height: 1.6;
+    max-height: 260px;
+    overflow-y: auto;
   }
-  #log .entry { opacity: 0; animation: fadein 0.4s forwards; white-space: nowrap; }
-  #log .tag { color: var(--amber); }
+  #log .entry {
+    opacity: 0;
+    animation: fadein 0.4s forwards;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border, rgba(148,163,184,0.16));
+  }
+  #log .entry:last-child { border-bottom: none; }
+  #log .tag { color: var(--amber); white-space: nowrap; font-variant-numeric: tabular-nums; }
   #log .tag.dim { color: var(--cyan-dim); }
-  @keyframes fadein { to { opacity: 0.85; } }
+  @keyframes fadein { to { opacity: 1; } }
 
-  /* ---------- stat rail ---------- */
+  /* ---------- stat tiles row ---------- */
   #stats {
-    position: fixed;
-    bottom: 26px;
-    right: 60px;
-    z-index: 5;
-    display: flex;
-    gap: 32px;
-    pointer-events: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 16px;
+    margin-bottom: 18px;
   }
-  #stats .stat { text-align: right; }
+  #stats .stat {
+    background: var(--surface, #151a21);
+    border: 1px solid var(--border, rgba(148,163,184,0.16));
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
   #stats .stat .n {
-    font-family: var(--serif);
-    font-size: 28px;
+    font-size: 26px;
+    font-weight: 800;
     color: var(--cyan);
   }
   #stats .stat .l {
-    font-size: 9.5px;
-    letter-spacing: 0.18em;
+    font-size: 12px;
+    letter-spacing: 0.04em;
     color: var(--cyan-dim);
-    text-transform: uppercase;
-    margin-top: 2px;
+    font-weight: 600;
+    margin-top: 4px;
   }
 
   /* ---------- auth gate ---------- */
@@ -181,51 +142,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(ellipse at center, #1b1e28 0%, #0c0e13 80%);
+    background: radial-gradient(ellipse at center, var(--charcoal, #151a21) 0%, var(--void) 80%);
   }
   #gate .panel, #terms-gate .panel {
     width: 360px;
     padding: 32px;
     border: 1px solid var(--line);
     border-radius: 12px;
-    background: #1b1e27;
+    background: var(--charcoal, #151a21);
     box-shadow: 0 20px 60px rgba(0,0,0,0.45);
-  }
-  /* Isometric "cube" treatment: two shaded faces extending past the panel's
-     own top/right edges, skewed to read as a box's top and side in a
-     single light source (brighter top-face, darker side-face) — same
-     illusion as any isometric-card design, just applied to the sign-in panel. */
-  #gate .panel {
-    position: relative;
-    border-radius: 3px;
-  }
-  #gate .panel::before,
-  #gate .panel::after {
-    content: "";
-    position: absolute;
-    background: inherit;
-  }
-  #gate .panel::before {
-    top: 0;
-    right: -28px;
-    width: 28px;
-    height: 100%;
-    transform-origin: top left;
-    transform: skewY(45deg);
-    background: #2a2019;
-    border: 1px solid var(--line);
-    border-left: none;
-  }
-  #gate .panel::after {
-    top: -28px;
-    left: 0;
-    width: 100%;
-    height: 28px;
-    transform-origin: bottom left;
-    transform: skewX(45deg);
-    background: #4a4230;
-    border: 1px solid var(--line);
-    border-bottom: none;
   }
   #gate h1, #terms-gate h1 {
     font-family: var(--serif);
@@ -250,16 +175,22 @@
     margin-top: 22px;
     width: 100%;
     padding: 11px;
-    background: rgba(201,168,117,0.14);
+    background: var(--amber);
     border: 1px solid var(--amber);
-    color: var(--amber);
-    letter-spacing: 0.08em;
+    color: #fff;
+    letter-spacing: 0.04em;
     font-size: 12px;
     border-radius: 6px;
     cursor: pointer;
     font-family: var(--sans);
+    font-weight: 600;
   }
-  #gate button:hover, #terms-gate button:hover { background: rgba(201,168,117,0.24); }
+  #gate button:hover, #terms-gate button:hover { background: #1d4ed8; }
+  #gate button.ghost, #terms-gate button.ghost {
+    background: transparent;
+    color: var(--cyan);
+  }
+  #gate button.ghost:hover, #terms-gate button.ghost:hover { background: rgba(255,255,255,0.06); }
   #gate .or-divider, #terms-gate .or-divider { text-align: center; font-size: 10px; letter-spacing: 0.1em; color: var(--cyan-dim); margin: 16px 0; text-transform: uppercase; }
   #gate .demo-btn { display: block; width: 100%; margin-top: 0; text-align: center; }
   #gate .err, #terms-gate .err { color: var(--red); font-size: 11.5px; margin-top: 12px; min-height: 14px; }
@@ -316,36 +247,65 @@
 </head>
 <body>
 
-<div id="stars"></div>
-<div id="vignette"></div>
-<div id="grain"></div>
+<div class="app-shell" id="app-shell" style="display:none;">
+  <aside class="sidebar">
+    <div class="logo">LeadRecovery<span class="dot">.</span>
+      <div class="tagline" id="tenant-label" aria-live="polite">NOT CONNECTED</div>
+    </div>
+    <nav>
+      <span class="current" aria-current="page"><span class="icon">&#9679;</span> Command Center</span>
+      <a href="dashboard.html"><span class="icon">&#9776;</span> List View</a>
+      <a href="settings.html"><span class="icon">&#9881;</span> Settings</a>
+      <a href="reports.html"><span class="icon">&#9776;</span> Reports</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="help-card">
+        Need help?
+        <a href="get-started.html">Contact support</a>
+      </div>
+    </div>
+  </aside>
 
-<header class="hud">
-  <div class="brand">
-    LeadRecovery <span style="color:var(--amber); font-style:italic;">Command Center</span>
-    <div class="sub" id="tenant-label" aria-live="polite">NOT CONNECTED</div>
-    <span class="nav-link active" aria-current="page">Command Center</span>
-    <a class="nav-link" href="dashboard.html">List View</a>
-    <a class="nav-link" href="settings.html">Settings</a>
-    <a class="nav-link" href="reports.html">Reports</a>
-    <button type="button" class="ghost" id="refresh-btn">Refresh</button>
-    <button type="button" class="ghost" id="run-btn">Run recovery workflow</button>
-    <button type="button" class="ghost" id="disconnect-btn">Back</button>
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="page-title">Command Center</h1>
+        <div class="sub">Lead Recovery overview</div>
+      </div>
+      <div class="topbar-right">
+        <span class="status-pill"><span class="status-dot" id="status-dot"></span><span id="clock-status">STANDBY</span></span>
+        <span class="status-pill" id="clock-time" aria-hidden="true">--:--:--</span>
+        <button type="button" class="secondary" id="refresh-btn">Refresh</button>
+        <button type="button" class="primary" id="run-btn">Run recovery workflow</button>
+        <button type="button" class="secondary" id="disconnect-btn">Back</button>
+      </div>
+    </div>
+
+    <div id="stats" role="status" aria-live="polite"></div>
+
+    <div class="card scene-card">
+      <div class="scene-overlay-top" style="display:flex; justify-content:space-between; align-items:center;">
+        <h3>Lead Activity Network <span class="card-sub" style="display:block; font-weight:400;">Real-time lead journey across your pipeline</span></h3>
+        <span class="badge ok">&#9679; Live</span>
+      </div>
+      <div id="stars"></div>
+      <div id="vignette"></div>
+      <div id="grain"></div>
+      <svg id="scene"></svg>
+    </div>
+
+    <div class="card" style="margin-top:18px;">
+      <div class="card-header">
+        <h3>Recent Activity</h3>
+      </div>
+      <!-- Ambient decorative feed (heartbeat flavor lines + queued-lead echoes) —
+           hidden from assistive tech: the real data it echoes is already exposed
+           accessibly via #stats and the node detail panel, and as a live region
+           this would re-announce a new line every few seconds. -->
+      <div id="log" aria-hidden="true"></div>
+    </div>
   </div>
-  <div class="clock">
-    <div id="clock-time" aria-hidden="true">--:--:--</div>
-    <div class="status" id="clock-status" aria-live="polite">STANDBY</div>
-  </div>
-</header>
-
-<!-- Ambient decorative ticker (heartbeat flavor lines + queued-lead echoes) —
-     hidden from assistive tech: the real data it echoes is already exposed
-     accessibly via #stats and the node detail panel, and as a live region
-     this would re-announce a new line every few seconds. -->
-<div id="log" aria-hidden="true"></div>
-<div id="stats" role="status" aria-live="polite"></div>
-
-<svg id="scene"></svg>
+</div>
 
 <div id="detail" role="dialog" aria-label="Category details" aria-hidden="true" inert>
   <button class="close" id="detail-close">CLOSE ✕</button>
@@ -439,22 +399,33 @@
 
   const gate = document.getElementById("gate");
   const gateErr = document.getElementById("gate-err");
+  const appShell = document.getElementById("app-shell");
+  // The app shell (sidebar/topbar/scene) only ever shows once a session is
+  // live — hiding the gate always means showing the shell, and vice versa,
+  // so every gate.style.display assignment below has a matching appShell one.
+  function setGateVisible(visible) {
+    gate.style.display = visible ? "" : "none";
+    appShell.style.display = visible ? "none" : "";
+  }
 
   async function connect(baseUrl, apiKey) {
     if (!apiKey) { gateErr.textContent = "API key required."; return; }
     const session = { baseUrl: baseUrl.replace(/\/$/, ""), apiKey };
+    // Hidden before boot() runs, not after — boot() calls layout() against
+    // the now-visible scene card's real box (a hidden card has no box, so
+    // computing it while the gate was still up would mis-size the orbit).
+    // A no-op for the magic-link/persisted-session callers above, which
+    // already hid the gate before calling connect() for the same reason.
+    setGateVisible(false);
     try {
       const { tenant } = await boot(session);
       setSession(session);
-      gate.style.display = "none";
       if (!tenant.termsAcceptedAt) {
         showTermsGate();
       }
     } catch (err) {
-      // Restores visibility for the magic-link/persisted-session callers
-      // above, which hide the gate before calling connect() — a no-op for
-      // the manual "Establish Link" button below, where the gate was never hidden.
-      gate.style.display = "";
+      // Restores visibility on failure, for every caller.
+      setGateVisible(true);
       gateErr.textContent = "Link failed: " + err.message;
     }
   }
@@ -556,7 +527,7 @@
     document.getElementById("tenant-label").textContent = "NOT CONNECTED";
     document.getElementById("clock-status").textContent = "STANDBY";
     document.getElementById("terms-gate").style.display = "none";
-    gate.style.display = "";
+    setGateVisible(true);
   });
 
   document.getElementById("refresh-btn").addEventListener("click", () => {
@@ -646,7 +617,7 @@
       const x = Math.random() * 100, y = Math.random() * 100, r = Math.random() * 0.9 + 0.2;
       const op = Math.random() * 0.4 + 0.06;
       const dur = (Math.random() * 4 + 3).toFixed(2);
-      svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#d9cbb0" opacity="${op}">
+      svg += `<circle cx="${x}%" cy="${y}%" r="${r}" fill="#c7d2e8" opacity="${op}">
         <animate attributeName="opacity" values="${op};${op * 0.15};${op}" dur="${dur}s" repeatCount="indefinite" />
       </circle>`;
     }
@@ -671,8 +642,12 @@
 
   /* ===================== SVG scene ===================== */
   const svg = document.getElementById("scene");
+  const sceneCard = document.querySelector(".scene-card");
   const SVGNS = "http://www.w3.org/2000/svg";
-  let W = window.innerWidth, H = window.innerHeight;
+  // Sized to the card's own box now (it used to be the full viewport) —
+  // see layout() below, which also reserves headerOffset px so the orbit
+  // never draws under the card's own title/Live-badge overlay.
+  let W = 800, H = 480;
   let cx = W / 2, cy = H / 2;
   let radius = Math.min(W, H) * 0.32;
 
@@ -694,9 +669,9 @@
         <feGaussianBlur stdDeviation="10" />
       </filter>
       <radialGradient id="coreGrad" cx="50%" cy="50%" r="50%">
-        <stop offset="0%" stop-color="#f3ede0" stop-opacity="0.9" />
-        <stop offset="35%" stop-color="#c9a875" stop-opacity="0.45" />
-        <stop offset="100%" stop-color="#c9a875" stop-opacity="0" />
+        <stop offset="0%" stop-color="#dbeafe" stop-opacity="0.9" />
+        <stop offset="35%" stop-color="#2563eb" stop-opacity="0.45" />
+        <stop offset="100%" stop-color="#2563eb" stop-opacity="0" />
       </radialGradient>
     </defs>
     <g id="halo" aria-hidden="true"></g>
@@ -706,16 +681,24 @@
     <g id="nodes"></g>
   `;
 
-  const COLOR = { cyan: "#c9a875", amber: "#d99a4e", red: "#b5555a" };
+  // Key names kept (used throughout render()/spawnParticle() below) — only
+  // the hex values moved to the blue/green/red palette, same approach as
+  // the CSS custom properties above.
+  const COLOR = { cyan: "#2563eb", amber: "#20b981", red: "#ef4444" };
 
   let nodes = []; // { cat, x, y, count, activity, group, lastSpawn }
   let leadsByCategory = {};
 
+  const HEADER_OFFSET = 56; // reserves room for the card's own title/Live-badge overlay
+
   function layout() {
-    W = window.innerWidth; H = window.innerHeight;
+    const rect = sceneCard.getBoundingClientRect();
+    W = Math.max(320, rect.width);
+    H = Math.max(360, rect.height);
     svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    cx = W / 2; cy = H / 2;
-    radius = Math.min(W, H) * 0.33;
+    cx = W / 2;
+    cy = HEADER_OFFSET + (H - HEADER_OFFSET) / 2;
+    radius = Math.min(W, H - HEADER_OFFSET) * 0.33;
 
     nodes = CATEGORIES.map((cat, i) => {
       const angle = (i / CATEGORIES.length) * Math.PI * 2 - Math.PI / 2;
@@ -799,7 +782,7 @@
 
       const countY = labelY + (Math.sin(n.angle) >= 0 ? 14 : -14);
       const countText = el("text", {
-        x: n.x, y: countY, "text-anchor": "middle", fill: "#f3ede0",
+        x: n.x, y: countY, "text-anchor": "middle", fill: "#dbeafe",
         style: "font: 600 14px Georgia, serif;", class: "node-count",
       });
       countText.textContent = "0";
@@ -1014,13 +997,20 @@
   }
 
   /* ===================== stats rail ===================== */
-  function renderStats(plan) {
+  // Every figure here comes straight from already-fetched /leads and
+  // /leads/plan data — no invented metrics (e.g. no fabricated "revenue
+  // recovered" figure, since this app tracks no payment data at all).
+  function renderStats(plan, leads) {
     const statsEl = document.getElementById("stats");
-    const sent = plan.plans.length;
-    const skipped = plan.skipped.length;
+    const total = leads.length;
+    const needsAttention = leads.filter((l) => l.needsAttentionAt).length;
+    const booked = leads.filter((l) => l.appointmentStatus === "booked").length;
+    const queued = plan.plans.length;
     statsEl.innerHTML = `
-      <div class="stat"><div class="n">${sent}</div><div class="l">Queued</div></div>
-      <div class="stat"><div class="n">${skipped}</div><div class="l">Skipped</div></div>
+      <div class="stat"><div class="n">${total}</div><div class="l">Total Leads</div></div>
+      <div class="stat"><div class="n">${needsAttention}</div><div class="l">Needs Attention</div></div>
+      <div class="stat"><div class="n">${booked}</div><div class="l">Appointments Booked</div></div>
+      <div class="stat"><div class="n">${queued}</div><div class="l">Queued For Outreach</div></div>
     `;
   }
 
@@ -1078,6 +1068,12 @@
 
   /* ===================== boot ===================== */
   async function boot(session) {
+    // Every caller has already made the app shell visible by this point
+    // (see connect()) — recompute the scene card's real box now that it
+    // actually has one, instead of the pre-visible fallback layout() ran
+    // against at script init.
+    layout();
+    render();
     const tenant = await api(session, "/tenants/me");
     document.getElementById("tenant-label").textContent = tenant.name.toUpperCase();
     document.getElementById("clock-status").textContent = "LINKED";
@@ -1098,7 +1094,7 @@
       if (n.groupEl) n.groupEl.setAttribute("aria-label", `${n.cat.label}: ${count} lead(s). Activate to view.`);
     });
 
-    renderStats(plan);
+    renderStats(plan, leads);
     logLine("sys", `link established — ${leads.length} lead(s) under management`, false);
     plan.plans.slice(0, 6).forEach((p, i) => {
       setTimeout(() => {
@@ -1126,7 +1122,7 @@
     // Hidden immediately, not just once connect() resolves — otherwise a
     // valid magic link still flashes the login gate for the length of that
     // network round trip before showing the Command Center.
-    gate.style.display = "none";
+    setGateVisible(false);
     const linkBase = linkParams.get("base") || window.location.origin;
     history.replaceState(null, "", window.location.pathname);
     connect(linkBase, linkKey);
@@ -1136,7 +1132,7 @@
       // Same reasoning as the magic-link branch above — hide before the
       // round trip, not after, so a valid persisted session never flashes
       // the login gate at all.
-      gate.style.display = "none";
+      setGateVisible(false);
       boot(existing)
         .then(({ tenant }) => {
           if (!tenant.termsAcceptedAt) {
@@ -1145,7 +1141,7 @@
         })
         .catch(() => {
           setSession(null);
-          gate.style.display = ""; // the persisted session turned out to be invalid — show the gate after all
+          setGateVisible(true); // the persisted session turned out to be invalid — show the gate after all
         });
     }
   }
