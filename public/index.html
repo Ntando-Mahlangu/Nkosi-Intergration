@@ -324,11 +324,13 @@
   <div class="brand">
     LeadRecovery <span style="color:var(--amber); font-style:italic;">Command Center</span>
     <div class="sub" id="tenant-label" aria-live="polite">NOT CONNECTED</div>
-    <span class="nav-link active" aria-current="page">command center</span>
-    <a class="nav-link" href="dashboard.html">list view</a>
-    <a class="nav-link" href="settings.html">settings</a>
-    <a class="nav-link" href="reports.html">reports</a>
-    <button type="button" class="ghost" id="disconnect-btn">back</button>
+    <span class="nav-link active" aria-current="page">Command Center</span>
+    <a class="nav-link" href="dashboard.html">List View</a>
+    <a class="nav-link" href="settings.html">Settings</a>
+    <a class="nav-link" href="reports.html">Reports</a>
+    <button type="button" class="ghost" id="refresh-btn">Refresh</button>
+    <button type="button" class="ghost" id="run-btn">Run recovery workflow</button>
+    <button type="button" class="ghost" id="disconnect-btn">Back</button>
   </div>
   <div class="clock">
     <div id="clock-time" aria-hidden="true">--:--:--</div>
@@ -422,10 +424,17 @@
   function setSession(s) {
     try { localStorage.setItem("leadrecovery.session", JSON.stringify(s)); } catch {}
   }
-  async function api(session, path) {
-    const res = await fetch(session.baseUrl + path, { headers: { Authorization: "Bearer " + session.apiKey } });
+  async function api(session, path, options) {
+    const res = await fetch(session.baseUrl + path, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options && options.headers),
+        Authorization: "Bearer " + session.apiKey,
+      },
+    });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
-    return res.json();
+    return res.status === 204 ? undefined : res.json();
   }
 
   const gate = document.getElementById("gate");
@@ -548,6 +557,34 @@
     document.getElementById("clock-status").textContent = "STANDBY";
     document.getElementById("terms-gate").style.display = "none";
     gate.style.display = "";
+  });
+
+  document.getElementById("refresh-btn").addEventListener("click", () => {
+    const session = getSession();
+    if (session) boot(session).catch((err) => logLine("err", "refresh failed — " + escapeHtml(err.message), false));
+  });
+
+  document.getElementById("run-btn").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session) return;
+    const btn = document.getElementById("run-btn");
+    btn.disabled = true;
+    btn.textContent = "Running…";
+    try {
+      const result = await api(session, "/workflow/run", { method: "POST" });
+      await boot(session);
+      logLine(
+        "sys",
+        `workflow run — sent ${result.sent.filter((s) => s.result.ok).length}, ` +
+          `skipped ${result.skipped.length}, deferred ${result.deferred.length} (quiet hours)`,
+        false
+      );
+    } catch (err) {
+      logLine("err", "workflow run failed — " + escapeHtml(err.message), false);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Run recovery workflow";
+    }
   });
 
   /* ===================== Terms of Service / Privacy Policy gate ===================== */

@@ -201,9 +201,11 @@
     </div>
     <div style="display:flex; gap:8px;">
       <a class="secondary" href="index.html">Command Center</a>
-      <a class="secondary" href="dashboard.html">List view</a>
+      <a class="secondary" href="dashboard.html">List View</a>
       <a class="secondary" href="settings.html">Settings</a>
       <span class="secondary active" aria-current="page">Reports</span>
+      <button class="secondary" id="refresh-btn">Refresh</button>
+      <button id="run-btn">Run recovery workflow</button>
       <button class="secondary" id="logout-btn">Back</button>
     </div>
   </header>
@@ -509,6 +511,33 @@
     setSession(null);
     app.style.display = "none";
     authPanel.style.display = "block";
+  });
+
+  document.getElementById("refresh-btn").addEventListener("click", () => {
+    const session = getSession();
+    if (session) loadPage(session).catch((err) => alert(err.message));
+  });
+
+  document.getElementById("run-btn").addEventListener("click", async () => {
+    const session = getSession();
+    if (!session) return;
+    const btn = document.getElementById("run-btn");
+    btn.disabled = true;
+    btn.textContent = "Running…";
+    try {
+      const result = await api(session, "/workflow/run", { method: "POST" });
+      await loadReport(session);
+      alert(
+        "Sent " + result.sent.filter((s) => s.result.ok).length + ", " +
+        "skipped " + result.skipped.length + ", " +
+        "deferred " + result.deferred.length + " (quiet hours)."
+      );
+    } catch (err) {
+      alert("Run failed: " + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Run recovery workflow";
+    }
   });
 
   /* ===================== Terms of Service / Privacy Policy gate ===================== */
