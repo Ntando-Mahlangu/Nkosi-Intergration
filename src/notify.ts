@@ -8,10 +8,7 @@ export type NotifyReason = "interested" | "needs_human_reply";
 /** Total delivery cycles (the inline attempt below, plus worker-driven redeliveries) before giving up and marking a failure "dead". */
 export const NOTIFICATION_MAX_ATTEMPTS = 5;
 
-/** Widens beyond the real outbound-send Channel union to also cover the website chat widget (src/chatWidget.ts), which never goes through a channel adapter but still reports where a reply came in. */
-export type NotifyChannel = Channel | "chat";
-
-const SUMMARIES: Record<NotifyReason, (lead: Lead, channel: NotifyChannel, body: string) => string> = {
+const SUMMARIES: Record<NotifyReason, (lead: Lead, channel: Channel, body: string) => string> = {
   interested: (lead, channel, body) => `🔥 ${lead.name ?? lead.id} replied "interested" via ${channel}: "${body}"`,
   needs_human_reply: (lead, channel, body) =>
     `🙋 ${lead.name ?? lead.id} needs a human reply via ${channel}: "${body}"`,
@@ -25,7 +22,7 @@ const EVENT_NAMES: Record<NotifyReason, string> = {
 function buildPayload(
   tenant: Tenant,
   lead: Lead,
-  channel: NotifyChannel,
+  channel: Channel,
   body: string,
   reason: NotifyReason
 ): Record<string, unknown> {
@@ -90,7 +87,7 @@ export async function notifyHumanAttention(
   notificationStore: NotificationStore | undefined,
   tenant: Tenant,
   lead: Lead,
-  channel: NotifyChannel,
+  channel: Channel,
   body: string,
   reason: NotifyReason
 ): Promise<void> {
@@ -140,11 +137,10 @@ export async function notifyHumanAttention(
 /**
  * The single place that puts a lead in the dashboard's "needs attention"
  * inbox (see GET /leads?needsAttention=true) and fires the existing
- * webhook notification (notifyHumanAttention above) — called from both
- * webhooks/index.ts's recordInboundAndClassify (real SMS/WhatsApp/email)
- * and chatWidget.ts's answerChatMessage (website chat), the only two
- * places a reply gets classified "interested" or escalates as a
- * "question"/"unknown" reply.
+ * webhook notification (notifyHumanAttention above) — called from
+ * webhooks/index.ts's recordInboundAndClassify, the only place a reply
+ * gets classified "interested" or escalates as a "question"/"unknown"
+ * reply.
  *
  * Deliberately does NOT overwrite an already-set needsAttentionAt: a
  * second inbound message while the lead is still unresolved must not
@@ -156,7 +152,7 @@ export async function flagNeedsAttention(
   stores: { leadStore: LeadStore; notificationStore?: NotificationStore },
   tenant: Tenant,
   lead: Lead,
-  channel: NotifyChannel,
+  channel: Channel,
   body: string,
   reason: NotifyReason
 ): Promise<void> {

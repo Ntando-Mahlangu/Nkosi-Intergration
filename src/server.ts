@@ -10,7 +10,6 @@ import { createLeadRoutes } from "./routes/leads.js";
 import { createWorkflowRoutes } from "./routes/workflow.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createPublicCaptureRoutes } from "./routes/publicCapture.js";
-import { createPublicChatRoutes } from "./routes/publicChat.js";
 import { createPublicBookingRoutes } from "./routes/publicBooking.js";
 import { createInquiryRoutes } from "./routes/inquiries.js";
 import { createWebhookRoutes } from "./webhooks/index.js";
@@ -134,7 +133,6 @@ export function createApp() {
   app.use(express.json());
   app.use(createAuthRoutes(stores));
   app.use(createPublicCaptureRoutes(stores));
-  app.use(createPublicChatRoutes(stores));
   app.use(createPublicBookingRoutes(stores));
   app.use(createInquiryRoutes(stores));
   app.use(createTenantRoutes(stores));

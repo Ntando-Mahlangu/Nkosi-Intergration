@@ -47,7 +47,6 @@ function leadFromRow(row: Record<string, unknown>): Lead {
     convertedAt: row.converted_at ? new Date(row.converted_at as string).toISOString() : undefined,
     marketingOptIn: (row.marketing_opt_in as boolean | null) ?? undefined,
     lastWinBackAt: row.last_win_back_at ? new Date(row.last_win_back_at as string).toISOString() : undefined,
-    chatTokenHash: (row.chat_token_hash as string | null) ?? undefined,
     needsAttentionAt: row.needs_attention_at ? new Date(row.needs_attention_at as string).toISOString() : undefined,
     needsAttentionReason: (row.needs_attention_reason as Lead["needsAttentionReason"] | null) ?? undefined,
     attentionAlertedAt: row.attention_alerted_at
@@ -69,7 +68,7 @@ const LEAD_COLUMNS = `id, tenant_id, name, phone, email, source, created_at, las
   appointment_at, appointment_reminder_sent_at, notes,
   status, preferred_channel, had_missed_call, responded_after_contact, follow_up_count,
   next_follow_up_at, first_outreach_sent_at, converted_at, marketing_opt_in, last_win_back_at,
-  chat_token_hash, needs_attention_at, needs_attention_reason, attention_alerted_at,
+  needs_attention_at, needs_attention_reason, attention_alerted_at,
   consent_status, consent_timestamp, consent_source, consent_scope, privacy_notice_version`;
 
 /** Maps a patchable Lead field to its column — `id`/`tenantId` are the WHERE key, never patched. */
@@ -97,7 +96,6 @@ const LEAD_PATCH_COLUMNS: Partial<Record<keyof Lead, string>> = {
   convertedAt: "converted_at",
   marketingOptIn: "marketing_opt_in",
   lastWinBackAt: "last_win_back_at",
-  chatTokenHash: "chat_token_hash",
   needsAttentionAt: "needs_attention_at",
   needsAttentionReason: "needs_attention_reason",
   attentionAlertedAt: "attention_alerted_at",
@@ -160,9 +158,9 @@ export class PostgresLeadStore implements LeadStore {
         appointment_at, appointment_reminder_sent_at, notes,
         status, preferred_channel, had_missed_call, responded_after_contact, follow_up_count,
         next_follow_up_at, first_outreach_sent_at, converted_at, marketing_opt_in, last_win_back_at,
-        chat_token_hash, needs_attention_at, needs_attention_reason, attention_alerted_at,
+        needs_attention_at, needs_attention_reason, attention_alerted_at,
         consent_status, consent_timestamp, consent_source, consent_scope, privacy_notice_version
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)`,
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)`,
       [
         lead.id,
         lead.tenantId,
@@ -189,7 +187,6 @@ export class PostgresLeadStore implements LeadStore {
         lead.convertedAt ?? null,
         lead.marketingOptIn ?? null,
         lead.lastWinBackAt ?? null,
-        lead.chatTokenHash ?? null,
         lead.needsAttentionAt ?? null,
         lead.needsAttentionReason ?? null,
         lead.attentionAlertedAt ?? null,

@@ -13,8 +13,8 @@ const MAX_BOOKING_DAYS_AHEAD = 180;
  * missed call, etc.) can pick their own appointment time without a human
  * in the loop, instead of a business operator setting it by hand from the
  * lead's detail view in the dashboard. Reuses `Tenant.publicFormKey` (the
- * same "safe to publish" token the lead-capture form and chat widget use —
- * see src/idgen.ts's generateFormKey doc comment) plus the lead's own id,
+ * same "safe to publish" token the lead-capture form uses — see
+ * src/idgen.ts's generateFormKey doc comment) plus the lead's own id,
  * which only the business ever hands out (e.g. in a link sent to that one
  * lead) — together these scope a caller to nothing but this one lead's
  * appointment, the same proportionate trust level as the other public

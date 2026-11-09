@@ -22,7 +22,7 @@ export function safeCompare(a: string, b: string): boolean {
 
 /**
  * One-way hash for a short-lived bearer token (an OTP code, a password-reset
- * token, a chat-widget session token) before storing it — the raw token is
+ * token) before storing it — the raw token is
  * never persisted, only this hash, the same way a password is never stored
  * in plaintext. Not a password hash (no per-value salt/cost): these tokens
  * are already high-entropy random values, not user-chosen secrets, so a fast

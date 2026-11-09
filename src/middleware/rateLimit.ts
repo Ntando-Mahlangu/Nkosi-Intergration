@@ -115,24 +115,6 @@ export function createPublicFormLimiter() {
 }
 
 /**
- * Guards the public website chat widget (src/routes/publicChat.ts) —
- * unauthenticated by design, same reasoning as createPublicFormLimiter, but
- * its own separate budget/keyPrefix: a real back-and-forth conversation
- * sends far more requests per visitor than a one-shot contact-form submit,
- * so reusing that limiter's tighter budget would cut a real chat short.
- */
-export function createPublicChatLimiter() {
-  return rateLimit({
-    windowMs: 60 * 1000,
-    limit: 30,
-    standardHeaders: true,
-    legacyHeaders: false,
-    store: distributedStoreIfConfigured("public-chat"),
-    passOnStoreError: true,
-  });
-}
-
-/**
  * Guards the public "request a demo" marketing-page form (POST /inquiries)
  * — unauthenticated by design, same reasoning as createPublicFormLimiter.
  * Tighter than that limiter's 20/min: a one-shot sales inquiry from a human

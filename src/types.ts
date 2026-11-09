@@ -6,6 +6,9 @@ export type LeadSource =
   | "email"
   | "sms"
   | "whatsapp"
+  // The website chat widget has been removed (nothing creates this value
+  // anymore) — kept here only so a historical lead already sourced this way
+  // still reads back correctly.
   | "chat"
   | "spreadsheet"
   | "customer_database"
@@ -113,15 +116,6 @@ export interface Lead {
   marketingOptIn?: boolean;
   /** When the last win-back check-in was actually sent (ISO date) — see src/winback.ts. */
   lastWinBackAt?: string;
-  /**
-   * SHA-256 hash of this lead's website-chat-widget session token, if it was
-   * created that way (src/chatWidget.ts, POST /public/chat/:tenantId/start).
-   * Never the raw token. Lets the widget resume the same conversation across
-   * page loads/visits without any real login — the token is the visitor's
-   * only credential for continuing *this specific* conversation, so it's
-   * hashed at rest the same way otpCodeHash/passwordResetTokenHash are.
-   */
-  chatTokenHash?: string;
   /**
    * Set the moment this lead first needs a human to look at it — an
    * "interested" reply, or a question/unknown reply that always escalates
@@ -550,7 +544,12 @@ export interface Message {
   id: string;
   tenantId: string;
   leadId: string;
-  /** "chat" is the website chat widget (src/chatWidget.ts) — never a real outbound-send channel, just where this particular message came in/out on. */
+  /**
+   * "chat" was the website chat widget, now removed — never a real
+   * outbound-send channel, just where a message came in/out on. No code
+   * writes it anymore; kept so a historical chat-widget message still
+   * reads back correctly.
+   */
   channel: Channel | "chat";
   direction: MessageDirection;
   body: string;

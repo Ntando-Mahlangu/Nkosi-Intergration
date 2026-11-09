@@ -299,9 +299,9 @@ export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, mess
     asyncHandler(async (req: Request, res: Response) => {
       const tenant = req.tenant!;
       // Same gate every other send path in this app already enforces
-      // (worker.ts, POST /workflow/run, every webhook closer send,
-      // the chat widget) — this is a real outbound send on the tenant's
-      // behalf, not exempt just because a human typed it.
+      // (worker.ts, POST /workflow/run, every webhook closer send) — this
+      // is a real outbound send on the tenant's behalf, not exempt just
+      // because a human typed it.
       if (!tenant.termsAcceptedAt) {
         res.status(403).json({ error: "this tenant must accept the Terms of Service before sending anything" });
         return;
@@ -330,16 +330,12 @@ export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, mess
         return;
       }
 
-      const validChannels = new Set(["sms", "whatsapp", "email", "chat"]);
+      const validChannels = new Set(["sms", "whatsapp", "email"]);
       if (body?.channel !== undefined && !validChannels.has(body.channel as string)) {
-        res.status(400).json({ error: "channel must be one of sms/whatsapp/email/chat" });
+        res.status(400).json({ error: "channel must be one of sms/whatsapp/email" });
         return;
       }
-      if (body?.channel === "chat" && !existing.chatTokenHash) {
-        res.status(422).json({ error: "this lead has no chat-widget conversation to reply on" });
-        return;
-      }
-      const channel = (body?.channel as Channel | "chat" | undefined) ?? selectChannel(tenant, existing);
+      const channel = (body?.channel as Channel | undefined) ?? selectChannel(tenant, existing);
       if (!channel) {
         res.status(422).json({ error: "no usable channel for this lead — configure one in tenant settings" });
         return;
@@ -354,44 +350,26 @@ export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, mess
       }
 
       const messageId = generateId("msg");
-      if (channel === "chat") {
-        // There's no live push into an already-open browser tab (no
-        // WebSocket/SSE infra behind the chat widget) — this records the
-        // reply so it shows up next time the visitor's widget polls, but
-        // can't deliver it in real time. An honest, scoped limitation
-        // rather than a fake real-time feature.
-        await messageStore.logMessage({
-          id: messageId,
-          tenantId: tenant.id,
-          leadId: existing.id,
-          channel: "chat",
-          direction: "outbound",
-          body: message,
-          at: new Date().toISOString(),
-          kind: "manual_reply",
-        });
-      } else {
-        if (!hasCarrierApproval(tenant, channel)) {
-          res.status(422).json({ error: `carrier approval required before sending via ${channel}` });
-          return;
-        }
-        const result = await safeSend(channel, tenant, existing, { channel, body: message }, messageId);
-        if (!result.ok) {
-          res.status(502).json({ error: `send failed: ${result.detail ?? "unknown error"}` });
-          return;
-        }
-        await messageStore.logMessage({
-          id: messageId,
-          tenantId: tenant.id,
-          leadId: existing.id,
-          channel,
-          direction: "outbound",
-          body: message,
-          at: new Date().toISOString(),
-          providerMessageId: result.providerMessageId,
-          kind: "manual_reply",
-        });
+      if (!hasCarrierApproval(tenant, channel)) {
+        res.status(422).json({ error: `carrier approval required before sending via ${channel}` });
+        return;
       }
+      const result = await safeSend(channel, tenant, existing, { channel, body: message }, messageId);
+      if (!result.ok) {
+        res.status(502).json({ error: `send failed: ${result.detail ?? "unknown error"}` });
+        return;
+      }
+      await messageStore.logMessage({
+        id: messageId,
+        tenantId: tenant.id,
+        leadId: existing.id,
+        channel,
+        direction: "outbound",
+        body: message,
+        at: new Date().toISOString(),
+        providerMessageId: result.providerMessageId,
+        kind: "manual_reply",
+      });
 
       const updated = await leadStore.updateLead(tenant.id, existing.id, CLEAR_ATTENTION);
       res.json(updated);

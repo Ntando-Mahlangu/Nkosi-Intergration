@@ -11,13 +11,6 @@ over SMS/WhatsApp/Email, follows up on silence, and listens for replies
 any lead marked do-not-contact, unqualified, fraudulent, already
 booked/converted, or opted out.
 
-It also offers an embeddable website chat widget for a tenant's customers:
-every message is classified the same way a reply over SMS/WhatsApp/Email
-is, and anything that isn't a clear `interested`/`not_interested` —
-a question, price negotiation, complaint, complex request, or an explicit
-ask for a person — is always escalated to a human instead of guessing. See
-"Website chat widget" below.
-
 The full behavioral spec lives in [`SYSTEM_PROMPT.md`](./SYSTEM_PROMPT.md).
 For the process of bringing on a real client, see
 [`ONBOARDING.md`](./ONBOARDING.md); for what's manual/legal rather than code,
@@ -91,11 +84,6 @@ deployment serves many clients with fully isolated data.
   no-LLM close-out reply and marks the lead `do_not_contact` (suppressed,
   same as an explicit STOP — see COMPLIANCE.md); `question`/`unknown` always
   escalates to a human — see `src/notify.ts` below.
-- **`src/chatWidget.ts`** / **`src/routes/publicChat.ts`** / `public/chat-widget.js` —
-  the embeddable website chat widget. Reuses the exact same classify →
-  escalate pipeline as an SMS/WhatsApp/email reply, but answers
-  synchronously in the HTTP response instead of pushing a send through a
-  channel adapter. See "Website chat widget" below.
 - **`src/notify.ts`** — POSTs to the tenant's `notifyWebhookUrl` (e.g. a
   Slack incoming webhook) when a reply is `interested` or a `question`/
   `unknown` reply escalates — the two moments a human should act promptly.
@@ -423,9 +411,6 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | POST | `/tenants/me/accept-terms` | Records the tenant's acceptance of the current Terms of Service/Privacy Policy version — required before `POST /workflow/run`, the worker, or any inbound webhook reply handling will actually send anything |
 | POST | `/tenants/me/change-password` | `{currentPassword?, newPassword}` — self-service while already signed in, owner-only (see "Team accounts"); `currentPassword` is only required if one is already set |
 | POST | `/public/leads/:tenantId` | Public, no tenant-auth — a lead-capture form embedded on the tenant's own website posts here with `{formKey, name?, phone?, email?, requestedService?, notes?}` (`formKey` is `Tenant.publicFormKey`, safe to publish — it can only ever create a lead through this one endpoint) |
-| POST | `/public/chat/:tenantId/start` | Public — the chat widget's first call: `{formKey, name?, phone?, email?}` → `{leadId, chatToken}`. Creates a real lead (`source: "chat"`); `chatToken` is a second, per-conversation secret distinct from `formKey` — see "Website chat widget" above |
-| POST | `/public/chat/:tenantId/message` | Public — `{formKey, leadId, chatToken, body}` → `{classification, displayText}`. Same classify/escalate pipeline as an inbound SMS/WhatsApp/email reply, answered synchronously in the response instead of over a provider |
-| GET | `/public/chat/:tenantId/history` | Public — `?formKey=&leadId=&chatToken=` → this one conversation's messages, oldest first. Lets the widget resume across page reloads |
 | GET | `/public/appointments/:tenantId/:leadId` | Public — `?formKey=` → `{businessName, leadName, appointmentStatus, appointmentAt}`. Backs the self-serve booking page (`public/book-appointment.html`, linked from a lead's detail view via "Copy self-serve booking link") |
 | POST | `/public/appointments/:tenantId/:leadId` | Public — `{formKey, appointmentAt}` → `{ok, appointmentAt}`. Sets the lead's `appointmentStatus` to `"booked"` and `appointmentAt`, the same fields `src/appointmentReminder.ts` reads for the 24-hours-before reminder; `appointmentAt` must be in the future and within 180 days |
 | GET | `/admin/tenants` | List tenants (admin) |
@@ -445,7 +430,7 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | GET | `/leads/:id/messages` | Conversation history for one lead (includes delivery status) |
 | PATCH | `/leads/:id` | Update one lead's `name`/`requestedService`/`previousQuote`/`notes`/`preferredChannel`/`appointmentStatus`/`appointmentAt`/`marketingOptIn`/`consentStatus`/`consentTimestamp`/`consentSource`/`consentScope`/`privacyNoticeVersion`. Never accepts `status` — that's compliance-sensitive and only ever set by the classify/workflow logic (except the one explicit transition below). Setting `consentStatus` without an explicit `consentTimestamp` in the same request stamps `consentTimestamp` to now |
 | POST | `/leads/:id/convert` | Marks a lead `status: "converted"` (+ `convertedAt`); optional `{marketingOptIn}` records this specific lead's own opt-in to later win-back messaging — see `COMPLIANCE.md` "Win-back messaging for past customers" |
-| POST | `/leads/:id/reply` | Sends a real reply on an operator's behalf — `{message, channel?}`. Defaults to the same channel `selectChannel` would pick automatically; `channel` can override it (`sms`/`whatsapp`/`email`/`chat`). Logs the send as `kind: "manual_reply"` and clears the lead's needs-attention flag. A `"chat"` reply is recorded but can't be pushed live into an already-open widget tab (no WebSocket/SSE infra) — it surfaces next time that visitor's widget polls |
+| POST | `/leads/:id/reply` | Sends a real reply on an operator's behalf — `{message, channel?}`. Defaults to the same channel `selectChannel` would pick automatically; `channel` can override it (`sms`/`whatsapp`/`email`). Logs the send as `kind: "manual_reply"` and clears the lead's needs-attention flag |
 | POST | `/leads/:id/mark-handled` | Clears a lead's needs-attention flag without sending anything — for when an operator resolved it some other way (a phone call, etc.) |
 | DELETE | `/leads/:id` | Permanently delete one lead (and its messages, cascaded in Postgres) — a right-to-erasure request for a specific person, distinct from the automatic retention purge (which never touches `do_not_contact`/`opted_out` leads; see `COMPLIANCE.md`) |
 | POST | `/leads/import` | Bulk-create leads from a CSV body (`{"csv": "..."}`), same columns/validation as `npm run import-leads`; returns `{imported, skipped, duplicates}`. Skips (not merges) a row whose phone/email already matches an existing lead for this tenant, or an earlier row in the same file — same dedupe as the CLI script (`src/leadImport.ts#createLeadsDeduped`) |
@@ -487,34 +472,6 @@ See [`.env.example`](./.env.example) for the copyable version with full comments
 | `ANTHROPIC_API_KEY` | Required if `LEADRECOVERY_USE_LLM_CLASSIFICATION` is enabled |
 | `OPERATOR_ALERT_WEBHOOK_URL` | Optional: a Slack-compatible webhook this app pings on its own operational problems (a fatal error, a failed worker tick, a notification exhausting its retries) — see "Alerting" in `DEPLOYMENT.md` |
 
-## Website chat widget
-
-A floating, embeddable chat box a client pastes onto their own website —
-`public/settings.html`'s "Add a chat box to your website" panel gives the
-exact snippet for a specific tenant:
-
-```html
-<script src="https://<host>/chat-widget.js" data-tenant="<tenantId>" data-form-key="<formKey>"></script>
-```
-
-`formKey` is `Tenant.publicFormKey` — the same safe-to-publish token the
-lead-capture form above uses, scoped to only this purpose. A visitor's
-first message creates a real `Lead` (`source: "chat"`); every message after
-that is classified the exact same way an inbound SMS/WhatsApp/email reply
-is, and always escalates to a human via `notifyWebhookUrl` rather than
-being auto-answered — the only difference is the classification result
-comes back synchronously in the widget itself instead of over
-SMS/WhatsApp/email, since there's no provider in the loop to push an async
-send through. `src/chatWidget.ts` is the shared classify → branch →
-compose pipeline (mirrors `recordInboundAndClassify` in
-`src/webhooks/index.ts`); `src/routes/publicChat.ts` is the three public
-endpoints it's wired into (`POST .../start`, `POST .../message`,
-`GET .../history`). A second, per-conversation `chatToken` (returned by
-`.../start`, stored by the widget in `localStorage`) keeps one visitor's
-conversation private from every other visitor to the same site — `formKey`
-alone only scopes a caller to *a* tenant's widget, not to one specific
-thread.
-
 ## Self-serve appointment booking
 
 A public page (`public/book-appointment.html`) a specific lead can use to
@@ -526,8 +483,8 @@ lead's detail view in the dashboard, "Copy self-serve booking link"
 https://<host>/book-appointment.html?tenant=<tenantId>&lead=<leadId>&key=<formKey>
 ```
 
-`formKey` is the same `Tenant.publicFormKey` the lead-capture form and chat
-widget use; `leadId` only the business ever hands out (e.g. by sending this
+`formKey` is the same `Tenant.publicFormKey` the lead-capture form uses;
+`leadId` only the business ever hands out (e.g. by sending this
 link to that one lead), so together they scope a caller to nothing but this
 one lead's own appointment. `src/routes/publicBooking.ts` is the two public
 endpoints it calls (`GET`/`POST /public/appointments/:tenantId/:leadId`).
@@ -544,9 +501,8 @@ Every time a lead's reply gets classified `"interested"`, or a
 `question`/`unknown` reply escalates, the lead is flagged in-app — not
 just via `notifyWebhookUrl` (Slack/custom webhook), which is best-effort and
 easy to miss. `src/notify.ts#flagNeedsAttention` is the single place this
-happens, called from both `recordInboundAndClassify`
-(`src/webhooks/index.ts`, real SMS/WhatsApp/email) and `answerChatMessage`
-(`src/chatWidget.ts`, the website chat widget).
+happens, called from `recordInboundAndClassify`
+(`src/webhooks/index.ts`, real SMS/WhatsApp/email).
 
 A flagged lead gets `needsAttentionAt` (when it was first flagged —
 deliberately never overwritten by a second inbound message while still

@@ -375,18 +375,14 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(reread?.otpAttempts).toBe(2);
   });
 
-  it("round-trips a lead's chatTokenHash (chat widget session)", async () => {
+  it('still round-trips source: "chat" on a lead (the website chat widget was removed, but a historical lead created that way must still read back correctly)', async () => {
     const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
     await tenantStore.createTenant(TENANT);
     const leadStore = new PostgresLeadStore(pool);
-    await leadStore.createLead({ ...LEAD, source: "chat", chatTokenHash: "abc123hash" });
+    await leadStore.createLead({ ...LEAD, source: "chat" });
 
     const reread = await leadStore.getLeadById(TENANT.id, LEAD.id);
     expect(reread?.source).toBe("chat");
-    expect(reread?.chatTokenHash).toBe("abc123hash");
-
-    const updated = await leadStore.updateLead(TENANT.id, LEAD.id, { chatTokenHash: "newhash456" });
-    expect(updated?.chatTokenHash).toBe("newhash456");
   });
 
   it("round-trips a lead's needsAttentionAt/needsAttentionReason/attentionAlertedAt, and clears them together", async () => {
