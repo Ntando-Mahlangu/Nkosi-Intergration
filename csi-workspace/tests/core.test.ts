@@ -51,4 +51,11 @@ describe("auth & core", () => {
     const list = await lerato.get(`/api/attachments?entity_type=project&entity_id=${unm}`).expect(200);
     expect(list.body[0].kind).toBe("google_doc");
   });
+
+  it("project-level knowledge is visible to project members only, not every viewer of the project", async () => {
+    const t = await setup();
+    const id = t.db.get<{ id: string }>("SELECT id FROM knowledge_items WHERE title = 'Unmasking facilitation guide v1'")!.id;
+    await (await t.as("lerato")).get(`/api/knowledge/${id}`).expect(200); // member
+    await (await t.as("pieter")).get(`/api/knowledge/${id}`).expect(404); // can see the org-wide project, but not a member
+  });
 });

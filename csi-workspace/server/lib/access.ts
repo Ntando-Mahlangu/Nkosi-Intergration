@@ -147,7 +147,11 @@ export function assertMeetingManage(db: Db, u: AuthUser, id: string) {
 
 // ------------------------------------------------------------------ knowledge
 export function knowledgeVisibleSql(u: AuthUser, k = "k"): SqlFrag {
-  const pf = projectIdVisibleSql(u, `${k}.project_id`);
+  // access_level 'project' means project MEMBERS (and owner) only — not everyone who can see the project.
+  const pf: SqlFrag = {
+    sql: `(EXISTS (SELECT 1 FROM project_members kpm WHERE kpm.project_id = ${k}.project_id AND kpm.user_id = ?) OR EXISTS (SELECT 1 FROM projects kp WHERE kp.id = ${k}.project_id AND kp.owner_id = ?))`,
+    params: [u.id, u.id],
+  };
   const manager = can(u, "knowledge.manage") ? 1 : 0;
   return {
     sql: `(${k}.author_id = ? OR ${k}.owner_id = ? OR (

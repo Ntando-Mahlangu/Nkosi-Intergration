@@ -106,6 +106,8 @@ export default function Portfolio() {
             </option>
           ))}
         </select>
+          </>
+        )}
         {filtersActive && (
           <Button variant="ghost" size="sm" onClick={() => { setQ(""); setParams(new URLSearchParams(), { replace: true }); }}>
             Clear filters
