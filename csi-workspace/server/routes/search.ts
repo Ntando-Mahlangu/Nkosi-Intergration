@@ -189,8 +189,17 @@ const SPECS: Record<Exclude<SearchType, "procedure">, Spec> = {
   },
 };
 
+/** Light English stemming so "lessons"/"learned"/"programmes" match "lesson"/"learn"/"programme" (substring match). */
+export function stem(t: string): string {
+  if (t.length <= 4) return t;
+  for (const suf of ["ies", "ing", "ed", "es", "s"]) {
+    if (t.endsWith(suf) && t.length - suf.length >= 4) return suf === "ies" ? t.slice(0, -3) + "y" : t.slice(0, -suf.length);
+  }
+  return t;
+}
+
 export function searchTerms(q: string): string[] {
-  return [...new Set(q.toLowerCase().split(/\s+/).map((t) => t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")).filter((t) => t.length >= 2))].slice(0, 6);
+  return [...new Set(q.toLowerCase().split(/\s+/).map((t) => stem(t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))).filter((t) => t.length >= 2))].slice(0, 6);
 }
 
 export function makeSnippet(text: string, terms: string[], len = 180): string {

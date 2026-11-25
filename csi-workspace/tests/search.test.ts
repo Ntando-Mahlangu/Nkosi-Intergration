@@ -74,3 +74,11 @@ describe("knowledge assistant", () => {
     await (await t.as("pieter")).post("/api/assistant/ask", { question: "x" }).expect(400);
   });
 });
+
+describe("assistant matching", () => {
+  it("matches plural / past-tense question words", async () => {
+    const t = await setup();
+    const r = (await (await t.as("pieter")).post("/api/assistant/ask", { question: "lessons learned from programmes" }).expect(200)).body;
+    expect(r.results.map((x: { title: string }) => x.title)).toContain("Lesson: time-box discovery work");
+  });
+});

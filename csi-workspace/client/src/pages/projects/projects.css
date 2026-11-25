@@ -2,7 +2,7 @@
 .prj-card h3 { font-size: 1rem; }
 .prj-link-btn { background: none; border: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }
 .prj-link-btn:hover { text-decoration: underline; }
-.prj-list-row { align-items: flex-end; flex-wrap: nowrap; }
+.row.prj-list-row { align-items: flex-end; flex-wrap: nowrap; }
 .prj-list-row .field { margin-bottom: 8px; }
 .prj-list-row > .btn { margin-bottom: 12px; }
 .prj-radio { display: flex; align-items: flex-start; margin-bottom: 8px; }
@@ -12,8 +12,8 @@
 .prj-factors { margin: 6px 0; padding-left: 18px; }
 .prj-factors li.lvl-blocked, .prj-factors li.lvl-risk { color: var(--danger); }
 .prj-factors li.lvl-attention { color: var(--warn); }
-.prj-member { flex-wrap: nowrap; }
-.prj-role-select { width: auto; min-height: 30px; padding: 3px 8px; font-size: 0.82rem; }
+.row.prj-member { flex-wrap: nowrap; }
+select.select.prj-role-select { width: auto; min-height: 30px; padding: 3px 8px; font-size: 0.82rem; }
 .prj-plain { list-style: none; padding: 0; margin: 0; }
 .prj-meeting-row { color: inherit; }
 .prj-meeting-row:hover { text-decoration: none; }
@@ -29,7 +29,7 @@
 .prj-tl-item.achieved .prj-tl-marker { background: var(--ok); border-color: var(--ok); color: #fff; }
 .prj-tl-item.in_progress .prj-tl-marker { border-color: var(--accent); color: var(--accent); }
 @media (max-width: 860px) {
-  .prj-list-row { flex-wrap: wrap; }
+  .row.prj-list-row { flex-wrap: wrap; }
   .prj-timeline { flex-direction: column; overflow: visible; }
   .prj-tl-item { flex: none; padding: 0 0 14px 34px; }
   .prj-tl-item::before { top: 22px; bottom: 0; left: 10px; right: auto; width: 2px; height: auto; }

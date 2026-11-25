@@ -27,7 +27,9 @@ export default function Portfolio() {
   const { lookups } = useLookups();
   const [q, setQ] = useState(params.get("q") ?? "");
   const dq = useDebounced(q);
-  const [view, setView] = useState<"table" | "cards">(window.matchMedia?.("(max-width: 860px)").matches ? "cards" : "table");
+  const narrow = !!window.matchMedia?.("(max-width: 860px)").matches;
+  const [view, setView] = useState<"table" | "cards">(narrow ? "cards" : "table");
+  const [showFilters, setShowFilters] = useState(!narrow);
   const get = (k: string) => params.get(k) ?? "";
   const setFilter = (k: string, v: string) => {
     const n = new URLSearchParams(params);
@@ -86,6 +88,11 @@ export default function Portfolio() {
           onChange={(v) => setFilter("mine", v === "mine" ? "1" : "")}
           options={[{ key: "all", label: "All visible" }, { key: "mine", label: "My projects" }]}
         />
+        <Button size="sm" icon="filter" aria-expanded={showFilters} onClick={() => setShowFilters((x) => !x)}>
+          Filters{filtersActive ? " (on)" : ""}
+        </Button>
+        {showFilters && (
+          <>
         {sel("status", "Status", STATUS_OPTIONS)}
         {sel("health", "Health", HEALTH_OPTIONS)}
         {sel("priority", "Priority", PRIORITY_OPTIONS)}
@@ -222,8 +229,8 @@ export function ProjectCard({ p }: { p: ProjectSummary }) {
         <Icon name="milestone" size={13} /> {p.next_milestone ? `${p.next_milestone.title} · ${fmtDate(p.next_milestone.target_date)}` : "No upcoming milestone"}
       </div>
       <div className="row tiny muted mt-1">
-        <span>{p.open_actions} open actions</span>
-        <span>{p.outstanding_deliverables} deliverables outstanding</span>
+        <span>{plural(p.open_actions, "open action")}</span>
+        <span>{plural(p.outstanding_deliverables, "deliverable")} outstanding</span>
         {p.risk_level && <Badge tone={riskTone(p.risk_level)} icon="alert">{p.risk_level} risk</Badge>}
         {p.budget_visible && p.budget_amount != null && <span>{money(p.budget_amount, p.budget_currency)}</span>}
       </div>
