@@ -1,0 +1,36 @@
+/* --- projects module (prj-) --- */
+.prj-card h3 { font-size: 1rem; }
+.prj-link-btn { background: none; border: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }
+.prj-link-btn:hover { text-decoration: underline; }
+.prj-list-row { align-items: flex-end; flex-wrap: nowrap; }
+.prj-list-row .field { margin-bottom: 8px; }
+.prj-list-row > .btn { margin-bottom: 12px; }
+.prj-radio { display: flex; align-items: flex-start; margin-bottom: 8px; }
+.prj-radio input { margin-top: 3px; }
+.prj-objectives { margin: 0; padding-left: 20px; }
+.prj-objectives li { margin-bottom: 4px; }
+.prj-factors { margin: 6px 0; padding-left: 18px; }
+.prj-factors li.lvl-blocked, .prj-factors li.lvl-risk { color: var(--danger); }
+.prj-factors li.lvl-attention { color: var(--warn); }
+.prj-member { flex-wrap: nowrap; }
+.prj-role-select { width: auto; min-height: 30px; padding: 3px 8px; font-size: 0.82rem; }
+.prj-plain { list-style: none; padding: 0; margin: 0; }
+.prj-meeting-row { color: inherit; }
+.prj-meeting-row:hover { text-decoration: none; }
+.prj-ms-dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-3); flex: 0 0 26px; }
+.prj-ms-dot.achieved { background: var(--ok-soft); color: var(--ok); border-color: #bfe3cd; }
+.prj-ms-dot.in_progress { background: var(--accent-soft); color: var(--accent); border-color: #c8d6f8; }
+.prj-ms-dot.missed { background: var(--danger-soft); color: var(--danger); }
+.prj-timeline { list-style: none; margin: 0; padding: 0; display: flex; gap: 0; overflow-x: auto; padding-bottom: 6px; }
+.prj-tl-item { flex: 1 0 150px; position: relative; padding: 26px 12px 0 0; }
+.prj-tl-item::before { content: ""; position: absolute; top: 10px; left: 0; right: 0; height: 2px; background: var(--border); }
+.prj-tl-item.achieved::before { background: var(--ok); }
+.prj-tl-marker { position: absolute; top: 0; left: 0; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 2px solid var(--border-strong); color: var(--text-3); }
+.prj-tl-item.achieved .prj-tl-marker { background: var(--ok); border-color: var(--ok); color: #fff; }
+.prj-tl-item.in_progress .prj-tl-marker { border-color: var(--accent); color: var(--accent); }
+@media (max-width: 860px) {
+  .prj-list-row { flex-wrap: wrap; }
+  .prj-timeline { flex-direction: column; overflow: visible; }
+  .prj-tl-item { flex: none; padding: 0 0 14px 34px; }
+  .prj-tl-item::before { top: 22px; bottom: 0; left: 10px; right: auto; width: 2px; height: auto; }
+}

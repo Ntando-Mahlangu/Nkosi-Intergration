@@ -208,7 +208,7 @@ function DeliverableModal({ project, deliverable, onClose, onSaved }: { project:
         toast.success("Deliverable saved");
         onSaved();
       },
-      (x) => (x.name.trim() ? {} : { name: "Give the deliverable a name." }),
+      (x): Record<string, string> => (x.name.trim() ? {} : { name: "Give the deliverable a name." }),
     );
   return (
     <Modal open wide onClose={onClose} title={d ? "Edit deliverable" : "Add deliverable"} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} loading={f.submitting}>Save</Button></>}>
@@ -425,7 +425,7 @@ function RiskModal({ project, risk, onClose, onSaved }: { project: ProjectDetail
         toast.success("Saved to risk register");
         onSaved();
       },
-      (x) => (x.title.trim() ? {} : { title: "Give it a short title." }),
+      (x): Record<string, string> => (x.title.trim() ? {} : { title: "Give it a short title." }),
     );
   return (
     <Modal open wide onClose={onClose} title={risk ? "Edit risk / issue" : "Add risk or issue"} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} loading={f.submitting}>Save</Button></>}>

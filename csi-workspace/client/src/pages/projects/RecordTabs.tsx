@@ -125,7 +125,7 @@ function DecisionModal({ decision, projectId, onClose, onSaved }: { decision: De
         toast.success("Decision saved");
         onSaved();
       },
-      (x) => (x.title.trim() ? {} : { title: "Summarise the decision in a short title." }),
+      (x): Record<string, string> => (x.title.trim() ? {} : { title: "Summarise the decision in a short title." }),
     );
   return (
     <Modal open wide onClose={onClose} title={d ? "Edit decision" : "Record a decision"} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} loading={f.submitting}>Save</Button></>}>

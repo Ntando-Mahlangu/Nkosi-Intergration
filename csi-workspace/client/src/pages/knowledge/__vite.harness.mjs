@@ -4,5 +4,5 @@ const html = `<!doctype html><html><head><meta charset="UTF-8"/><meta name="view
 export default defineConfig({
   root: "/home/user/Nkosi-Intergration/csi-workspace/client",
   plugins: [react(), { name: "harness", configureServer(s) { s.middlewares.use(async (req, res, next) => { if (req.url && !req.url.startsWith("/api") && !req.url.startsWith("/auth") && !req.url.includes(".") && !req.url.startsWith("/@") && !req.url.startsWith("/src") && !req.url.startsWith("/node_modules")) { res.setHeader("content-type","text/html"); res.end(await s.transformIndexHtml(req.url, html)); return; } next(); }); } }],
-  server: { port: 5191, strictPort: true, proxy: { "/api": "http://localhost:4000", "/auth": "http://localhost:4000" } },
+  server: { port: 5191, strictPort: true, proxy: { "/api": "http://localhost:4391", "/auth": "http://localhost:4391" } },
 });
