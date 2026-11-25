@@ -25,3 +25,4 @@ a.srch-result:hover { background: #fcfcfa; text-decoration: none; }
 .srch-result .t { font-weight: 580; color: var(--accent); }
 .srch-result .s { color: var(--text-2); font-size: 0.86rem; margin-top: 2px; }
 @media (max-width: 860px) { .kno-lesson { grid-template-columns: 1fr; } }
+.kno-meta { display: flex; gap: 4px 12px; flex-wrap: wrap; align-items: center; font-size: 0.8rem; color: var(--text-3); margin-top: 4px; }

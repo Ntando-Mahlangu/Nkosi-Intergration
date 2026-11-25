@@ -314,7 +314,7 @@ function Members({ p, reload }: { p: Detail; reload: () => void }) {
 // ===================================================================== tasks
 function ProjectTasks({ p, onChanged }: { p: Detail; onChanged: () => void }) {
   const [show, setShow] = useState<"open" | "all">("open");
-  const { data, error, loading, reload } = useApi<{ items: TaskRow[]; total: number }>("/tasks", { project_id: p.id, scope: "all_visible", view: show === "open" ? "open" : "all" });
+  const { data, error, loading, reload } = useApi<{ items: TaskRow[]; total: number }>("/tasks", { project_id: p.id, scope: "visible", limit: 500 });
   const [creating, setCreating] = useState(false);
   const items = (data?.items ?? []).filter((t) => show === "all" || !["completed", "cancelled"].includes(t.status));
   return (
@@ -339,7 +339,7 @@ function ProjectTasks({ p, onChanged }: { p: Detail; onChanged: () => void }) {
 // ===================================================================== meetings & reports
 interface MeetingItem { id: string; title: string; meeting_date: string; start_time: string | null; status: string; organiser_name: string | null; open_actions?: number; pending_suggestions?: number }
 function ProjectMeetings({ p }: { p: Detail }) {
-  const { data, error, loading, reload } = useApi<{ items: MeetingItem[] }>("/meetings", { project_id: p.id, scope: "all" });
+  const { data, error, loading, reload } = useApi<{ items: MeetingItem[] }>("/meetings", { project_id: p.id, limit: 300 });
   const today = new Date().toISOString().slice(0, 10);
   const items = data?.items ?? [];
   const upcoming = items.filter((m) => m.meeting_date >= today).sort((a, b) => a.meeting_date.localeCompare(b.meeting_date));

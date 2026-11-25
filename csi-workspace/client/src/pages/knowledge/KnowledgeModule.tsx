@@ -41,7 +41,7 @@ export function KnowledgeRow({ item, terms = [], showStatus }: { item: Knowledge
             <Highlight text={item.summary} terms={terms} />
           </div>
         )}
-        <div className="list-item meta" style={{ padding: 0, border: "none", background: "none" }}>
+        <div className="kno-meta">
           <span>{ITEM_TYPE_LABEL[item.item_type] ?? item.item_type}</span>
           <span>{item.category}</span>
           {item.project_name && <span>{item.project_name}</span>}

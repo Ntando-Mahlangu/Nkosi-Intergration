@@ -33,4 +33,9 @@
   .adm-layout { grid-template-columns: 1fr; }
   .adm-nav { position: static; flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
   .adm-nav a { white-space: nowrap; }
+  .adm-layout .table-stack td { flex-wrap: wrap; align-items: flex-start; }
+  .adm-layout .table-stack td > * { min-width: 0; max-width: 100%; }
+  .adm-layout .table-stack td .row { justify-content: flex-start !important; }
+  .adm-layout .table-stack .truncate { white-space: normal; word-break: break-all; }
+  .adm-layout .filter-bar .input, .adm-layout .filter-bar .select { width: 100%; }
 }
