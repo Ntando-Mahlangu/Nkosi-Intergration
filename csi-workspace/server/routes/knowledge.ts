@@ -83,8 +83,8 @@ function knowledgeManagers(db: Db): string[] {
 
 const LIST_COLS = `k.id, k.title, k.summary, k.category, k.item_type, k.tags, k.keywords, k.status, k.access_level, k.version,
   k.published_date, k.updated_at, k.created_at, k.view_count, k.review_date, k.last_reviewed_date, k.project_id, k.author_id, k.owner_id,
-  ua.name AS author_name, p.name AS project_name`;
-const LIST_FROM = `FROM knowledge_items k LEFT JOIN users ua ON ua.id = k.author_id LEFT JOIN projects p ON p.id = k.project_id`;
+  ua.name AS author_name, uo.name AS owner_name, p.name AS project_name`;
+const LIST_FROM = `FROM knowledge_items k LEFT JOIN users ua ON ua.id = k.author_id LEFT JOIN users uo ON uo.id = k.owner_id LEFT JOIN projects p ON p.id = k.project_id`;
 
 // ------------------------------------------------------------------ list / search
 knowledgeRouter.get(

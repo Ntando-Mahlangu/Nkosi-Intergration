@@ -56,7 +56,7 @@ export default function ProceduresPage() {
                       </Link>
                       {p.summary && <div className="tiny muted">{p.summary}</div>}
                     </td>
-                    <td data-label="Owner"><PersonChip name={p.author_name} /></td>
+                    <td data-label="Owner"><PersonChip name={p.owner_name ?? p.author_name} /></td>
                     <td data-label="Version">v{p.version}</td>
                     <td data-label="Last reviewed">{fmtDate(p.last_reviewed_date)}</td>
                     <td data-label="Review due" className={overdue ? "overdue" : ""}>{p.review_date ? `${fmtDate(p.review_date)}${overdue ? " (overdue)" : ""}` : "—"}</td>
