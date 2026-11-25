@@ -1,0 +1,9 @@
+/* --- reports & fakawe (fkw-) --- */
+.fkw-period-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.fkw-counts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.fkw-count { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface-2); }
+.fkw-count .n { font-size: 1.25rem; font-weight: 650; display: block; }
+.fkw-count .l { font-size: 0.78rem; color: var(--text-3); }
+.fkw-flags { margin: 0; padding-left: 18px; }
+.fkw-flags li { margin-bottom: 4px; }
+.fkw-deadline.overdue { color: var(--danger); font-weight: 600; }

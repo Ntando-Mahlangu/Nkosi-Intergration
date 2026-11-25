@@ -1,0 +1,23 @@
+/* --- management intelligence (mgt-) --- */
+.mgt-nav { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 18px; overflow-x: auto; }
+.mgt-nav a { padding: 10px 14px; color: var(--text-2); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; font-size: 0.9rem; display: inline-flex; gap: 6px; align-items: center; }
+.mgt-nav a:hover { color: var(--text); text-decoration: none; }
+.mgt-nav a.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 580; }
+.mgt-dist { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--surface-3); }
+.mgt-dist > span { display: block; height: 100%; }
+.mgt-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.8rem; color: var(--text-2); margin-top: 8px; }
+.mgt-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.mgt-sev { width: 4px; align-self: stretch; border-radius: 4px; flex: 0 0 4px; }
+.mgt-sev.critical { background: var(--danger); }
+.mgt-sev.high { background: #d08a12; }
+.mgt-sev.medium { background: var(--border-strong); }
+.mgt-chart { width: 100%; height: auto; display: block; }
+.mgt-chart .bar { fill: var(--accent); }
+.mgt-chart .bar:hover { fill: var(--accent-hover); }
+.mgt-chart .axis { stroke: var(--border-strong); }
+.mgt-chart text { font-size: 10px; fill: var(--text-3); font-family: var(--font); }
+.mgt-pipeline { display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; font-size: 0.86rem; }
+.mgt-pipeline .track { height: 10px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
+.mgt-pipeline .track span { display: block; height: 100%; background: var(--ai); border-radius: 999px; }
+.mgt-sort { display: inline-flex; gap: 4px; align-items: center; }
+.mgt-factors { margin: 4px 0 0; padding-left: 16px; font-size: 0.78rem; color: var(--text-3); }
