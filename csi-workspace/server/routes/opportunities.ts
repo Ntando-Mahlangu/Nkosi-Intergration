@@ -239,14 +239,6 @@ opportunitiesRouter.post(
   }),
 );
 
-/** nextTaskRef, but resilient to a sequence that lags behind existing refs (e.g. after imports/seeding). */
-function safeTaskRef(db: Db): number {
-  const ref = nextTaskRef(db);
-  const max = db.get<{ m: number | null }>("SELECT MAX(ref) AS m FROM tasks")!.m ?? 0;
-  if (ref > max) return ref;
-  db.run("UPDATE task_ref_seq SET next = ? WHERE id = 1", max + 2);
-  return max + 1;
-}
 
 function labelOf(db: Db, type: string, id: string) {
   const row = type === "meeting" ? db.get<{ l: string }>("SELECT title AS l FROM meetings WHERE id = ?", id) : db.get<{ l: string }>("SELECT title AS l FROM knowledge_items WHERE id = ?", id);
@@ -402,7 +394,7 @@ opportunitiesRouter.post(
     const now = nowIso();
     db.tx(() => {
       db.insert("tasks", {
-        id, ref: safeTaskRef(db), title: b.title, description: b.description || `Follow-up for opportunity: ${o.name}`,
+        id, ref: nextTaskRef(db), title: b.title, description: b.description || `Follow-up for opportunity: ${o.name}`,
         assignee_id: assignee, creator_id: u.id, source: "opportunity", source_ref: o.id, priority: "normal", status: "todo",
         due_date: b.due_date, created_at: now, updated_at: now,
       });

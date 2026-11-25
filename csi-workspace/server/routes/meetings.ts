@@ -140,13 +140,6 @@ function participants(db: Db, id: string) {
 }
 
 /** Allocate a task ref, tolerating a sequence that lags behind existing rows (e.g. imported/seeded tasks). */
-function allocTaskRef(db: Db): number {
-  const r = nextTaskRef(db);
-  const max = db.get<{ m: number | null }>("SELECT MAX(ref) AS m FROM tasks")!.m ?? 0;
-  if (r > max) return r;
-  db.run("UPDATE task_ref_seq SET next = ? WHERE id = 1", max + 2);
-  return max + 1;
-}
 
 const isParticipant = (db: Db, u: AuthUser, id: string) => !!db.get("SELECT 1 FROM meeting_participants WHERE meeting_id = ? AND user_id = ?", id, u.id);
 
@@ -581,7 +574,7 @@ function acceptSuggestion(req: Request, meeting: MeetingRow, sid: string, edits:
         const id = newId("tsk");
         db.insert("tasks", {
           id,
-          ref: allocTaskRef(db),
+          ref: nextTaskRef(db),
           title,
           description: edits.description ?? p.detail ?? "",
           assignee_id: ownerId,

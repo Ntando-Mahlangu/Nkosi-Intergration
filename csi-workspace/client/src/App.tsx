@@ -1,22 +1,23 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./lib/app-state";
 import { Layout } from "./components/Layout";
 import { Loading, PageHeader, EmptyState, LinkButton } from "./components/ui";
 import Login from "./pages/Login";
 import ForcedPasswordChange from "./pages/ChangePassword";
-import WorkspacePage from "./pages/workspace/WorkspacePage";
-import TasksModule from "./pages/tasks/TasksModule";
-import MeetingsModule from "./pages/meetings/MeetingsModule";
-import ReportsModule from "./pages/reports/ReportsModule";
-import ProjectsModule from "./pages/projects/ProjectsModule";
-import KnowledgeModule from "./pages/knowledge/KnowledgeModule";
-import SearchPage from "./pages/knowledge/SearchPage";
-import ManagementModule from "./pages/management/ManagementModule";
-import OpportunitiesModule from "./pages/opportunities/OpportunitiesModule";
-import LearningModule from "./pages/learning/LearningModule";
-import AdminModule from "./pages/admin/AdminModule";
-import NotificationsPage from "./pages/admin/NotificationsPage";
-import ProfilePage from "./pages/admin/ProfilePage";
+const WorkspacePage = lazy(() => import("./pages/workspace/WorkspacePage"));
+const TasksModule = lazy(() => import("./pages/tasks/TasksModule"));
+const MeetingsModule = lazy(() => import("./pages/meetings/MeetingsModule"));
+const ReportsModule = lazy(() => import("./pages/reports/ReportsModule"));
+const ProjectsModule = lazy(() => import("./pages/projects/ProjectsModule"));
+const KnowledgeModule = lazy(() => import("./pages/knowledge/KnowledgeModule"));
+const SearchPage = lazy(() => import("./pages/knowledge/SearchPage"));
+const ManagementModule = lazy(() => import("./pages/management/ManagementModule"));
+const OpportunitiesModule = lazy(() => import("./pages/opportunities/OpportunitiesModule"));
+const LearningModule = lazy(() => import("./pages/learning/LearningModule"));
+const AdminModule = lazy(() => import("./pages/admin/AdminModule"));
+const NotificationsPage = lazy(() => import("./pages/admin/NotificationsPage"));
+const ProfilePage = lazy(() => import("./pages/admin/ProfilePage"));
 
 function NotFound() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
   if (me.user.must_change_password) return <ForcedPasswordChange />;
   return (
     <Layout>
+      <Suspense fallback={<Loading />}>
       <Routes>
         <Route path="/" element={<WorkspacePage />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
@@ -57,6 +59,7 @@ export default function App() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
+      </Suspense>
     </Layout>
   );
 }

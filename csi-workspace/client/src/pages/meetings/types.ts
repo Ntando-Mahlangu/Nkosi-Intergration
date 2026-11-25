@@ -17,6 +17,7 @@ export interface MeetingListItem {
   participant_count: number;
   open_actions: number;
   pending_suggestions: number;
+  can_manage?: boolean;
 }
 
 export interface Participant {

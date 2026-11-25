@@ -224,7 +224,7 @@ export function attentionItems(db: Db, u: AuthUser, today: string): AttentionIte
     today, ...m.params,
   )) {
     const days = Math.round((Date.parse(today) - Date.parse(r.target_date)) / 86400000);
-    items.push({ type: "milestone", id: r.id, title: r.title, project: r.project, link: `/projects/${r.project_id}`, severity: days > 14 ? "high" : "medium", why: `Milestone ${days} day(s) past its target date (${r.target_date})${r.owner ? `; owner ${r.owner}` : "; no owner"}.` });
+    items.push({ type: "milestone", id: r.id, title: r.title, project: r.project, link: `/projects/${r.project_id}`, severity: days > 14 ? "high" : "medium", why: `Milestone ${days === 1 ? "1 day" : `${days} days`} past its target date (${r.target_date})${r.owner ? `; owner ${r.owner}` : "; no owner"}.` });
   }
 
   const d = pid("dv.project_id");
@@ -261,7 +261,7 @@ export function attentionItems(db: Db, u: AuthUser, today: string): AttentionIte
     ...df.params,
   )) {
     const age = Math.round((Date.parse(today) - Date.parse(r.created_at.slice(0, 10))) / 86400000);
-    items.push({ type: "decision", id: r.id, title: r.title, project: r.project, link: "/management/decisions", severity: age > 7 ? "high" : "medium", why: `Decision ${r.status === "pending_approval" ? "awaiting management approval" : "proposed for management"} for ${age} day(s).` });
+    items.push({ type: "decision", id: r.id, title: r.title, project: r.project, link: "/management/decisions", severity: age > 7 ? "high" : "medium", why: `Decision ${r.status === "pending_approval" ? "awaiting management approval" : "proposed for management"}${age === 0 ? " since today" : ` for ${age === 1 ? "1 day" : `${age} days`}`}.` });
   }
 
   // Tasks whose dependency is not yet complete.

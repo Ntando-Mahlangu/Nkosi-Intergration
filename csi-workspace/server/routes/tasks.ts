@@ -226,13 +226,6 @@ const createSchema = z.object({
  * Allocate the next human task number. Guards against the sequence lagging behind
  * existing refs (e.g. rows inserted by imports/seed without using the sequence).
  */
-export function allocateTaskRef(db: Db): number {
-  const r = nextTaskRef(db);
-  const max = db.get<{ m: number | null }>("SELECT MAX(ref) m FROM tasks")!.m ?? 0;
-  if (r > max) return r;
-  db.run("UPDATE task_ref_seq SET next = ? WHERE id = 1", max + 2);
-  return max + 1;
-}
 
 function normTags(s: string) {
   return [...new Set(s.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 15).join(",");
@@ -279,7 +272,7 @@ tasksRouter.post(
     const programme = b.project_id ? db.get<{ programme_id: string | null }>("SELECT programme_id FROM projects WHERE id = ?", b.project_id)?.programme_id : null;
     db.tx(() => {
       db.insert("tasks", {
-        id, ref: allocateTaskRef(db), title: b.title, description: b.description, assignee_id: assigneeId, creator_id: u.id,
+        id, ref: nextTaskRef(db), title: b.title, description: b.description, assignee_id: assigneeId, creator_id: u.id,
         project_id: b.project_id, programme_id: programme ?? null, meeting_id: b.meeting_id, deliverable_id: b.deliverable_id, milestone_id: b.milestone_id,
         source, source_ref: b.source_ref, task_type: b.task_type, priority: b.priority, status: "todo", due_date: b.due_date, start_date: b.start_date,
         review_required: reviewerId ? 1 : 0, reviewer_id: reviewerId, review_status: "none", is_personal: !b.project_id && b.is_personal ? 1 : 0,

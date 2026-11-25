@@ -1042,7 +1042,7 @@ adminRouter.post(
         const id = newId(b.entity === "tasks" ? "tsk" : "prj");
         if (b.entity === "tasks") {
           db.insert("tasks", {
-            id, ref: safeTaskRef(db), title: r.data.title, description: r.data.description, assignee_id: r.data.assignee_id, creator_id: u.id,
+            id, ref: nextTaskRef(db), title: r.data.title, description: r.data.description, assignee_id: r.data.assignee_id, creator_id: u.id,
             project_id: r.data.project_id, source: "import", source_ref: `CSV row ${r.row}`, priority: r.data.priority, status: r.data.status,
             due_date: r.data.due_date ?? null, tags: r.data.tags, completed_at: r.data.status === "completed" ? now : null, created_at: now, updated_at: now,
           });
@@ -1075,16 +1075,6 @@ adminRouter.get(
   }),
 );
 
-/** nextTaskRef, guarded against a sequence that lags behind existing refs (e.g. seeded data). */
-function safeTaskRef(db: Db): number {
-  let r = nextTaskRef(db);
-  const max = db.get<{ m: number | null }>("SELECT MAX(ref) m FROM tasks")!.m ?? 0;
-  if (r <= max) {
-    r = max + 1;
-    db.run("UPDATE task_ref_seq SET next = ? WHERE id = 1", r + 1);
-  }
-  return r;
-}
 
 // ---------------------------------------------------------------- export (permission-aware)
 type ExportDef = { columns: string[]; query: (u: AuthUser) => { sql: string; params: import("node:sqlite").SQLInputValue[] } };
