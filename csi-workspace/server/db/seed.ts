@@ -404,6 +404,7 @@ export function seedDemo(db: Db, demoPassword = ""): string {
     act(U.lerato, "task.submitted_for_review", "task", T.l4, "Draft Knowledge Hub FAQ section", P.research, 1);
     act(U.sipho, "task.assigned", "task", T.l2, "Send pilot reminder emails to nominated participants", P.unmasking, 1);
     act(U.naledi, "task.assigned", "task", T.p3, "Shortlist retreat venues", P.retreat, 1);
+    db.run("UPDATE task_ref_seq SET next = (SELECT COALESCE(MAX(ref), 1000) + 1 FROM tasks) WHERE id = 1");
   });
   return password;
 }

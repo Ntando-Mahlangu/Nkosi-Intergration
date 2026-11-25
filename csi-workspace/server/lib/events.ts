@@ -185,8 +185,9 @@ export function setSetting(db: Db, key: string, value: unknown, by: string | nul
 
 export function nextTaskRef(db: Db): number {
   return db.tx(() => {
-    const r = db.get<{ next: number }>("SELECT next FROM task_ref_seq WHERE id = 1")!;
-    db.run("UPDATE task_ref_seq SET next = next + 1 WHERE id = 1");
+    // Defensive: never hand out a ref already used (e.g. rows imported/seeded without advancing the sequence).
+    const r = db.get<{ next: number }>("SELECT MAX(next, (SELECT COALESCE(MAX(ref), 0) + 1 FROM tasks)) AS next FROM task_ref_seq WHERE id = 1")!;
+    db.run("UPDATE task_ref_seq SET next = ? WHERE id = 1", r.next + 1);
     return r.next;
   });
 }

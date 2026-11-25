@@ -1,0 +1,7 @@
+/* --- learning --- */
+.lrn-theme { border-color: #d9cdf6; background: linear-gradient(180deg, #faf8ff, #fff); }
+.lrn-card { display: block; color: inherit; }
+.lrn-card:hover { text-decoration: none; }
+.lrn-card h3 { color: var(--text); }
+.lrn-excerpt { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: 6px 0; }
+a.tab { text-decoration: none; }
