@@ -1,0 +1,7 @@
+node_modules/
+dist-client/
+dist-server/
+data/*.db*
+.env
+test-results/
+playwright-report/
