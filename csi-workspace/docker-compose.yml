@@ -1,0 +1,12 @@
+services:
+  csi-workspace:
+    build: .
+    ports: ["4000:4000"]
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/csi-workspace.db
+    volumes:
+      - csi-data:/data
+    restart: unless-stopped
+volumes:
+  csi-data:

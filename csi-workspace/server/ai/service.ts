@@ -115,17 +115,18 @@ export async function analyseMeeting(ctx: AppContext, userId: string | null, inp
         "</notes>",
         input.transcript ? `\n<transcript>\n${input.transcript}\n</transcript>` : "",
       ].join("\n");
-      const resp = await e.client.messages.parse({
-        model: e.model,
-        max_tokens: 16000,
-        system: MEETING_SYSTEM,
-        output_config: { effort: "medium", format: jsonSchemaFormat(MeetingAnalysisSchema) },
-        messages: [{ role: "user", content }],
-      } as never);
-      const r = resp as unknown as { parsed_output: MeetingAnalysis | null; stop_reason: string; usage: { input_tokens: number; output_tokens: number } };
+      const r = await e.client.messages
+        .stream({
+          model: e.model,
+          max_tokens: 32000,
+          system: MEETING_SYSTEM,
+          output_config: { effort: "medium", format: jsonSchemaFormat(MeetingAnalysisSchema) },
+          messages: [{ role: "user", content }],
+        })
+        .finalMessage();
       logUsage(ctx, userId, "meeting_analysis", engineLabel(e), r.usage);
-      if (r.stop_reason === "refusal" || !r.parsed_output) throw new Error(`no parsed output (stop_reason=${r.stop_reason})`);
-      return { engine: engineLabel(e), analysis: r.parsed_output };
+      const analysis = parseStructured(r, MeetingAnalysisSchema);
+      return { engine: engineLabel(e), analysis };
     } catch (err) {
       logUsage(ctx, userId, "meeting_analysis", engineLabel(e), null, String(err));
       console.error("[ai] meeting analysis failed, using rules", err);
@@ -136,8 +137,16 @@ export async function analyseMeeting(ctx: AppContext, userId: string | null, inp
   return { engine: "rules", analysis: ruleBasedMeeting(input) };
 }
 
+/** Read a structured-output response: check stop reason, JSON-parse the text, validate with zod. */
+function parseStructured<T extends z.ZodTypeAny>(msg: Anthropic.Message, schema: T): z.infer<T> {
+  if (msg.stop_reason === "refusal") throw new Error("model declined the request");
+  if (msg.stop_reason === "max_tokens") throw new Error("output truncated (max_tokens)");
+  const text = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+  return schema.parse(JSON.parse(text));
+}
+
 /** Build an output_config.format JSON schema from a zod schema (no extra dependency). */
-function jsonSchemaFormat(schema: z.ZodTypeAny) {
+function jsonSchemaFormat(schema: z.ZodTypeAny): Anthropic.JSONOutputFormat {
   return { type: "json_schema", schema: zodToJsonSchema(schema) };
 }
 function zodToJsonSchema(s: z.ZodTypeAny): Record<string, unknown> {
@@ -303,15 +312,14 @@ export async function draftFromFacts(
   const e = engine(ctx);
   if (e.kind !== "anthropic") return null;
   try {
-    const resp = await e.client.messages.create({
+    const r = await e.client.messages.create({
       model: e.model,
       max_tokens: 4000,
       system:
         "You write concise, factual internal reporting text for Change Science Institute. Use only the facts provided. Do not exaggerate progress, invent accomplishments, or present plans as completed work. Distinguish decisions from proposals. If information is missing, say so briefly. Plain prose, no markdown headings.",
       output_config: { effort: "low" },
       messages: [{ role: "user", content: `${instruction}\n\n<facts>\n${facts}\n</facts>` }],
-    } as never);
-    const r = resp as unknown as Anthropic.Message;
+    });
     logUsage(ctx, userId, feature, engineLabel(e), r.usage);
     if (r.stop_reason === "refusal") return null;
     const text = r.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
@@ -354,23 +362,22 @@ export async function answerFromSources(
     const docs = sources
       .map((s) => `<source id="${s.id}" title="${s.title.replace(/"/g, "'")}" category="${s.category}">\n${s.summary}\n${s.body.slice(0, 6000)}\n</source>`)
       .join("\n");
-    const resp = await e.client.messages.parse({
+    const r = await e.client.messages.create({
       model: e.model,
-      max_tokens: 4000,
+      max_tokens: 8000,
       system:
         "You answer questions for CSI staff using only the provided internal sources. Cite source ids you relied on. If the sources do not contain the answer, say so plainly and set insufficient_information=true. Distinguish facts stated in sources from your interpretation (prefix interpretation with 'Interpretation:'). Never invent internal facts, people, dates or decisions.",
       output_config: { effort: "low", format: jsonSchemaFormat(Schema) },
       messages: [{ role: "user", content: `${docs}\n\nQuestion: ${question}` }],
-    } as never);
-    const r = resp as unknown as { parsed_output: z.infer<typeof Schema> | null; usage: { input_tokens: number; output_tokens: number }; stop_reason: string };
+    });
     logUsage(ctx, userId, "knowledge_answer", engineLabel(e), r.usage);
-    if (!r.parsed_output) return null;
+    const out = parseStructured(r, Schema);
     const valid = new Set(sources.map((s) => s.id));
     return {
       engine: engineLabel(e),
-      answer: r.parsed_output.answer,
-      cited: r.parsed_output.cited_source_ids.filter((id) => valid.has(id)),
-      insufficient: r.parsed_output.insufficient_information,
+      answer: out.answer,
+      cited: out.cited_source_ids.filter((id) => valid.has(id)),
+      insufficient: out.insufficient_information,
     };
   } catch (err) {
     logUsage(ctx, userId, "knowledge_answer", engineLabel(e), null, String(err));
