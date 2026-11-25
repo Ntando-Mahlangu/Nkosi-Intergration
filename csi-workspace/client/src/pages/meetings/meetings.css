@@ -1,0 +1,24 @@
+/* --- meetings --- */
+.mtg-date { width: 52px; flex: 0 0 52px; text-align: center; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 4px 0; line-height: 1.15; }
+.mtg-date .m { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); }
+.mtg-date .d { font-size: 1.15rem; font-weight: 650; }
+.mtg-record-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); font-weight: 600; }
+.mtg-notes { white-space: pre-wrap; font-size: 0.92rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; max-height: 420px; overflow-y: auto; }
+.mtg-transcript { white-space: pre-wrap; font-size: 0.85rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #fbfbf9; border: 1px dashed var(--border-strong); border-radius: 8px; padding: 12px 14px; max-height: 360px; overflow-y: auto; }
+.mtg-participant { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 0.9rem; }
+.mtg-ext-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; }
+.mtg-ext-row .field { margin-bottom: 8px; }
+.mtg-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.mtg-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 0.82rem; }
+.mtg-chip button { border: none; background: none; cursor: pointer; color: var(--text-3); padding: 0 4px; font-size: 1rem; line-height: 1; }
+.mtg-sug { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 14px 16px; }
+.mtg-sug.selected { border-color: var(--ai); box-shadow: 0 0 0 2px var(--ai-soft); }
+.mtg-sug.done { opacity: 0.72; background: var(--surface-2); }
+.mtg-sug-head { display: flex; gap: 10px; align-items: flex-start; }
+.mtg-sug-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0 12px; margin-top: 10px; }
+.mtg-history { border-left: 2px solid var(--border); padding-left: 14px; margin-left: 4px; }
+.mtg-history-item { margin-bottom: 16px; }
+.mtg-mode { margin-bottom: 18px; }
+@media (max-width: 860px) {
+  .mtg-sug-grid, .mtg-ext-row { grid-template-columns: 1fr; }
+}

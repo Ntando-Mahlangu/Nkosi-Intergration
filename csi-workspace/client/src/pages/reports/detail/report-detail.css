@@ -1,0 +1,6 @@
+/* --- report detail --- */
+.rpt-org { font-weight: 700; color: var(--navy-900); letter-spacing: 0.02em; }
+.rpt-type { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); }
+.rpt-title { font-size: 1.35rem; margin-top: 4px; }
+.rpt-sources { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 6px; }
+.rpt-flags { margin: 4px 0 0; padding-left: 18px; }
