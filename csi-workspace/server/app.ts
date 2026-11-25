@@ -23,6 +23,9 @@ import { adminRouter } from "./routes/admin.js";
 import { notificationsRouter } from "./routes/notifications.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+export const DEFAULT_DEMO_PASSWORD = "CSI-demo-2026";
+/** Where Vite serves the client during `npm run dev`. */
+const DEV_CLIENT_URL = process.env.DEV_CLIENT_URL || "http://localhost:5173";
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const nodeEnv = (env.NODE_ENV === "production" ? "production" : env.NODE_ENV === "test" ? "test" : "development") as AppConfig["env"];
@@ -34,7 +37,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     anthropicApiKey: env.ANTHROPIC_API_KEY || "",
     aiModel: env.AI_MODEL || "claude-opus-5-5",
     google: { clientId: env.GOOGLE_CLIENT_ID || "", clientSecret: env.GOOGLE_CLIENT_SECRET || "", allowedDomain: env.GOOGLE_ALLOWED_DOMAIN || "" },
-    demoPassword: env.DEMO_PASSWORD || "",
+    // Fixed, documented password for FICTIONAL demo accounts in development only. Never used in production.
+    demoPassword: env.DEMO_PASSWORD || (nodeEnv === "production" ? "" : DEFAULT_DEMO_PASSWORD),
   };
 }
 
@@ -93,6 +97,9 @@ export function createApp(db: Db, config: AppConfig) {
   if (clientDir) {
     app.use(express.static(clientDir, { index: false, maxAge: "1h" }));
     app.get("*", (_req, res) => res.sendFile(path.join(clientDir, "index.html")));
+  } else if (config.env !== "production") {
+    // Development without a client build: the UI is served by Vite. Send browsers there instead of "Cannot GET /".
+    app.get("*", (req, res) => res.redirect(DEV_CLIENT_URL + req.originalUrl));
   }
 
   app.use(errorHandler);

@@ -15,6 +15,8 @@ export default tseslint.config(
       "test-results/**",
       "public/**",
       "data/**",
+      // Separate app with its own toolchain, tsconfigs and CI workflow.
+      "csi-workspace/**",
       // ESLint's own bootstrap file — not part of either tsconfig project below.
       "eslint.config.js",
     ],

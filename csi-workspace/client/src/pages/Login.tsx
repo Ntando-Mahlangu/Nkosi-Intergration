@@ -5,7 +5,7 @@ import { useAuth } from "../lib/app-state";
 import { Button, FormError, TextInput, Callout } from "../components/ui";
 import { Icon } from "../components/Icon";
 
-interface AuthConfig { orgName: string; googleSignIn: boolean; demoMode: boolean; demoAccounts: { email: string; name: string; role: string }[] }
+interface AuthConfig { orgName: string; googleSignIn: boolean; demoMode: boolean; demoAccounts: { email: string; name: string; role: string }[]; demoPassword: string | null }
 
 const GOOGLE_ERRORS: Record<string, string> = {
   state: "Sign-in expired. Please try again.",
@@ -90,10 +90,15 @@ export default function Login() {
           {cfg && cfg.demoAccounts.length > 0 && (
             <div className="mt-3">
               <Callout tone="warn" icon="info">
-                <strong>Demo environment.</strong> Choose a fictional account to explore different roles (the demo password was printed in the server log when the data was seeded).
+                <strong>Demo environment.</strong> Choose a fictional account to explore different roles.{" "}
+                {cfg.demoPassword ? (
+                  <>Password for every demo account: <code>{cfg.demoPassword}</code></>
+                ) : (
+                  "The demo password was printed in the server log when the data was seeded."
+                )}
                 <div className="stack-sm mt-1">
                   {cfg.demoAccounts.map((a) => (
-                    <button key={a.email} type="button" className="btn btn-sm btn-ghost" style={{ justifyContent: "flex-start" }} onClick={() => setEmail(a.email)}>
+                    <button key={a.email} type="button" className="btn btn-sm btn-ghost" style={{ justifyContent: "flex-start" }} onClick={() => { setEmail(a.email); if (cfg.demoPassword) setPassword(cfg.demoPassword); }}>
                       {a.name} — {a.role}
                     </button>
                   ))}

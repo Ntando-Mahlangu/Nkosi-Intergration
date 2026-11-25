@@ -4,6 +4,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// node:sqlite ships unflagged from Node 22.13. Fail with a clear message instead of an obscure import error.
+{
+  const [maj, min] = process.versions.node.split(".").map(Number);
+  if (maj < 22 || (maj === 22 && min < 13)) {
+    console.error(`\nCSI Workspace needs Node.js 22.13 or newer (you have ${process.versions.node}).\nInstall the current LTS from https://nodejs.org and try again.\n`);
+    process.exit(1);
+  }
+}
 // Loaded via require so bundlers/test runners that do not know the newer node:sqlite builtin leave it alone.
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 

@@ -1,7 +1,7 @@
 {
   "name": "csi-workspace",
   "version": "0.1.0",
-  "description": "CSI Workspace — integrated knowledge, meetings, projects and execution platform for Change Science Institute",
+  "description": "CSI Workspace \u2014 integrated knowledge, meetings, projects and execution platform for Change Science Institute",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,14 +9,16 @@
   },
   "scripts": {
     "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:api": "tsx watch server/index.ts",
+    "dev:api": "tsx watch --disable-warning=ExperimentalWarning server/index.ts",
     "dev:web": "vite",
-    "build": "vite build && tsc -p tsconfig.server.json && cp -r server/db/migrations dist-server/server/db/",
+    "build": "vite build && tsc -p tsconfig.server.json && node scripts/copy-migrations.mjs",
     "start": "node --disable-warning=ExperimentalWarning dist-server/server/index.js",
-    "seed": "tsx server/db/seedCli.ts",
+    "seed": "tsx --disable-warning=ExperimentalWarning server/db/seedCli.ts",
     "typecheck": "tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.client.json",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "demo": "npm run build && npm start",
+    "reset": "node -e \"require('fs').rmSync('data',{recursive:true,force:true});console.log('Local database removed; it will be recreated with demo data on next start.')\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.14.0",

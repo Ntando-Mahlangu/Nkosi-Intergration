@@ -12,7 +12,7 @@ test("employee workspace shows real counts and stat cards open filtered task vie
   // Clicking a stat card opens the filtered task list
   await page.getByRole("button", { name: /Due today/i }).click();
   await expect(page).toHaveURL(/\/tasks\?view=today/);
-  await expect(page.getByText("Send pilot reminder emails to nominated participants")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Send pilot reminder emails to nominated participants" }).first()).toBeVisible();
   expect(errors).toEqual([]);
 });
 

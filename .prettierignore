@@ -9,3 +9,4 @@ data
 *.yaml
 *.yml
 *.md
+csi-workspace

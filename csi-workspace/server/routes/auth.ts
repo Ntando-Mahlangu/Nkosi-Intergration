@@ -33,6 +33,9 @@ authRouter.get(
         req.ctx.config.env !== "production" && db.get("SELECT 1 FROM users WHERE is_demo = 1 LIMIT 1")
           ? db.all("SELECT u.email, u.name, r.name AS role FROM users u JOIN roles r ON r.key = u.role_key WHERE u.is_demo = 1 AND u.active = 1 ORDER BY r.sort_order, u.name")
           : [],
+      // Development convenience only: the password shared by the FICTIONAL demo accounts.
+      demoPassword:
+        req.ctx.config.env === "development" && req.ctx.config.demoPassword && db.get("SELECT 1 FROM users WHERE is_demo = 1 LIMIT 1") ? req.ctx.config.demoPassword : null,
     });
   }),
 );
