@@ -1,13 +1,13 @@
 # CSI Workspace — Implementation Status
 
-_Last verified: 2026-11-25._
+_Last verified: 2026-11-26 (local and GitHub Actions)._
 
 ## Test results
 
 | Suite | Result |
 |---|---|
 | `npm run typecheck` (server + client) | passing |
-| `npm test`: 16 files / 118 API, permission and AI-layer tests (in-memory DB) | 118 passed |
+| `npm test`: 16 files / 119 API, permission and AI-layer tests (in-memory DB) | 119 passed |
 | `npm run test:e2e`: Playwright, real built app (desktop + mobile) | 7 passed |
 | `npm run build` | passing (initial JS ~209 kB, modules lazy-loaded) |
 
