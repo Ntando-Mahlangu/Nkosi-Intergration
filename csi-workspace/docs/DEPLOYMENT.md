@@ -9,12 +9,13 @@ Node.js **22.13+** (uses the built-in `node:sqlite`), or Docker.
 ```bash
 cd csi-workspace
 npm install
-cp .env.example .env        # set DEMO_PASSWORD if you want a fixed demo password
-npm run seed                # creates ./data/csi-workspace.db with fictional demo data, prints the demo password
-npm run dev                 # API on :4000, client (Vite) on :5173 with /api proxied
+npm run dev          # API on :4000 (redirects browsers to the app), web app on :5173
 ```
 
-Open http://localhost:5173 and sign in as one of the demo accounts listed on the login page.
+Open http://localhost:5173. Demo data is created automatically on first start in development, and every demo account uses the password `CSI-demo-2026`. Other commands:
+- `npm run demo` builds the app and serves everything at http://localhost:4000.
+- `npm run reset` deletes the local database.
+- `.env` is loaded automatically if present.
 
 ## Production (Docker)
 

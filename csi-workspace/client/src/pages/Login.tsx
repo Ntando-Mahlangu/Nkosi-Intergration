@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LogoMark } from "../components/Logo";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { authGet, authPost } from "../lib/api";
 import { useAuth } from "../lib/app-state";
@@ -55,8 +56,9 @@ export default function Login() {
   return (
     <div className="auth-page">
       <aside className="auth-aside">
+        <div className="auth-art" aria-hidden />
         <div className="row">
-          <span className="brand-mark">CSI</span>
+          <span className="brand-mark"><LogoMark size={34} /></span>
           <strong style={{ color: "#fff" }}>CSI Workspace</strong>
         </div>
         <div>

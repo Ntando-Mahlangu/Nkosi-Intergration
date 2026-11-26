@@ -36,7 +36,7 @@ export default function MeetingReview() {
   const pending = useMemo(() => (data?.items ?? []).filter((s) => s.status === "pending"), [data]);
   const engine = data?.items[0]?.engine;
 
-  if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (error) return (<><PageHeader title="Review suggestions" breadcrumbs={[{ label: "Meetings", to: "/meetings" }, { label: "Meeting", to: `/meetings/${id}` }, { label: "Review" }]} /><ErrorState error={error} onRetry={reload} /></>);
   if (loading && !data) return <Loading />;
   if (!data) return null;
 

@@ -95,7 +95,7 @@ function ProjectFormInner({ project }: { project: ProjectDetail | null }) {
       }
     }, validate);
 
-  if (!project && !can("project.create")) return <ErrorState error="You do not have permission to create projects. Ask an administrator or a project manager." />;
+  if (!project && !can("project.create")) return (<><PageHeader title="New project" breadcrumbs={[{ label: "Projects", to: "/projects" }, { label: "New project" }]} /><ErrorState error="You do not have permission to create projects. Ask an administrator or a project manager." /></>);
 
   const listEditor = <K extends "milestones" | "deliverables">(key: K, labelKey: K extends "milestones" ? "title" : "name", dateKey: K extends "milestones" ? "target_date" : "due_date", singular: string) => {
     const rows = v[key] as Record<string, string>[];

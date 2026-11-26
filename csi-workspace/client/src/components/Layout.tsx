@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { LogoMark } from "./Logo";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/app-state";
 import { Icon } from "./Icon";
@@ -94,7 +95,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {navOpen && <div className="sidebar-scrim mobile-only" onClick={() => setNavOpen(false)} />}
       <aside className={`sidebar ${navOpen ? "open" : ""}`} aria-label="Main navigation">
         <div className="sidebar-brand">
-          <span className="brand-mark">CSI</span>
+          <span className="brand-mark"><LogoMark size={34} /></span>
           <span className="brand-text">
             <strong>CSI Workspace</strong>
             <span>{me.org.name}</span>

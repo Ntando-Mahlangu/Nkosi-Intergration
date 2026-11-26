@@ -8,14 +8,24 @@ CSI Workspace brings together personal work management, meetings and action capt
 
 ## Quick start
 
+Requires **Node.js 22.13 or newer** (`node -v` to check; get the LTS from nodejs.org).
+
 ```bash
 cd csi-workspace
 npm install
-DEMO_PASSWORD='Choose-a-demo-pass-1' npm run seed   # fictional demo data
-npm run dev                                         # http://localhost:5173
+npm run dev
 ```
 
-Sign in with a demo account from the login page, such as `lerato@demo.csi.example` (Employee) or `naledi@demo.csi.example` (Management). All demo people, organisations and outcomes are **fictional**, live on the reserved `.example` domain, carry an `is_demo` flag, and can be purged from Administration → Data.
+Open **http://localhost:5173**. On first start, fictional demo data is created automatically. Every demo account uses the password **`CSI-demo-2026`** (development only), and the login page lists the accounts; click one to fill it in.
+
+Prefer a single address? `npm run demo` builds the app and serves everything at **http://localhost:4000**. To start over with fresh demo data, run `npm run reset`.
+
+All demo people, organisations and outcomes are **fictional**. They use the reserved `.example` email domain, carry an `is_demo` flag, and can be purged from Administration → Data.
+
+**If localhost doesn't load:**
+- Make sure the terminal shows `➜ Open http://localhost:…` and use that address.
+- "Port already in use" means another program has the port. Close it, or set `PORT=4100` in `.env`.
+- "Needs Node.js 22.13" means you should update Node.
 
 | Demo account | Role | Good for exploring |
 |---|---|---|
@@ -25,6 +35,10 @@ Sign in with a demo account from the login page, such as `lerato@demo.csi.exampl
 | naledi@ | Management | Management Intelligence, decision approvals, Fakawe approval |
 | zanele@ | Knowledge Manager / Reporting Coordinator | Knowledge review queue, Fakawe generation |
 | grace@ | System Administrator | Users, roles, settings, audit, import/export — but *not* restricted project content |
+
+## Branding
+
+The logo mark (`client/public/logo-mark.svg`, `client/src/components/Logo.tsx`) is a vector recreation of the supplied CSI logo. It is used as the brand mark, favicon and background artwork, and the interface colours are drawn from it. To use the original artwork file instead, replace `client/public/logo-mark.svg`.
 
 ## Documentation
 
