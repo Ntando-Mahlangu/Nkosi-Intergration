@@ -8,7 +8,7 @@ import crypto from "node:crypto";
 import { Router, type Request } from "express";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
-import { h, parse, badRequest, notFound, conflict, zTitle, zText, pageParams, HttpError } from "../lib/http.js";
+import { h, parse, parsePatch, badRequest, notFound, conflict, zTitle, zText, pageParams, HttpError } from "../lib/http.js";
 import { currentUser, requirePerm, type AuthUser } from "../lib/context.js";
 import { newId, nowIso, isDate } from "../lib/ids.js";
 import { audit, getSetting, setSetting, nextTaskRef, activity } from "../lib/events.js";
@@ -309,7 +309,7 @@ adminRouter.patch(
     const db = req.ctx.db;
     const before = db.get("SELECT * FROM teams WHERE id = ?", req.params.id);
     if (!before) throw notFound("Team not found.");
-    const b = parse(zTeam.partial(), req.body);
+    const b = parsePatch(zTeam.partial(), req.body);
     if (b.name && db.get("SELECT 1 FROM teams WHERE name = ? AND id <> ?", b.name, req.params.id)) throw conflict("A team with that name already exists.");
     if (b.lead_id && !db.get("SELECT 1 FROM users WHERE id = ?", b.lead_id)) throw badRequest("Unknown team lead.");
     db.update("teams", req.params.id, { name: b.name, description: b.description, lead_id: b.lead_id === undefined ? undefined : b.lead_id });
@@ -453,7 +453,7 @@ adminRouter.patch(
   h((req, res) => {
     const me = perm(req, "admin.settings");
     const db = req.ctx.db;
-    const b = parse(SETTINGS_SCHEMA.partial().strict(), req.body);
+    const b = parsePatch(SETTINGS_SCHEMA.partial().strict(), req.body);
     const before = readSettings(db);
     const changed: Record<string, { from: unknown; to: unknown }> = {};
     db.tx(() => {
@@ -592,7 +592,7 @@ adminRouter.patch(
     const db = req.ctx.db;
     const t = db.get<{ report_type: string; name: string; is_default: number }>("SELECT * FROM report_templates WHERE id = ?", req.params.id);
     if (!t) throw notFound("Template not found.");
-    const b = parse(zTemplate.omit({ report_type: true }).partial(), req.body);
+    const b = parsePatch(zTemplate.omit({ report_type: true }).partial(), req.body);
     if (b.active === false && t.is_default) throw badRequest("Choose another default template before deactivating this one.");
     db.tx(() => {
       db.update("report_templates", req.params.id, {
@@ -639,7 +639,7 @@ adminRouter.patch(
     const db = req.ctx.db;
     const r = db.get<{ enabled: number; config: string }>("SELECT enabled, config FROM automation_rules WHERE key = ?", req.params.key);
     if (!r) throw notFound("Automation not found.");
-    const b = parse(z.object({ enabled: z.boolean().optional(), config: z.record(z.union([z.number(), z.string(), z.boolean()])).optional() }), req.body);
+    const b = parse(z.object({ enabled: z.boolean().optional(), config: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])).optional() }), req.body);
     db.update("automation_rules", req.params.key, { enabled: b.enabled === undefined ? undefined : b.enabled ? 1 : 0, config: b.config ? JSON.stringify(b.config) : undefined }, "key");
     audit(db, req, "automation.update", { type: "automation", id: req.params.key }, { before: { enabled: !!r.enabled, config: safeJson(r.config, {}) }, after: b });
     res.json({ ok: true });
@@ -745,7 +745,7 @@ adminRouter.patch(
   h((req, res) => {
     const me = perm(req, "admin.data");
     const db = req.ctx.db;
-    const b = parse(z.record(z.number().int().min(0).max(36500)), req.body);
+    const b = parse(z.record(z.string(), z.number().int().min(0).max(36500)), req.body);
     const errors: Record<string, string> = {};
     for (const [k, v] of Object.entries(b)) {
       const meta = RETENTION_KEYS[k as keyof typeof RETENTION_KEYS];
@@ -864,7 +864,7 @@ const PRIORITIES = ["low", "normal", "high", "urgent"];
 const zImport = z.object({
   entity: z.enum(["tasks", "projects"]),
   csv: z.string().min(1, "Paste or upload a CSV file.").max(1_500_000, "CSV is too large (max ~1.5 MB). Split it into smaller files."),
-  mapping: z.record(z.string()).optional(),
+  mapping: z.record(z.string(), z.string()).optional(),
   skipInvalid: z.boolean().optional().default(true),
 });
 

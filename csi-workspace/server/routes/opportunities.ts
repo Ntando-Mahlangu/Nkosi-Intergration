@@ -7,7 +7,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
-import { h, parse, notFound, forbidden, badRequest, zTitle, zText, zOptDate, zDate, zOptId } from "../lib/http.js";
+import { h, parse, parsePatch, notFound, forbidden, badRequest, zTitle, zText, zOptDate, zDate, zOptId } from "../lib/http.js";
 import { can, currentUser, type AuthUser } from "../lib/context.js";
 import { newId, nowIso, addDays } from "../lib/ids.js";
 import { audit, activity, notify, statusChange, nextTaskRef, orgToday, linkFor } from "../lib/events.js";
@@ -322,7 +322,7 @@ opportunitiesRouter.patch(
     const db = req.ctx.db;
     const o = loadOpp(db, u, req.params.id);
     if (!canManageOpp(u, o)) throw forbidden("Only the opportunity owner or a pipeline manager can edit this.");
-    const b = parse(oppBody.partial().omit({ stage: true }), req.body);
+    const b = parsePatch(oppBody.partial().omit({ stage: true }), req.body);
     if (b.owner_id !== undefined && b.owner_id !== o.owner_id) {
       if (!b.owner_id) throw badRequest("An opportunity needs an owner.", { fields: { owner_id: "Choose an owner." } });
       if (!db.get("SELECT 1 FROM users WHERE id = ? AND active = 1", b.owner_id)) throw badRequest("Choose an active owner.", { fields: { owner_id: "Choose an active owner." } });

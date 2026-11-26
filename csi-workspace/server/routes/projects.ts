@@ -18,7 +18,7 @@ import { z } from "zod";
 import type { SQLInputValue } from "node:sqlite";
 import type { Db } from "../db/index.js";
 import {
-  h, parse, badRequest, forbidden, notFound, conflict, pageParams,
+  h, parse, parsePatch, badRequest, forbidden, notFound, conflict, pageParams,
   zDate, zOptDate, zOptId, zPriority, zText, zTitle, zUrl,
 } from "../lib/http.js";
 import { can, currentUser, requirePerm, type AuthUser } from "../lib/context.js";
@@ -230,7 +230,7 @@ projectsRouter.patch(
     const g = db.get<{ owner_id: string | null }>("SELECT owner_id FROM programmes WHERE id = ?", req.params.id);
     if (!g) throw notFound("Programme not found.");
     if (!can(u, "programme.manage") && g.owner_id !== u.id) throw forbidden();
-    const b = parse(ProgrammeBody.partial(), req.body);
+    const b = parsePatch(ProgrammeBody.partial(), req.body);
     assertActiveUser(db, b.owner_id, "owner_id");
     db.update("programmes", req.params.id, { ...b, updated_at: nowIso() });
     audit(db, req, "programme.update", { type: "programme", id: req.params.id }, b);
@@ -712,7 +712,7 @@ projectsRouter.patch(
     const manager = canManageProject(db, u, pid);
     const isOwner = m.owner_id === u.id;
     if (!manager && !isOwner) throw forbidden("Only the milestone owner or a project manager can update this milestone.");
-    let b = parse(MilestoneBody.partial(), req.body);
+    let b = parsePatch(MilestoneBody.partial(), req.body);
     if (!manager) b = { status: b.status, notes: b.notes, evidence_url: b.evidence_url }; // owners update progress only
     assertActiveUser(db, b.owner_id, "owner_id");
     const patch: Record<string, unknown> = { ...b, updated_at: nowIso() };
@@ -840,7 +840,7 @@ projectsRouter.patch(
     assertProjectView(db, u, pid);
     const manager = canManageProject(db, u, pid);
     if (!manager && d.owner_id !== u.id) throw forbidden("Only the deliverable owner or a project manager can edit this deliverable.");
-    let b = parse(DeliverableBody.partial(), req.body);
+    let b = parsePatch(DeliverableBody.partial(), req.body);
     if (!manager) {
       // Owners can progress their own work but not approve it.
       if (b.status && !["not_started", "in_progress"].includes(b.status)) throw forbidden("Use Submit for review; approval is done by the reviewer.");
@@ -1013,7 +1013,7 @@ projectsRouter.patch(
     const pid = String(r.project_id);
     assertProjectView(db, u, pid);
     if (!canManageProject(db, u, pid) && r.owner_id !== u.id && r.created_by !== u.id) throw forbidden("Only the risk owner, its author or a project manager can update it.");
-    const b = parse(RiskBody.partial(), req.body);
+    const b = parsePatch(RiskBody.partial(), req.body);
     assertActiveUser(db, b.owner_id, "owner_id");
     const patch: Record<string, unknown> = { ...b, updated_at: nowIso() };
     for (const k of ["likelihood", "review_date", "identified_date", "owner_id"]) if (!(k in (req.body ?? {}))) delete patch[k];
@@ -1145,7 +1145,7 @@ projectsRouter.patch(
     const d = db.get<Record<string, unknown>>("SELECT * FROM decisions WHERE id = ?", req.params.id);
     if (!d || !canViewEntity(db, u, "decision", req.params.id)) throw notFound("Decision not found.");
     if (!canEditDecision(db, u, d)) throw forbidden("Only the decision's author, decision maker or a project manager can edit it.");
-    const b = parse(DecisionBody.partial(), req.body);
+    const b = parsePatch(DecisionBody.partial(), req.body);
     if (b.status && ["approved", "rejected"].includes(b.status) && b.status !== d.status) throw forbidden("Use Approve or Reject to change approval status.");
     if (b.project_id && b.project_id !== d.project_id && !canContributeProject(db, u, b.project_id)) throw forbidden();
     assertActiveUser(db, b.decision_maker_id, "decision_maker_id");

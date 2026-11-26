@@ -157,7 +157,7 @@ function zodToJsonSchema(s: z.ZodTypeAny): Record<string, unknown> {
     for (const [k, v] of Object.entries(shape)) props[k] = zodToJsonSchema(v);
     return { type: "object", properties: props, required: Object.keys(shape), additionalProperties: false, ...desc };
   }
-  if (s instanceof z.ZodArray) return { type: "array", items: zodToJsonSchema(s.element), ...desc };
+  if (s instanceof z.ZodArray) return { type: "array", items: zodToJsonSchema(s.element as z.ZodTypeAny), ...desc };
   if (s instanceof z.ZodEnum) return { type: "string", enum: s.options, ...desc };
   if (s instanceof z.ZodNumber) return { type: "number", ...desc };
   if (s instanceof z.ZodBoolean) return { type: "boolean", ...desc };

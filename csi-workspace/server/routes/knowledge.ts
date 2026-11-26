@@ -9,7 +9,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { SQLInputValue } from "node:sqlite";
-import { h, parse, badRequest, forbidden, notFound, zOptDate, zOptId, zText, zTitle, zUrl, pageParams } from "../lib/http.js";
+import { h, parse, parsePatch, badRequest, forbidden, notFound, zOptDate, zOptId, zText, zTitle, zUrl, pageParams } from "../lib/http.js";
 import { can, currentUser, requirePerm, type AuthUser } from "../lib/context.js";
 import { canViewKnowledge, canViewProject, knowledgeVisibleSql } from "../lib/access.js";
 import { activity, audit, notify } from "../lib/events.js";
@@ -368,7 +368,7 @@ knowledgeRouter.patch(
     const db = req.ctx.db;
     const k = viewable(db, u, req.params.id);
     if (!canEdit(u, k)) throw forbidden("Only the author, owner or a knowledge manager can edit this item.");
-    const b = parse(baseSchema.partial().extend({ change_note: zText(300).optional() }), req.body);
+    const b = parsePatch(baseSchema.partial().extend({ change_note: zText(300).optional() }), req.body);
     const merged = {
       project_id: b.project_id !== undefined ? b.project_id : k.project_id,
       programme_id: b.programme_id !== undefined ? b.programme_id : k.programme_id,

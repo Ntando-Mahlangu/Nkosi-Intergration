@@ -14,7 +14,7 @@ import { Router } from "express";
 import { z } from "zod";
 import type { SQLInputValue } from "node:sqlite";
 import type { Db } from "../db/index.js";
-import { h, parse, badRequest, conflict, forbidden, notFound, zDate, zOptDate, zOptId, zTitle } from "../lib/http.js";
+import { h, parse, parsePatch, badRequest, conflict, forbidden, notFound, zDate, zOptDate, zOptId, zTitle } from "../lib/http.js";
 import { can, currentUser, type AuthUser } from "../lib/context.js";
 import { addDays, newId, nowIso } from "../lib/ids.js";
 import { activity, audit, getSetting, notify, orgToday } from "../lib/events.js";
@@ -604,7 +604,7 @@ fakaweRouter.patch(
     const db = req.ctx.db;
     const p = getPeriod(db, req.params.id);
     if (p.status === "archived") throw conflict("Archived periods cannot be edited.");
-    const b = parse(PeriodBody.partial().extend({ name: zTitle.optional() }), req.body);
+    const b = parsePatch(PeriodBody.partial().extend({ name: zTitle.optional() }), req.body);
     const freq = b.frequency ?? p.frequency;
     const start = b.start_date ?? p.start_date;
     const end = b.frequency || b.start_date || b.end_date ? computeEndDate(freq, start, b.end_date ?? p.end_date) : p.end_date;

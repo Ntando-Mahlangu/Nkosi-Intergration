@@ -11,7 +11,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { Request } from "express";
-import { h, parse, badRequest, notFound, forbidden, zDate, zOptDate, zTime, zOptId, zText, zTitle } from "../lib/http.js";
+import { h, parse, parsePatch, badRequest, notFound, forbidden, zDate, zOptDate, zTime, zOptId, zText, zTitle } from "../lib/http.js";
 import { currentUser, can, type AuthUser } from "../lib/context.js";
 import { newId, nowIso } from "../lib/ids.js";
 import { audit, activity, notify, nextTaskRef, statusChange, orgToday, getSetting } from "../lib/events.js";
@@ -386,7 +386,7 @@ meetingsRouter.patch(
     const m = getMeeting(db, req.params.id);
     const partial = z.object(meetingBase).partial().extend({ participants: participantsSchema.optional(), summary: zText(10000).optional() });
     const raw = req.body ?? {};
-    const b = parse(partial, raw);
+    const b = parsePatch(partial, raw);
     // Defaults from the base schema would overwrite unset fields — only apply keys actually sent.
     const sent = (k: string) => Object.prototype.hasOwnProperty.call(raw, k);
     validateRefs(db, u, { project_id: sent("project_id") ? b.project_id : null, programme_id: sent("programme_id") ? b.programme_id : null, organiser_id: sent("organiser_id") ? b.organiser_id : null });

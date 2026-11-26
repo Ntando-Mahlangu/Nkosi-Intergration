@@ -58,4 +58,18 @@ describe("auth & core", () => {
     await (await t.as("lerato")).get(`/api/knowledge/${id}`).expect(200); // member
     await (await t.as("pieter")).get(`/api/knowledge/${id}`).expect(404); // can see the org-wide project, but not a member
   });
+
+  it("partial updates never blank fields that were not sent", async () => {
+    const t = await setup();
+    const sipho = await t.as("sipho");
+    const m = t.db.get<Record<string, unknown>>("SELECT * FROM milestones WHERE title = 'Pilot cohort recruited'")!;
+    await sipho.patch(`/api/milestones/${m.id}`, { notes: "Updated note" }).expect(200);
+    const after = t.db.get<Record<string, unknown>>("SELECT * FROM milestones WHERE id = ?", m.id as string)!;
+    expect(after.notes).toBe("Updated note");
+    for (const k of ["title", "description", "owner_id", "target_date", "status", "weight"]) expect(after[k]).toEqual(m[k]);
+    const r = t.db.get<Record<string, unknown>>("SELECT * FROM risks WHERE title = 'Low pilot sign-ups'")!;
+    await sipho.patch(`/api/risks/${r.id}`, { status: "monitoring" }).expect(200);
+    const r2 = t.db.get<Record<string, unknown>>("SELECT * FROM risks WHERE id = ?", r.id as string)!;
+    for (const k of ["description", "mitigation", "review_date", "likelihood", "severity", "owner_id"]) expect(r2[k]).toEqual(r[k]);
+  });
 });

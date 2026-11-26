@@ -8,7 +8,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
-import { h, parse, notFound, forbidden, badRequest, zTitle, zText, zOptDate, zOptId, zPriority } from "../lib/http.js";
+import { h, parse, parsePatch, notFound, forbidden, badRequest, zTitle, zText, zOptDate, zOptId, zPriority } from "../lib/http.js";
 import { can, currentUser, requirePerm, type AuthUser } from "../lib/context.js";
 import { newId, nowIso } from "../lib/ids.js";
 import { audit, activity, notify, statusChange, orgToday } from "../lib/events.js";
@@ -126,7 +126,7 @@ learningRouter.patch(
     const db = req.ctx.db;
     const r = loadRecord(db, u, req.params.id);
     if (r.contributor_id !== u.id) throw forbidden("Only the contributor can edit this record.");
-    const b = parse(recordBody.partial(), req.body);
+    const b = parsePatch(recordBody.partial(), req.body);
     const sent = new Set(Object.keys(req.body ?? {}));
     const patch: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(b)) if (sent.has(k)) patch[k] = v;
@@ -267,7 +267,7 @@ learningRouter.patch(
     requirePerm(u, "learning.manage");
     const t = db.get<{ id: string; month: string }>("SELECT id, month FROM learning_themes WHERE id = ?", req.params.id);
     if (!t) throw notFound("Theme not found.");
-    const b = parse(themeBody.partial(), req.body);
+    const b = parsePatch(themeBody.partial(), req.body);
     const sent = new Set(Object.keys(req.body ?? {}));
     const patch: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(b)) if (sent.has(k)) patch[k] = v;
@@ -410,7 +410,7 @@ learningRouter.patch(
     if (contentKeys.length) {
       const canEditContent = (r.suggested_by === u.id && r.status === "submitted") || isManager;
       if (!canEditContent) throw forbidden("Only the submitter can edit an improvement while it is still submitted.");
-      const b = parse(impBody.partial(), req.body);
+      const b = parsePatch(impBody.partial(), req.body);
       const patch: Record<string, unknown> = {};
       for (const k of contentKeys) patch[k] = (b as Record<string, unknown>)[k];
       if (patch.project_id && !canViewProject(db, u, String(patch.project_id))) throw badRequest("Choose a project you can access.", { fields: { project_id: "Choose a project you can access." } });

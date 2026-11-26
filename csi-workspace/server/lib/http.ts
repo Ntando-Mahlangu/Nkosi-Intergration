@@ -34,6 +34,18 @@ export function parse<T extends ZodTypeAny>(schema: T, input: unknown): z.infer<
   return r.data;
 }
 
+/**
+ * Parse a PATCH body: like parse(), but the result only contains keys the client actually sent.
+ * Partial schemas still apply field defaults/transforms (e.g. "" or null) to absent keys, which
+ * would otherwise silently overwrite stored values on a partial update.
+ */
+export function parsePatch<T extends ZodTypeAny>(schema: T, input: unknown): z.infer<T> {
+  const out = parse(schema, input) as Record<string, unknown>;
+  const sent = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  for (const k of Object.keys(out)) if (!Object.prototype.hasOwnProperty.call(sent, k)) delete out[k];
+  return out as z.infer<T>;
+}
+
 // Reusable field schemas
 export const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date (YYYY-MM-DD).").refine((s) => !Number.isNaN(Date.parse(s + "T00:00:00Z")), "Use a valid date.");
 export const zOptDate = z.union([zDate, z.literal(""), z.null()]).optional().transform((v) => (v ? v : null));
