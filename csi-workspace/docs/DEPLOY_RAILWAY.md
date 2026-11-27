@@ -25,6 +25,7 @@ In the service, open **Variables → Raw Editor** and paste the block below. Rep
 
 ```
 NODE_ENV=production
+PORT=4000
 DATABASE_PATH=/data/csi-workspace.db
 SEED_DEMO_DATA=false
 BOOTSTRAP_ADMIN_EMAIL=your.name@your-domain.org
@@ -35,11 +36,11 @@ BOOTSTRAP_ADMIN_PASSWORD=Choose-a-strong-temporary-password-1
 - `ANTHROPIC_API_KEY=...` turns on AI suggestions. Without it, the rule-based extractor is used.
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_ALLOWED_DOMAIN` enable Google Workspace sign-in (see DEPLOYMENT.md).
 
-Railway provides `PORT` and the public address automatically; you don't need to set them.
+Set `PORT=4000` explicitly so the app and the Railway domain agree on the port. When you generate the domain, set its **target port to 4000**. The public address is detected automatically.
 
 ## 4. Get a web address and deploy
 
-1. **Settings → Networking → Generate Domain.** You'll get an address like `https://csi-workspace-production.up.railway.app`.
+1. **Settings → Networking → Generate Domain**, with target port **4000**. You'll get an address like `https://csi-workspace-production.up.railway.app`.
 2. Railway builds and deploys, which takes about 3–5 minutes. **Deployments** shows progress. The log should end with `CSI Workspace API listening on port …` and `Created initial administrator …`.
 3. Open the address and sign in with the bootstrap email and password. You'll be asked to choose a **new** password immediately.
 4. Back in Railway, **delete the `BOOTSTRAP_ADMIN_PASSWORD` variable.** It is only used when the database is empty, but it shouldn't sit there.
@@ -73,6 +74,7 @@ Every push to the selected branch redeploys automatically. Data on the `/data` v
 
 | Symptom | Fix |
 |---|---|
+| Deployment is Active but the site shows "Application failed to respond" | Port mismatch. Add the variable `PORT=4000` and make sure the domain's target port (Settings → Networking) is 4000. |
 | Deploy fails at the health check | Open **Deployments → View logs**. Most often a variable is mistyped. |
 | Data disappeared after a redeploy | The volume is missing or not mounted at `/data`. Add it (step 2). |
 | Can't sign in with the bootstrap admin | The admin is only created when the database is empty. If you changed the email after the first deploy, sign in with the original one, or delete and re-create the volume (this erases data). |
