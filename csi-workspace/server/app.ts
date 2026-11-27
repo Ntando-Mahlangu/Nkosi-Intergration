@@ -29,7 +29,8 @@ const DEV_CLIENT_URL = process.env.DEV_CLIENT_URL || "http://localhost:5173";
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const nodeEnv = (env.NODE_ENV === "production" ? "production" : env.NODE_ENV === "test" ? "test" : "development") as AppConfig["env"];
-  const publicUrl = env.PUBLIC_URL || `http://localhost:${env.PORT || 4000}`;
+  // Hosting platforms provide the public address automatically: Railway sets RAILWAY_PUBLIC_DOMAIN (host only).
+  const publicUrl = env.PUBLIC_URL || (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : "") || `http://localhost:${env.PORT || 4000}`;
   return {
     env: nodeEnv,
     publicUrl,

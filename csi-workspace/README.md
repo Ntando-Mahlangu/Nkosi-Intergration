@@ -46,6 +46,7 @@ The logo mark (`client/public/logo-mark.svg`, `client/src/components/Logo.tsx`) 
 - [docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md): administration, roles, integrations, data and automations
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): stack, architecture, data model, AI design, scaling path
 - [docs/SECURITY.md](docs/SECURITY.md): security controls, privacy by design, retention
+- [docs/DEPLOY_RAILWAY.md](docs/DEPLOY_RAILWAY.md): step-by-step deployment to Railway for the pilot
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): setup, Docker, production, enabling integrations, tests
 - [docs/STATUS.md](docs/STATUS.md): what is fully working, what needs credentials, what is planned, test results, known limitations
 

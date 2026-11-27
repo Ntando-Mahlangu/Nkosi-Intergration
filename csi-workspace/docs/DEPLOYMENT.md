@@ -17,6 +17,10 @@ Open http://localhost:5173. Demo data is created automatically on first start in
 - `npm run reset` deletes the local database.
 - `.env` is loaded automatically if present.
 
+## Production on Railway (recommended for the pilot)
+
+Follow **[DEPLOY_RAILWAY.md](DEPLOY_RAILWAY.md)**: GitHub → Railway, with a persistent volume, automatic HTTPS and auto-deploy on push.
+
 ## Production (Docker)
 
 ```bash
