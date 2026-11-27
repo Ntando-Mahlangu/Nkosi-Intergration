@@ -758,7 +758,7 @@
     coreG().appendChild(el("circle", { cx, cy, r: coreR * 0.4, fill: "#fff", opacity: 0.9, class: "core-hot" }));
 
     nodes.forEach((n) => {
-      const path = el("path", { d: curvePath(cx, cy, n.x, n.y), fill: "none", stroke: "rgba(201,168,117,0.20)", "stroke-width": 1.2 });
+      const path = el("path", { d: curvePath(cx, cy, n.x, n.y), fill: "none", stroke: "rgba(37,99,235,0.20)", "stroke-width": 1.2 });
       path.dataset.key = n.cat.key;
       linesG().appendChild(path);
       n.pathEl = path;
