@@ -7,7 +7,7 @@ import { asyncHandler } from "../middleware/asyncHandler.js";
 import { parsePageParams, paginate } from "../pagination.js";
 import { leadsToCsv } from "../csv.js";
 import { createLeadsDeduped, parseLeadsCsv } from "../leadImport.js";
-import { buildFollowUpPlans, buildRecoveryPlans, buildWinBackPlans } from "../workflow.js";
+import { buildFollowUpPlans, buildRecoveryPlans, buildReviewRequestPlans, buildWinBackPlans } from "../workflow.js";
 import { hasCarrierApproval, safeSend, selectChannel } from "../channels/index.js";
 import { generateId } from "../idgen.js";
 import { hardStopReason, isHardStopped } from "../compliance.js";
@@ -103,11 +103,12 @@ export function createLeadRoutes({ tenantStore, tenantUserStore, leadStore, mess
       const initial = buildRecoveryPlans(req.tenant!, leads);
       const followUps = buildFollowUpPlans(req.tenant!, leads);
       const winBacks = buildWinBackPlans(req.tenant!, leads);
-      const plans = [...initial.plans, ...followUps.plans, ...winBacks.plans];
+      const reviewRequests = buildReviewRequestPlans(req.tenant!, leads);
+      const plans = [...initial.plans, ...followUps.plans, ...winBacks.plans, ...reviewRequests.plans];
       res.set("X-Total-Count", String(plans.length));
       res.json({
         plans: paginate(plans, parsePageParams(req)),
-        skipped: [...initial.skipped, ...followUps.skipped, ...winBacks.skipped],
+        skipped: [...initial.skipped, ...followUps.skipped, ...winBacks.skipped, ...reviewRequests.skipped],
       });
     })
   );

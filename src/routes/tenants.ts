@@ -55,6 +55,10 @@ interface TenantConfigBody {
   winBackEnabled?: boolean;
   /** Days between win-back check-ins. See Tenant.winBackCooldownDays. */
   winBackCooldownDays?: number;
+  /** Opt-in: a one-time review request for a converted, opted-in lead — see Tenant.reviewRequestEnabled. */
+  reviewRequestEnabled?: boolean;
+  /** Days after conversion before the review request goes out. See Tenant.reviewRequestDelayDays. */
+  reviewRequestDelayDays?: number;
   /** Opt-in: hours before a stale needs-attention item fires an operator alert. See Tenant.attentionSlaHours. `null` clears it (disables SLA alerting). */
   attentionSlaHours?: number | null;
 }
@@ -166,14 +170,13 @@ function isValidTemplates(templates: unknown): templates is Tenant["templates"] 
   // rejecting it now would be a regression, not a new safety check.
   if (templates === undefined || templates === null) return true;
   if (typeof templates !== "object") return false;
-  const { initialGrounded, initialUngrounded, followUps, notInterestedCloser, winBack } = templates as Record<
-    string,
-    unknown
-  >;
+  const { initialGrounded, initialUngrounded, followUps, notInterestedCloser, winBack, reviewRequest } =
+    templates as Record<string, unknown>;
   if (initialGrounded !== undefined && !isNonEmptyString(initialGrounded)) return false;
   if (initialUngrounded !== undefined && !isNonEmptyString(initialUngrounded)) return false;
   if (notInterestedCloser !== undefined && !isNonEmptyString(notInterestedCloser)) return false;
   if (winBack !== undefined && !isNonEmptyString(winBack)) return false;
+  if (reviewRequest !== undefined && !isNonEmptyString(reviewRequest)) return false;
   if (followUps !== undefined && (!Array.isArray(followUps) || !followUps.every(isNonEmptyString))) return false;
   return true;
 }
@@ -188,6 +191,20 @@ function isValidWinBackCooldownDays(value: unknown): boolean {
     Number.isInteger(value) &&
     value >= MIN_WIN_BACK_COOLDOWN_DAYS &&
     value <= MAX_WIN_BACK_COOLDOWN_DAYS
+  );
+}
+
+const MIN_REVIEW_REQUEST_DELAY_DAYS = 0;
+const MAX_REVIEW_REQUEST_DELAY_DAYS = 365;
+
+/** Unlike winBackCooldownDays, 0 is valid here — a business may want the review request to go out the moment a lead converts. */
+function isValidReviewRequestDelayDays(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= MIN_REVIEW_REQUEST_DELAY_DAYS &&
+    value <= MAX_REVIEW_REQUEST_DELAY_DAYS
   );
 }
 
@@ -253,6 +270,12 @@ function validateTenantConfig(body: Partial<TenantConfigBody>): string | undefin
   if (!isValidWinBackCooldownDays(body.winBackCooldownDays)) {
     return `winBackCooldownDays must be a whole number from ${MIN_WIN_BACK_COOLDOWN_DAYS} to ${MAX_WIN_BACK_COOLDOWN_DAYS}`;
   }
+  if (body.reviewRequestEnabled !== undefined && typeof body.reviewRequestEnabled !== "boolean") {
+    return "reviewRequestEnabled must be a boolean";
+  }
+  if (!isValidReviewRequestDelayDays(body.reviewRequestDelayDays)) {
+    return `reviewRequestDelayDays must be a whole number from ${MIN_REVIEW_REQUEST_DELAY_DAYS} to ${MAX_REVIEW_REQUEST_DELAY_DAYS}`;
+  }
   if (!isValidAttentionSlaHours(body.attentionSlaHours)) {
     return `attentionSlaHours must be a whole number from ${MIN_ATTENTION_SLA_HOURS} to ${MAX_ATTENTION_SLA_HOURS}, or null to disable it`;
   }
@@ -290,6 +313,8 @@ function buildTenantPatch(
   if (body.loginPhone !== undefined) patch.loginPhone = body.loginPhone ? body.loginPhone.trim() : undefined;
   if (body.winBackEnabled !== undefined) patch.winBackEnabled = body.winBackEnabled;
   if (body.winBackCooldownDays !== undefined) patch.winBackCooldownDays = body.winBackCooldownDays;
+  if (body.reviewRequestEnabled !== undefined) patch.reviewRequestEnabled = body.reviewRequestEnabled;
+  if (body.reviewRequestDelayDays !== undefined) patch.reviewRequestDelayDays = body.reviewRequestDelayDays;
   if (body.attentionSlaHours !== undefined) patch.attentionSlaHours = body.attentionSlaHours ?? undefined;
   // Admin-only (gated the same as status/paddleSubscriptionId below) — the
   // agency operator sets this after independently verifying 10DLC/WhatsApp
@@ -732,6 +757,8 @@ export function createTenantRoutes({
         loginPhone: typeof body.loginPhone === "string" ? body.loginPhone.trim() : undefined,
         winBackEnabled: body.winBackEnabled ?? false,
         winBackCooldownDays: body.winBackCooldownDays,
+        reviewRequestEnabled: body.reviewRequestEnabled ?? false,
+        reviewRequestDelayDays: body.reviewRequestDelayDays,
         attentionSlaHours: body.attentionSlaHours ?? undefined,
         // Every tenant gets one at creation — see Tenant.publicFormKey.
         publicFormKey: generateFormKey(),

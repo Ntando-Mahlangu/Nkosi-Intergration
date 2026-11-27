@@ -57,6 +57,11 @@ deployment serves many clients with fully isolated data.
   never touches a converted lead at all. See COMPLIANCE.md "Win-back
   messaging for past customers" — most jurisdictions treat this as its own
   direct-marketing consent question, distinct from the original outreach.
+- **`src/reviewRequest.ts`** — a one-time automated review request after a
+  lead converts (`Tenant.reviewRequestEnabled`, `Tenant.reviewRequestDelayDays`),
+  reusing the same per-lead `marketingOptIn` win-back uses rather than a
+  second opt-in. Never repeats — `Lead.reviewRequestSentAt` permanently
+  rules a lead out once sent. See COMPLIANCE.md "Review requests".
 - **`src/quietHours.ts`** — per-tenant local-time send window; sends outside
   it are deferred to the next run, never dropped.
 - **`src/channels/`** — `ChannelAdapter`s for SMS/WhatsApp (Twilio) and Email
@@ -407,7 +412,7 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | POST | `/auth/request-code` | Phone-number sign-in, step 1 (the primary path): `{phone}` → always the same generic response; texts a one-time code if that phone matches a tenant's `loginPhone`. The code is never returned over the API — only ever by text (or logged server-side if `PLATFORM_SMS_FROM_NUMBER` isn't configured) |
 | POST | `/auth/verify-code` | Phone-number sign-in, step 2: `{phone, code}` → `{apiKey, tenant}`. Locks out after 5 wrong attempts until a fresh code is requested |
 | GET | `/tenants/me` | The authenticated tenant's public info |
-| PATCH | `/tenants/me` | Tenant self-service (owner-only — see "Team accounts"): update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/dataRetentionDays/email/winBackEnabled/winBackCooldownDays/attentionSlaHours |
+| PATCH | `/tenants/me` | Tenant self-service (owner-only — see "Team accounts"): update timezone/quietHours/devMode/channels/notifyWebhookUrl/templates/dataRetentionDays/email/winBackEnabled/winBackCooldownDays/reviewRequestEnabled/reviewRequestDelayDays/attentionSlaHours |
 | POST | `/tenants/me/accept-terms` | Records the tenant's acceptance of the current Terms of Service/Privacy Policy version — required before `POST /workflow/run`, the worker, or any inbound webhook reply handling will actually send anything |
 | POST | `/tenants/me/change-password` | `{currentPassword?, newPassword}` — self-service while already signed in, owner-only (see "Team accounts"); `currentPassword` is only required if one is already set |
 | POST | `/public/leads/:tenantId` | Public, no tenant-auth — a lead-capture form embedded on the tenant's own website posts here with `{formKey, name?, phone?, email?, requestedService?, notes?}` (`formKey` is `Tenant.publicFormKey`, safe to publish — it can only ever create a lead through this one endpoint) |
@@ -426,17 +431,17 @@ are rate limited (`src/middleware/rateLimit.ts`) — tenant-authed routes and
 | GET | `/admin/inquiries` | List sales inquiries from the marketing page, newest first (admin). Optional `?limit=&offset=` |
 | PATCH | `/admin/inquiries/:id` | Update a sales inquiry's status (admin): `{status}` (`"new"` \| `"contacted"` \| `"closed"`) |
 | GET | `/leads` | List the tenant's leads. Optional `?limit=&offset=`; always sets `X-Total-Count`. Optional `?needsAttention=true` restricts to leads currently in the needs-attention inbox (see below) |
-| GET | `/leads/plan` | Dry run: scored + composed initial/follow-up/win-back plans, nothing sent. Same optional pagination |
+| GET | `/leads/plan` | Dry run: scored + composed initial/follow-up/win-back/review-request plans, nothing sent. Same optional pagination |
 | GET | `/leads/:id/messages` | Conversation history for one lead (includes delivery status) |
 | PATCH | `/leads/:id` | Update one lead's `name`/`requestedService`/`previousQuote`/`notes`/`preferredChannel`/`appointmentStatus`/`appointmentAt`/`marketingOptIn`/`consentStatus`/`consentTimestamp`/`consentSource`/`consentScope`/`privacyNoticeVersion`. Never accepts `status` — that's compliance-sensitive and only ever set by the classify/workflow logic (except the one explicit transition below). Setting `consentStatus` without an explicit `consentTimestamp` in the same request stamps `consentTimestamp` to now |
-| POST | `/leads/:id/convert` | Marks a lead `status: "converted"` (+ `convertedAt`); optional `{marketingOptIn}` records this specific lead's own opt-in to later win-back messaging — see `COMPLIANCE.md` "Win-back messaging for past customers" |
+| POST | `/leads/:id/convert` | Marks a lead `status: "converted"` (+ `convertedAt`); optional `{marketingOptIn}` records this specific lead's own opt-in to later win-back messaging and/or a one-time review request — see `COMPLIANCE.md` "Win-back messaging for past customers" and "Review requests" |
 | POST | `/leads/:id/reply` | Sends a real reply on an operator's behalf — `{message, channel?}`. Defaults to the same channel `selectChannel` would pick automatically; `channel` can override it (`sms`/`whatsapp`/`email`). Logs the send as `kind: "manual_reply"` and clears the lead's needs-attention flag |
 | POST | `/leads/:id/mark-handled` | Clears a lead's needs-attention flag without sending anything — for when an operator resolved it some other way (a phone call, etc.) |
 | DELETE | `/leads/:id` | Permanently delete one lead (and its messages, cascaded in Postgres) — a right-to-erasure request for a specific person, distinct from the automatic retention purge (which never touches `do_not_contact`/`opted_out` leads; see `COMPLIANCE.md`) |
 | POST | `/leads/import` | Bulk-create leads from a CSV body (`{"csv": "..."}`), same columns/validation as `npm run import-leads`; returns `{imported, skipped, duplicates}`. Skips (not merges) a row whose phone/email already matches an existing lead for this tenant, or an earlier row in the same file — same dedupe as the CLI script (`src/leadImport.ts#createLeadsDeduped`) |
 | GET | `/leads/export` | Full-fidelity export of every lead field, as CSV (default) or `?format=json` — for a client's own records or a data right-of-access request |
 | GET | `/tenants/me/report` | Activity summary for reporting/billing: lead status counts (current snapshot) + message activity (sent/replied, by kind/classification) over an optional `?since=&until=` window |
-| POST | `/workflow/run` | Sends initial outreach + due follow-ups + due win-back check-ins. Serialized per tenant against the worker's own cron tick (see `workflowLock.ts`) so a manual run can never race the worker and double-send the same lead |
+| POST | `/workflow/run` | Sends initial outreach + due follow-ups + due win-back check-ins + due review requests. Serialized per tenant against the worker's own cron tick (see `workflowLock.ts`) so a manual run can never race the worker and double-send the same lead |
 | POST | `/webhooks/lead` | Generic lead intake (tenant-auth) |
 | POST | `/webhooks/:tenantId/twilio/sms` | Twilio inbound SMS/WhatsApp reply (signature-verified) |
 | POST | `/webhooks/:tenantId/twilio/voice-status` | Twilio call status → missed-call detection (signature-verified) |

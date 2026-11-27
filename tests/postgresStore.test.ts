@@ -44,6 +44,7 @@ const TENANT: Tenant = {
   devMode: false,
   channels: { sms: { accountSid: "AC1", authToken: "tok", fromNumber: "+15550000" } },
   winBackEnabled: false, // the DB column is NOT NULL DEFAULT FALSE, so a round-trip always returns a real boolean here
+  reviewRequestEnabled: false, // ditto — NOT NULL DEFAULT FALSE
   status: "active", // ditto — NOT NULL DEFAULT 'active'
   createdAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
 };
@@ -328,6 +329,25 @@ describe("Postgres stores (against an in-memory pg-mem instance)", () => {
     expect(reread?.convertedAt).toBe("2026-01-01T00:00:00.000Z");
     expect(reread?.marketingOptIn).toBe(true);
     expect(reread?.lastWinBackAt).toBe("2026-07-01T00:00:00.000Z");
+  });
+
+  it("round-trips a lead's reviewRequestSentAt, and a tenant's reviewRequestEnabled/reviewRequestDelayDays (including 0)", async () => {
+    const tenantStore = new PostgresTenantStore(pool, TEST_ENCRYPTION_KEY);
+    await tenantStore.createTenant({ ...TENANT, reviewRequestEnabled: true, reviewRequestDelayDays: 0 });
+    const leadStore = new PostgresLeadStore(pool);
+    await leadStore.createLead(LEAD);
+
+    const rereadTenant = await tenantStore.getTenant(TENANT.id);
+    expect(rereadTenant?.reviewRequestEnabled).toBe(true);
+    expect(rereadTenant?.reviewRequestDelayDays).toBe(0);
+
+    const sent = await leadStore.updateLead(TENANT.id, LEAD.id, {
+      reviewRequestSentAt: new Date("2026-07-01T00:00:00.000Z").toISOString(),
+    });
+    expect(sent?.reviewRequestSentAt).toBe("2026-07-01T00:00:00.000Z");
+
+    const reread = await leadStore.getLeadById(TENANT.id, LEAD.id);
+    expect(reread?.reviewRequestSentAt).toBe("2026-07-01T00:00:00.000Z");
   });
 
   it("round-trips a tenant's attentionSlaHours, and clears it with null", async () => {

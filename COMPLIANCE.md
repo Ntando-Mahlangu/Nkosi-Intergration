@@ -236,6 +236,51 @@ deliberately-opt-in feature (`Tenant.winBackEnabled` +
   marketing consent, which is exactly why `marketingOptIn` is a separate,
   independent field on the same request/lead rather than being bundled in.
 
+## Review requests
+
+A one-time automated message asking a converted customer for a review
+(`Tenant.reviewRequestEnabled` + `Lead.marketingOptIn`, see
+src/reviewRequest.ts), off by default. Deliberately kept as its own small
+feature rather than folded into win-back above, even though both only ever
+target a converted lead:
+
+- **Reuses the exact same `Lead.marketingOptIn` opt-in win-back uses, by
+  design — not a second, separate checkbox.** A review request is arguably
+  a lighter touch than ongoing win-back marketing (it's a one-time ask tied
+  to the specific transaction just completed, not a recurring promotional
+  check-in), and a case can be made under some frameworks that it doesn't
+  meet the definition of "direct marketing" at all. That case is genuinely
+  inconsistent across jurisdictions, though, so this stays conservative and
+  requires the same explicit, per-lead, recorded agreement win-back does
+  rather than assuming the lighter original transactional consent basis
+  covers it. If a specific client's counsel confirms review requests don't
+  need this under their jurisdiction's rules, that's a reason to leave the
+  opt-in unchecked for that client and not turn the feature on for them —
+  not a reason to change the code's default posture for everyone.
+- **Never repeats, unlike win-back.** `reviewRequestEnabled` has no
+  cooldown — once `Lead.reviewRequestSentAt` is set, that lead is
+  permanently done, forever (not "due again in N days"). Sending the same
+  customer a review ask over and over would be exactly the kind of nagging
+  contact this app's whole design otherwise works to avoid.
+- **Enforced per-lead, not just per-tenant**, the same way win-back is:
+  turning on `Tenant.reviewRequestEnabled` in Settings messages no one by
+  itself — a lead is only ever included once someone has separately
+  recorded, on that specific lead, that they personally agreed to being
+  re-contacted (`Lead.marketingOptIn`, the same checkbox win-back's own
+  write-up above describes).
+- `reviewRequestDelayDays` (default 3, 0 is valid and means "the moment the
+  lead converts") gates how long after conversion the request goes out —
+  giving the work itself time to be delivered/experienced first is both
+  better practice and more likely to produce an honest review than asking
+  before the customer has anything to review yet.
+- Same STOP/opt-out handling as win-back: a reply classified `stop` flips
+  the lead's status away from `converted` immediately, which removes it
+  from eligibility (it checks `status === "converted"` directly)
+  permanently.
+- Not time-sensitive, so (like win-back, unlike an appointment reminder) a
+  send due during the tenant's quiet hours is always deferred to the next
+  run rather than overridden.
+
 ## SMS / WhatsApp (Twilio)
 
 - **10DLC registration** (US): required before sending SMS at any volume

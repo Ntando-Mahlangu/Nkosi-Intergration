@@ -151,6 +151,34 @@ test.describe("Settings (public/settings.html)", () => {
     await expect(page.locator("#save-status")).toHaveText("Saved.");
   });
 
+  test("review-request enabled/delay/template round-trip, and 0 (immediate) is a valid delay", async ({ page }) => {
+    await connect(page);
+    await expect(page.locator("#review-request-enabled")).not.toBeChecked();
+
+    await page.check("#review-request-enabled");
+    await page.fill("#review-request-delay-days", "0");
+    await page.fill("#tpl-review", "Loved working with you, {name}?");
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toHaveText("Saved.");
+
+    await page.reload();
+    await expect(page.locator("#app")).toBeVisible();
+    await expect(page.locator("#review-request-enabled")).toBeChecked();
+    await expect(page.locator("#review-request-delay-days")).toHaveValue("0");
+    await expect(page.locator("#tpl-review")).toHaveValue("Loved working with you, {name}?");
+
+    await page.fill("#review-request-delay-days", "-1"); // below the 0-day floor
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toContainText("0 to 365");
+
+    // Reset for any later run of this suite — same reasoning as the
+    // data-retention test above.
+    await page.fill("#review-request-delay-days", "3");
+    await page.uncheck("#review-request-enabled");
+    await page.click("#save-btn");
+    await expect(page.locator("#save-status")).toHaveText("Saved.");
+  });
+
   test("attention-SLA hours round-trips, validates its range, and clears on a blank save", async ({ page }) => {
     await connect(page);
     await expect(page.locator("#attention-sla-hours")).toHaveValue("");

@@ -1482,6 +1482,9 @@ components:
         winBack:
           type: string
           description: "Periodic check-in to an opted-in past customer. Supports {name}/{businessName}/{serviceClause}."
+        reviewRequest:
+          type: string
+          description: "One-time review request sent after a lead converts. Supports {name}/{businessName}/{serviceClause}."
 
     TenantConfigBody:
       type: object
@@ -1578,6 +1581,20 @@ components:
           minimum: 30
           maximum: 3650
           description: Days between win-back check-ins for one lead. Defaults to 180 when unset.
+        reviewRequestEnabled:
+          type: boolean
+          description: >-
+            Opt-in: a single automated review request for converted leads
+            who each individually have their own marketingOptIn set — the
+            same flag winBackEnabled above reuses, not a second opt-in (see
+            POST /leads/{id}/convert, PATCH /leads/{id}). Never repeats,
+            unlike win-back. Off by default — see COMPLIANCE.md "Review
+            requests".
+        reviewRequestDelayDays:
+          type: integer
+          minimum: 0
+          maximum: 365
+          description: Days after conversion before the review request goes out. 0 is valid (send immediately). Defaults to 3 when unset.
         attentionSlaHours:
           type: integer
           minimum: 1
@@ -1629,6 +1646,8 @@ components:
         numberHostingOrder: { $ref: "#/components/schemas/NumberHostingOrder" }
         winBackEnabled: { type: boolean, description: "Opt-in: periodic win-back check-ins for converted, opted-in leads. Off by default." }
         winBackCooldownDays: { type: integer, description: "Days between win-back check-ins for one lead. Defaults to 180 when unset." }
+        reviewRequestEnabled: { type: boolean, description: "Opt-in: a single, non-repeating review request for converted, opted-in leads. Off by default." }
+        reviewRequestDelayDays: { type: integer, description: "Days after conversion before the review request goes out. 0 is valid. Defaults to 3 when unset." }
         attentionSlaHours: { type: integer, description: "Opt-in: hours before a stale needs-attention item fires a one-time operator alert. Unset disables it." }
         createdAt: { type: string, format: date-time }
 
@@ -1714,11 +1733,15 @@ components:
           description: When this lead's status was set to "converted" — see POST /leads/{id}/convert.
         marketingOptIn:
           type: boolean
-          description: This specific lead's own opt-in to win-back messaging after converting — see COMPLIANCE.md "Win-back messaging for past customers".
+          description: This specific lead's own opt-in to win-back messaging and/or a one-time review request after converting — see COMPLIANCE.md "Win-back messaging for past customers" and "Review requests".
         lastWinBackAt:
           type: string
           format: date-time
           description: When the last win-back check-in was actually sent.
+        reviewRequestSentAt:
+          type: string
+          format: date-time
+          description: When the one-time review request was sent. Unlike lastWinBackAt, this never repeats.
         needsAttentionAt:
           type: string
           format: date-time
@@ -1818,7 +1841,7 @@ components:
         at: { type: string, format: date-time }
         classification: { type: string, enum: [stop, interested, not_interested, question, unknown] }
         deliveryStatus: { type: string }
-        kind: { type: string, enum: [campaign, auto_reply, closer, appointment_reminder, win_back, manual_reply] }
+        kind: { type: string, enum: [campaign, auto_reply, closer, appointment_reminder, win_back, review_request, manual_reply] }
 
     RecoveryPlan:
       type: object

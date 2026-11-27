@@ -2346,6 +2346,52 @@ describe("tenant self-service settings", () => {
     expect(notAnInteger.status).toBe(400);
   });
 
+  it("lets a tenant turn on review requests and set a delay, including 0 for immediate", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const res = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({
+        reviewRequestEnabled: true,
+        reviewRequestDelayDays: 0,
+        templates: { reviewRequest: "Loved working with you, {name}?" },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.reviewRequestEnabled).toBe(true);
+    expect(res.body.reviewRequestDelayDays).toBe(0);
+    expect(res.body.templates.reviewRequest).toBe("Loved working with you, {name}?");
+  });
+
+  it("rejects a review-request delay outside the allowed range", async () => {
+    const stores = buildStores();
+    const app = express();
+    app.use(express.json());
+    app.use(createTenantRoutes(stores));
+
+    const negative = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ reviewRequestDelayDays: -1 });
+    expect(negative.status).toBe(400);
+
+    const tooLarge = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ reviewRequestDelayDays: 366 });
+    expect(tooLarge.status).toBe(400);
+
+    const notAnInteger = await request(app)
+      .patch("/tenants/me")
+      .set("Authorization", `Bearer ${TENANT.apiKey}`)
+      .send({ reviewRequestDelayDays: 3.5 });
+    expect(notAnInteger.status).toBe(400);
+  });
+
   it("lets a tenant set, and then clear with null, an attentionSlaHours threshold", async () => {
     const stores = buildStores();
     const app = express();

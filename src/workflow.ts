@@ -8,6 +8,7 @@ import { safeSend, selectChannel, type SendResult } from "./channels/index.js";
 import { isWithinQuietHours } from "./quietHours.js";
 import { composeFollowUpMessage, followUpReason, getLeadsDueForFollowUp } from "./followup.js";
 import { composeWinBackMessage, getLeadsDueForWinBack, winBackReason } from "./winback.js";
+import { composeReviewRequestMessage, getLeadsDueForReviewRequest, reviewRequestReason } from "./reviewRequest.js";
 import {
   appointmentReminderReason,
   composeAppointmentReminderMessage,
@@ -103,6 +104,36 @@ export function buildWinBackPlans(tenant: Tenant, leads: Lead[], now: Date = new
       priority: "LOW", // a past customer check-in is never more urgent than an active lead in the funnel
       priorityReasons: ["Win-back check-in — opted-in past customer"],
       reason: winBackReason(),
+      message,
+    });
+  }
+
+  return { plans, skipped };
+}
+
+/**
+ * Builds one-time review-request plans for converted leads who have
+ * explicitly opted in (see src/reviewRequest.ts) — a review request never
+ * repeats, unlike win-back above, which is why `reviewRequestSentAt` is
+ * checked rather than a cooldown window.
+ */
+export function buildReviewRequestPlans(tenant: Tenant, leads: Lead[], now: Date = new Date()): WorkflowResult {
+  const skipped: SkippedLead[] = [];
+  const due = getLeadsDueForReviewRequest(tenant, leads, now);
+  const plans: RecoveryPlan[] = [];
+
+  for (const lead of due) {
+    const channel = selectChannel(tenant, lead);
+    if (!channel) {
+      skipped.push({ lead, reason: "no usable contact channel for review request" });
+      continue;
+    }
+    const message = composeReviewRequestMessage(lead, channel, tenant);
+    plans.push({
+      lead,
+      priority: "LOW", // a past customer's review ask is never more urgent than an active lead in the funnel
+      priorityReasons: ["Review request — opted-in past customer"],
+      reason: reviewRequestReason(),
       message,
     });
   }
@@ -331,12 +362,66 @@ async function sendWinBackPlans(
 }
 
 /**
+ * Sends one-time review requests — mirrors sendWinBackPlans (same
+ * never-time-sensitive quiet-hours deferral, same guard against
+ * overwriting a status change this send raced), except the bookkeeping
+ * flag is reviewRequestSentAt and it's set once, never updated again —
+ * isDueForReviewRequest treats any already-set value as permanently done.
+ */
+async function sendReviewRequests(
+  tenant: Tenant,
+  store: LeadStore,
+  messages: MessageStore | undefined,
+  plans: RecoveryPlan[],
+  now: Date
+): Promise<{ sent: SentPlan[]; deferred: SkippedLead[] }> {
+  const sent: SentPlan[] = [];
+  const deferred: SkippedLead[] = [];
+
+  if (isWithinQuietHours(tenant, now)) {
+    for (const plan of plans) {
+      deferred.push({ lead: plan.lead, reason: "deferred: within tenant quiet hours, will retry next run" });
+    }
+    return { sent, deferred };
+  }
+
+  for (const plan of plans) {
+    const messageId = generateId("msg");
+    const result = await safeSend(plan.message.channel, tenant, plan.lead, plan.message, messageId);
+    sent.push({ plan, result, isFollowUp: false });
+
+    if (result.ok) {
+      await messages?.logMessage({
+        id: messageId,
+        tenantId: tenant.id,
+        leadId: plan.lead.id,
+        channel: plan.message.channel,
+        direction: "outbound",
+        body: plan.message.body,
+        at: now.toISOString(),
+        providerMessageId: result.providerMessageId,
+        kind: "review_request",
+      });
+      await store.updateLead(
+        tenant.id,
+        plan.lead.id,
+        { reviewRequestSentAt: now.toISOString() },
+        { onlyIfStatusIn: ["converted"] }
+      );
+    }
+  }
+
+  return { sent, deferred };
+}
+
+/**
  * Runs the full recovery workflow for one tenant: identify, filter
  * (compliance), score, determine reason, compose, send (respecting quiet
  * hours), and log/update status back to the store. Covers brand-new leads
  * (initial outreach), leads due for a follow-up nudge, leads with a booked
- * appointment coming up within 24 hours, and opted-in past customers due
- * for a periodic win-back check-in.
+ * appointment coming up within 24 hours, opted-in past customers due for a
+ * periodic win-back check-in, and opted-in past customers due for their
+ * one-time review request.
  */
 export async function runRecoveryWorkflow(
   tenant: Tenant,
@@ -350,21 +435,36 @@ export async function runRecoveryWorkflow(
   const followUps = buildFollowUpPlans(tenant, leads, now);
   const reminders = buildAppointmentReminderPlans(tenant, leads, now);
   const winBacks = buildWinBackPlans(tenant, leads, now);
+  const reviewRequests = buildReviewRequestPlans(tenant, leads, now);
 
   const initialResult = await sendPlans(tenant, store, messages, initial.plans, false, now);
   const followUpResult = await sendPlans(tenant, store, messages, followUps.plans, true, now);
   const reminderResult = await sendAppointmentReminders(tenant, store, messages, reminders.plans, now);
   const winBackResult = await sendWinBackPlans(tenant, store, messages, winBacks.plans, now);
+  const reviewRequestResult = await sendReviewRequests(tenant, store, messages, reviewRequests.plans, now);
 
   return {
-    plans: [...initial.plans, ...followUps.plans, ...reminders.plans, ...winBacks.plans],
-    skipped: [...initial.skipped, ...followUps.skipped, ...reminders.skipped, ...winBacks.skipped],
-    sent: [...initialResult.sent, ...followUpResult.sent, ...reminderResult.sent, ...winBackResult.sent],
+    plans: [...initial.plans, ...followUps.plans, ...reminders.plans, ...winBacks.plans, ...reviewRequests.plans],
+    skipped: [
+      ...initial.skipped,
+      ...followUps.skipped,
+      ...reminders.skipped,
+      ...winBacks.skipped,
+      ...reviewRequests.skipped,
+    ],
+    sent: [
+      ...initialResult.sent,
+      ...followUpResult.sent,
+      ...reminderResult.sent,
+      ...winBackResult.sent,
+      ...reviewRequestResult.sent,
+    ],
     deferred: [
       ...initialResult.deferred,
       ...followUpResult.deferred,
       ...reminderResult.deferred,
       ...winBackResult.deferred,
+      ...reviewRequestResult.deferred,
     ],
   };
 }

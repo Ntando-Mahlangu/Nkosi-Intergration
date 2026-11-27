@@ -105,17 +105,22 @@ export interface Lead {
   convertedAt?: string;
   /**
    * This specific lead's own explicit opt-in to being periodically
-   * re-contacted *after* becoming a customer (a win-back/reactivation
-   * check-in) — distinct from the tenant-level consent-basis attestation
-   * made at onboarding, which covers the original transactional outreach
-   * only. POPIA section 69 requires opt-in for direct marketing; this field
-   * is how that consent is recorded per lead, not assumed. Unset/false means
-   * never eligible for win-back messaging, regardless of
-   * `Tenant.winBackEnabled`. See src/winback.ts.
+   * re-contacted *after* becoming a customer — a win-back/reactivation
+   * check-in (src/winback.ts) or a one-time review request
+   * (src/reviewRequest.ts), both of which reuse this same flag rather than
+   * each demanding their own separate consent checkbox. Distinct from the
+   * tenant-level consent-basis attestation made at onboarding, which covers
+   * the original transactional outreach only. POPIA section 69 requires
+   * opt-in for direct marketing; this field is how that consent is
+   * recorded per lead, not assumed. Unset/false means never eligible for
+   * either feature, regardless of `Tenant.winBackEnabled`/
+   * `Tenant.reviewRequestEnabled`.
    */
   marketingOptIn?: boolean;
   /** When the last win-back check-in was actually sent (ISO date) — see src/winback.ts. */
   lastWinBackAt?: string;
+  /** When the one-time review request was sent (ISO date) — unlike lastWinBackAt, this never repeats. See src/reviewRequest.ts. */
+  reviewRequestSentAt?: string;
   /**
    * Set the moment this lead first needs a human to look at it — an
    * "interested" reply, or a question/unknown reply that always escalates
@@ -267,6 +272,8 @@ export interface MessageTemplates {
   appointmentReminder?: string;
   /** Periodic win-back check-in for a converted, opted-in lead (see src/winback.ts). */
   winBack?: string;
+  /** One-time review request sent after a lead converts (see src/reviewRequest.ts). */
+  reviewRequest?: string;
 }
 
 export interface Tenant {
@@ -450,6 +457,16 @@ export interface Tenant {
   /** Days between win-back check-ins for one lead. Unset uses DEFAULT_WIN_BACK_COOLDOWN_DAYS (src/winback.ts). */
   winBackCooldownDays?: number;
   /**
+   * Opt-in: when true, a converted lead who has their own `marketingOptIn`
+   * set gets a single automated review request, once, some days after
+   * converting (see src/reviewRequest.ts) — distinct from, and off by
+   * default alongside, win-back messaging above (which recurs; this never
+   * does). Off by default — a business must deliberately turn this on.
+   */
+  reviewRequestEnabled?: boolean;
+  /** Days after conversion before the review request goes out. Unset uses DEFAULT_REVIEW_REQUEST_DELAY_DAYS (src/reviewRequest.ts). */
+  reviewRequestDelayDays?: number;
+  /**
    * Opt-in: when set, a lead still unresolved in the needs-attention inbox
    * (see Lead.needsAttentionAt) this many hours after being flagged fires a
    * one-time operator alert (src/operatorAlert.ts, checked by the worker —
@@ -574,11 +591,13 @@ export interface Message {
    * the fixed not-interested acknowledgment, "appointment_reminder" = the
    * 24-hours-before nudge (see src/appointmentReminder.ts), "win_back" = a
    * periodic check-in to an opted-in past customer (see src/winback.ts),
-   * "manual_reply" = a human operator typed this directly from the
-   * dashboard's "Needs attention" inbox (`POST /leads/:id/reply`). Inbound
-   * messages leave this unset. "auto_reply" is a retired kind — no code
-   * writes it anymore, but it's kept in the type so historical rows from
-   * the now-removed auto-reply chatbot still read back correctly.
+   * "review_request" = a one-time ask for a review after a lead converts
+   * (see src/reviewRequest.ts), "manual_reply" = a human operator typed
+   * this directly from the dashboard's "Needs attention" inbox
+   * (`POST /leads/:id/reply`). Inbound messages leave this unset.
+   * "auto_reply" is a retired kind — no code writes it anymore, but it's
+   * kept in the type so historical rows from the now-removed auto-reply
+   * chatbot still read back correctly.
    */
-  kind?: "campaign" | "auto_reply" | "closer" | "appointment_reminder" | "win_back" | "manual_reply";
+  kind?: "campaign" | "auto_reply" | "closer" | "appointment_reminder" | "win_back" | "review_request" | "manual_reply";
 }

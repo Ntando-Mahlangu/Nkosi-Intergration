@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryLeadStore, InMemoryMessageStore } from "../src/store/memory.js";
-import { buildRecoveryPlans, buildWinBackPlans, runRecoveryWorkflow } from "../src/workflow.js";
+import {
+  buildRecoveryPlans,
+  buildReviewRequestPlans,
+  buildWinBackPlans,
+  runRecoveryWorkflow,
+} from "../src/workflow.js";
 import { DEFAULT_WIN_BACK_COOLDOWN_DAYS } from "../src/winback.js";
+import { DEFAULT_REVIEW_REQUEST_DELAY_DAYS } from "../src/reviewRequest.js";
 import type { Lead, Tenant } from "../src/types.js";
 
 const NOW = new Date("2026-09-12T00:00:00.000Z");
@@ -388,5 +394,71 @@ describe("win-back", () => {
     expect(result.deferred.some((d) => d.lead.id === "converted-1")).toBe(true);
     const updated = await store.getLeadById(TENANT.id, "converted-1");
     expect(updated?.lastWinBackAt).toBeUndefined();
+  });
+});
+
+describe("review requests", () => {
+  const REVIEW_REQUEST_TENANT: Tenant = { ...TENANT, reviewRequestEnabled: true };
+
+  function makeConvertedLead(overrides: Partial<Lead>): Lead {
+    return {
+      id: "converted-1",
+      tenantId: TENANT.id,
+      name: "Priya Naidoo",
+      phone: "+27821119999",
+      source: "crm",
+      createdAt: new Date(NOW.getTime() - 400 * 86400000).toISOString(),
+      status: "converted",
+      convertedAt: new Date(NOW.getTime() - (DEFAULT_REVIEW_REQUEST_DELAY_DAYS + 1) * 86400000).toISOString(),
+      marketingOptIn: true,
+      ...overrides,
+    };
+  }
+
+  it("buildReviewRequestPlans never includes a lead the tenant hasn't enabled review requests for", () => {
+    const { plans } = buildReviewRequestPlans(TENANT, [makeConvertedLead({})], NOW);
+    expect(plans).toHaveLength(0);
+  });
+
+  it("buildReviewRequestPlans includes a due, opted-in converted lead", () => {
+    const { plans } = buildReviewRequestPlans(REVIEW_REQUEST_TENANT, [makeConvertedLead({})], NOW);
+    expect(plans).toHaveLength(1);
+    expect(plans[0].lead.id).toBe("converted-1");
+    expect(plans[0].priority).toBe("LOW");
+  });
+
+  it("runRecoveryWorkflow sends a review request, sets reviewRequestSentAt, and never touches status/followUpCount", async () => {
+    const store = new InMemoryLeadStore([makeConvertedLead({})]);
+    const messages = new InMemoryMessageStore();
+    const result = await runRecoveryWorkflow(REVIEW_REQUEST_TENANT, store, messages, NOW);
+
+    const sentReviewRequest = result.sent.find((s) => s.plan.lead.id === "converted-1");
+    expect(sentReviewRequest?.result.ok).toBe(true);
+
+    const updated = await store.getLeadById(TENANT.id, "converted-1");
+    expect(updated?.status).toBe("converted"); // never flipped to contacted_no_response
+    expect(updated?.followUpCount).toBeUndefined();
+    expect(updated?.reviewRequestSentAt).toBe(NOW.toISOString());
+
+    const logged = await messages.getMessagesForLead(TENANT.id, "converted-1");
+    expect(logged).toHaveLength(1);
+    expect(logged[0].kind).toBe("review_request");
+  });
+
+  it("never sends a second review request to the same lead once one's already gone out", async () => {
+    const store = new InMemoryLeadStore([makeConvertedLead({ reviewRequestSentAt: NOW.toISOString() })]);
+    const result = await runRecoveryWorkflow(REVIEW_REQUEST_TENANT, store, undefined, NOW);
+    expect(result.sent.some((s) => s.plan.lead.id === "converted-1")).toBe(false);
+  });
+
+  it("defers a review-request send during quiet hours instead of sending", async () => {
+    const quietTenant: Tenant = { ...REVIEW_REQUEST_TENANT, quietHours: { startHour: 0, endHour: 24 } };
+    const store = new InMemoryLeadStore([makeConvertedLead({})]);
+    const result = await runRecoveryWorkflow(quietTenant, store, undefined, NOW);
+
+    expect(result.sent.some((s) => s.plan.lead.id === "converted-1")).toBe(false);
+    expect(result.deferred.some((d) => d.lead.id === "converted-1")).toBe(true);
+    const updated = await store.getLeadById(TENANT.id, "converted-1");
+    expect(updated?.reviewRequestSentAt).toBeUndefined();
   });
 });

@@ -47,6 +47,9 @@ function leadFromRow(row: Record<string, unknown>): Lead {
     convertedAt: row.converted_at ? new Date(row.converted_at as string).toISOString() : undefined,
     marketingOptIn: (row.marketing_opt_in as boolean | null) ?? undefined,
     lastWinBackAt: row.last_win_back_at ? new Date(row.last_win_back_at as string).toISOString() : undefined,
+    reviewRequestSentAt: row.review_request_sent_at
+      ? new Date(row.review_request_sent_at as string).toISOString()
+      : undefined,
     needsAttentionAt: row.needs_attention_at ? new Date(row.needs_attention_at as string).toISOString() : undefined,
     needsAttentionReason: (row.needs_attention_reason as Lead["needsAttentionReason"] | null) ?? undefined,
     attentionAlertedAt: row.attention_alerted_at
@@ -68,7 +71,7 @@ const LEAD_COLUMNS = `id, tenant_id, name, phone, email, source, created_at, las
   appointment_at, appointment_reminder_sent_at, notes,
   status, preferred_channel, had_missed_call, responded_after_contact, follow_up_count,
   next_follow_up_at, first_outreach_sent_at, converted_at, marketing_opt_in, last_win_back_at,
-  needs_attention_at, needs_attention_reason, attention_alerted_at,
+  review_request_sent_at, needs_attention_at, needs_attention_reason, attention_alerted_at,
   consent_status, consent_timestamp, consent_source, consent_scope, privacy_notice_version`;
 
 /** Maps a patchable Lead field to its column — `id`/`tenantId` are the WHERE key, never patched. */
@@ -96,6 +99,7 @@ const LEAD_PATCH_COLUMNS: Partial<Record<keyof Lead, string>> = {
   convertedAt: "converted_at",
   marketingOptIn: "marketing_opt_in",
   lastWinBackAt: "last_win_back_at",
+  reviewRequestSentAt: "review_request_sent_at",
   needsAttentionAt: "needs_attention_at",
   needsAttentionReason: "needs_attention_reason",
   attentionAlertedAt: "attention_alerted_at",
@@ -158,9 +162,9 @@ export class PostgresLeadStore implements LeadStore {
         appointment_at, appointment_reminder_sent_at, notes,
         status, preferred_channel, had_missed_call, responded_after_contact, follow_up_count,
         next_follow_up_at, first_outreach_sent_at, converted_at, marketing_opt_in, last_win_back_at,
-        needs_attention_at, needs_attention_reason, attention_alerted_at,
+        review_request_sent_at, needs_attention_at, needs_attention_reason, attention_alerted_at,
         consent_status, consent_timestamp, consent_source, consent_scope, privacy_notice_version
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)`,
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)`,
       [
         lead.id,
         lead.tenantId,
@@ -187,6 +191,7 @@ export class PostgresLeadStore implements LeadStore {
         lead.convertedAt ?? null,
         lead.marketingOptIn ?? null,
         lead.lastWinBackAt ?? null,
+        lead.reviewRequestSentAt ?? null,
         lead.needsAttentionAt ?? null,
         lead.needsAttentionReason ?? null,
         lead.attentionAlertedAt ?? null,
@@ -259,7 +264,8 @@ const TENANT_COLUMNS = `id, name, api_key, timezone, quiet_hours_start, quiet_ho
   contact_phone, contact_email, website, terms_accepted_at, terms_version,
   consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, data_retention_days,
   email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, number_hosting_order,
-  login_phone, otp_code_hash, otp_expires_at, otp_attempts, win_back_enabled, win_back_cooldown_days, attention_sla_hours`;
+  login_phone, otp_code_hash, otp_expires_at, otp_attempts, win_back_enabled, win_back_cooldown_days,
+  review_request_enabled, review_request_delay_days, attention_sla_hours`;
 
 /**
  * Tenant provider credentials (Twilio auth tokens, SendGrid API keys) are
@@ -362,6 +368,8 @@ export class PostgresTenantStore implements TenantStore {
       otpAttempts: row.otp_code_hash ? ((row.otp_attempts as number | null) ?? 0) : undefined,
       winBackEnabled: Boolean(row.win_back_enabled),
       winBackCooldownDays: (row.win_back_cooldown_days as number | null) ?? undefined,
+      reviewRequestEnabled: Boolean(row.review_request_enabled),
+      reviewRequestDelayDays: (row.review_request_delay_days as number | null) ?? undefined,
       attentionSlaHours: (row.attention_sla_hours as number | null) ?? undefined,
       createdAt: new Date(row.created_at as string).toISOString(),
     };
@@ -416,8 +424,8 @@ export class PostgresTenantStore implements TenantStore {
 
   async createTenant(tenant: Tenant): Promise<Tenant> {
     await this.pool.query(
-      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, data_retention_days, email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, number_hosting_order, login_phone, otp_code_hash, otp_expires_at, otp_attempts, win_back_enabled, win_back_cooldown_days, attention_sla_hours)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)`,
+      `INSERT INTO tenants (id, name, api_key, timezone, quiet_hours_start, quiet_hours_end, dev_mode, channels, created_at, notify_webhook_url, templates, status, status_reason, paddle_subscription_id, paddle_last_event_at, contact_phone, contact_email, website, terms_accepted_at, terms_version, consent_basis_confirmed_at, terms_attested_at, carrier_approval_confirmed_at, data_retention_days, email, password_hash, password_reset_token_hash, password_reset_expires_at, public_form_key, number_hosting_order, login_phone, otp_code_hash, otp_expires_at, otp_attempts, win_back_enabled, win_back_cooldown_days, review_request_enabled, review_request_delay_days, attention_sla_hours)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39)`,
       [
         tenant.id,
         tenant.name,
@@ -455,6 +463,8 @@ export class PostgresTenantStore implements TenantStore {
         tenant.otpAttempts ?? 0,
         tenant.winBackEnabled ?? false,
         tenant.winBackCooldownDays ?? null,
+        tenant.reviewRequestEnabled ?? false,
+        tenant.reviewRequestDelayDays ?? null,
         tenant.attentionSlaHours ?? null,
       ]
     );
@@ -520,6 +530,8 @@ export class PostgresTenantStore implements TenantStore {
     if ("otpAttempts" in patch) push("otp_attempts", patch.otpAttempts ?? 0);
     if ("winBackEnabled" in patch) push("win_back_enabled", patch.winBackEnabled ?? false);
     if ("winBackCooldownDays" in patch) push("win_back_cooldown_days", patch.winBackCooldownDays ?? null);
+    if ("reviewRequestEnabled" in patch) push("review_request_enabled", patch.reviewRequestEnabled ?? false);
+    if ("reviewRequestDelayDays" in patch) push("review_request_delay_days", patch.reviewRequestDelayDays ?? null);
     if ("attentionSlaHours" in patch) push("attention_sla_hours", patch.attentionSlaHours ?? null);
     if ("createdAt" in patch) push("created_at", patch.createdAt);
 
